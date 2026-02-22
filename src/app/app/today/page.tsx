@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { getMyOrgId } from "@/lib/supabase/get-my-org-id";
 
 export default async function TodayPage() {
   const supabase = await createClient();
@@ -8,13 +9,9 @@ export default async function TodayPage() {
 
   if (!user) redirect("/login");
 
-  const { data: membership } = await supabase
-    .from("memberships")
-    .select("org_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const orgId = await getMyOrgId(supabase, user.id);
 
-  if (!membership?.org_id) redirect("/app/setup");
+  if (!orgId) redirect("/app/setup");
 
   const { data: nextActions, error } = await supabase
     .from("next_actions")

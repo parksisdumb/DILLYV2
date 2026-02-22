@@ -1,69 +1,29 @@
-"use client";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { getMyOrgId } from "@/lib/supabase/get-my-org-id";
 
-import { useState } from "react";
-import { createClient } from "@/lib/supabase/browser";
-import { useRouter } from "next/navigation";
+const DEFAULT_ORG_NAME = "Dilly Dev Org";
 
-export default function SetupOrgPage() {
-  const supabase = createClient();
-  const router = useRouter();
+export default async function SetupPage() {
+  const supabase = await createClient();
+  const { data: authData } = await supabase.auth.getUser();
+  const user = authData.user;
 
-  const [orgName, setOrgName] = useState("Dilly Dev Org");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  if (!user) redirect("/login");
 
-  async function createOrg() {
-    if (loading) return;
+  const orgId = await getMyOrgId(supabase, user.id);
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { error: rpcError } = await supabase.rpc("rpc_bootstrap_org", {
-        p_org_name: orgName.trim(),
-      });
-
-      if (rpcError) {
-        setError(rpcError.message);
-        return;
-      }
-
-      router.push("/app/today");
-      router.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create org");
-    } finally {
-      setLoading(false);
-    }
+  if (orgId) {
+    redirect("/app");
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-sm rounded-2xl border p-6 space-y-4">
-        <h1 className="text-xl font-semibold">Create your org</h1>
-        <p className="text-sm text-gray-600">
-          This sets up roles and your membership.
-        </p>
+  const { error: bootstrapError } = await supabase.rpc("rpc_bootstrap_org", {
+    p_org_name: DEFAULT_ORG_NAME,
+  });
 
-        <div className="space-y-2">
-          <label className="text-sm">Org name</label>
-          <input
-            className="w-full rounded-md border px-3 py-2"
-            value={orgName}
-            onChange={(e) => setOrgName(e.target.value)}
-          />
-        </div>
+  if (bootstrapError) {
+    throw new Error(bootstrapError.message);
+  }
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <button
-          className="w-full rounded-md border px-3 py-2"
-          onClick={createOrg}
-          disabled={loading}
-        >
-          {loading ? "..." : "Create org"}
-        </button>
-      </div>
-    </div>
-  );
+  redirect("/app");
 }

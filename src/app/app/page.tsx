@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getMyOrgId } from "@/lib/supabase/get-my-org-id";
 
 export default async function AppEntry() {
   const supabase = await createClient();
@@ -7,14 +8,9 @@ export default async function AppEntry() {
 
   if (!data.user) redirect("/login");
 
-  // If the user has a membership, go to Today. Otherwise, go to org setup.
-  const { data: membership } = await supabase
-    .from("memberships")
-    .select("org_id")
-    .eq("user_id", data.user.id)
-    .maybeSingle();
+  const orgId = await getMyOrgId(supabase, data.user.id);
 
-  if (!membership?.org_id) redirect("/app/setup");
+  if (!orgId) redirect("/app/setup");
 
   redirect("/app/today");
 }

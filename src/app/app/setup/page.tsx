@@ -13,20 +13,28 @@ export default function SetupOrgPage() {
   const [loading, setLoading] = useState(false);
 
   async function createOrg() {
+    if (loading) return;
+
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.rpc("rpc_bootstrap_org", {
-      p_org_name: orgName,
-    });
+    try {
+      const { error: rpcError } = await supabase.rpc("rpc_bootstrap_org", {
+        p_org_name: orgName.trim(),
+      });
 
-    setLoading(false);
+      if (rpcError) {
+        setError(rpcError.message);
+        return;
+      }
 
-    if (error) return setError(error.message);
-
-    // data is org_id (uuid)
-    router.push("/app/today");
-    router.refresh();
+      router.push("/app/today");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create org");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

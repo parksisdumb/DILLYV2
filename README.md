@@ -34,3 +34,16 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Local Dev User Seeding
+
+After resetting local Supabase, seed deterministic dev users:
+
+1. `npx supabase db reset`
+2. `npm run seed:dev`
+3. Log in with `admin@dilly.dev` / `devpassword123!`
+
+Environment required by the seeding script:
+
+- `SUPABASE_URL` (defaults to `http://127.0.0.1:54321`)
+- `SUPABASE_SERVICE_ROLE_KEY` (or `SERVICE_ROLE_KEY` from `supabase status -o env`)

@@ -2,8 +2,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getMyOrgId } from "@/lib/supabase/get-my-org-id";
 
-const DEFAULT_ORG_NAME = "Dilly Dev Org";
-
 export default async function SetupPage() {
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getUser();
@@ -17,13 +15,17 @@ export default async function SetupPage() {
     redirect("/app");
   }
 
-  const { error: bootstrapError } = await supabase.rpc("rpc_bootstrap_org", {
-    p_org_name: DEFAULT_ORG_NAME,
-  });
-
-  if (bootstrapError) {
-    throw new Error(bootstrapError.message);
-  }
-
-  redirect("/app");
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-2xl border p-6 space-y-4">
+        <h1 className="text-xl font-semibold">Organization Assignment Required</h1>
+        <p className="text-sm text-gray-700">
+          Your account is signed in, but it is not assigned to an organization yet.
+        </p>
+        <p className="text-sm text-gray-700">
+          Ask your admin to invite or assign this user to the correct organization.
+        </p>
+      </div>
+    </div>
+  );
 }

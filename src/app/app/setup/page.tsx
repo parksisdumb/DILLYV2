@@ -1,15 +1,11 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { getMyOrgId } from "@/lib/supabase/get-my-org-id";
+import { getServerAuthOrgState } from "@/lib/supabase/server-org";
 
 export default async function SetupPage() {
-  const supabase = await createClient();
-  const { data: authData } = await supabase.auth.getUser();
-  const user = authData.user;
+  const { userId, orgId } = await getServerAuthOrgState();
+  const showDevProvisionLink = process.env.NODE_ENV !== "production";
 
-  if (!user) redirect("/login");
-
-  const orgId = await getMyOrgId(supabase, user.id);
+  if (!userId) redirect("/login");
 
   if (orgId) {
     redirect("/app");
@@ -25,6 +21,11 @@ export default async function SetupPage() {
         <p className="text-sm text-gray-700">
           Ask your admin to invite or assign this user to the correct organization.
         </p>
+        {showDevProvisionLink && (
+          <a href="/dev/provision" className="text-sm underline">
+            Dev: provision initial org owner
+          </a>
+        )}
       </div>
     </div>
   );

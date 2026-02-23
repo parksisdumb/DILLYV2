@@ -1,29 +1,24 @@
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-import { getMyOrgId } from "@/lib/supabase/get-my-org-id";
+import { requireServerOrgContext } from "@/lib/supabase/server-org";
 
 export default async function TodayPage() {
-  const supabase = await createClient();
-  const { data: userRes } = await supabase.auth.getUser();
-  const user = userRes.user;
-
-  if (!user) redirect("/login");
-
-  const orgId = await getMyOrgId(supabase, user.id);
-
-  if (!orgId) redirect("/app/setup");
+  const { supabase, userId } = await requireServerOrgContext();
 
   const { data: nextActions, error } = await supabase
     .from("next_actions")
     .select("id, due_at, status, notes, property_id")
-    .eq("assigned_user_id", user.id)
+    .eq("assigned_user_id", userId)
     .eq("status", "open")
     .order("due_at", { ascending: true })
     .limit(50);
 
   return (
     <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-semibold">Today</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Today</h1>
+        <a href="/app/admin/team" className="text-sm underline">
+          Team
+        </a>
+      </div>
 
       <div className="rounded-2xl border p-4">
         <h2 className="text-lg font-semibold">Advance</h2>

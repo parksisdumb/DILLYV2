@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
   const supabase = createBrowserSupabase();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,7 +31,11 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/app");
+      const requestedNext = searchParams.get("next");
+      const nextPath =
+        requestedNext && requestedNext.startsWith("/") ? requestedNext : "/app";
+
+      router.push(nextPath);
       router.refresh();
     } finally {
       setLoading(false);

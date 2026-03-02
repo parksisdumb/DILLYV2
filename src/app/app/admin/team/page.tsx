@@ -89,34 +89,45 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
   const message = params.message;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Team</h1>
-        <p className="text-sm text-gray-600">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Team</h1>
+        <p className="text-sm text-slate-600">
           Invite users to join your organization and assign a role.
         </p>
       </div>
 
       {status === "success" && (
-        <p className="text-sm text-green-700">Invite created.</p>
+        <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          Invite created.
+        </p>
       )}
       {status === "error" && (
-        <p className="text-sm text-red-700">{message || "Invite failed."}</p>
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {message || "Invite failed."}
+        </p>
       )}
 
-      <form action={createInviteAction} className="rounded-2xl border p-4 space-y-3 max-w-xl">
+      <form
+        action={createInviteAction}
+        className="max-w-xl space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
         <div className="space-y-1">
-          <label className="text-sm">Email</label>
+          <label className="text-sm font-medium text-slate-700">Email</label>
           <input
-            className="w-full rounded-md border px-3 py-2"
+            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900"
             name="email"
             type="email"
             required
           />
         </div>
         <div className="space-y-1">
-          <label className="text-sm">Role</label>
-          <select className="w-full rounded-md border px-3 py-2" name="role" defaultValue="rep">
+          <label className="text-sm font-medium text-slate-700">Role</label>
+          <select
+            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900"
+            name="role"
+            defaultValue="rep"
+          >
             {roles.map((role) => (
               <option key={role} value={role}>
                 {role}
@@ -125,39 +136,48 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-sm">Note (optional)</label>
-          <input className="w-full rounded-md border px-3 py-2" name="note" type="text" />
+          <label className="text-sm font-medium text-slate-700">Note (optional)</label>
+          <input
+            className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900"
+            name="note"
+            type="text"
+          />
         </div>
-        <button className="rounded-md border px-3 py-2">Create invite</button>
+        <button className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          Create invite
+        </button>
       </form>
 
-      <div className="rounded-2xl border p-4">
-        <h2 className="text-lg font-semibold">Invites</h2>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">Invites</h2>
         {!invites?.length ? (
-          <p className="text-sm mt-2">No invites yet.</p>
+          <p className="mt-2 text-sm text-slate-600">No invites yet.</p>
         ) : (
           <ul className="mt-3 space-y-3">
             {invites.map((invite) => {
               const link = safeNextPath(`/invite/accept/${invite.token}`);
               const fullLink = `${appUrl}${link}`;
               return (
-                <li key={invite.id} className="rounded-lg border p-3 space-y-1">
-                  <div className="text-sm font-medium">
+                <li
+                  key={invite.id}
+                  className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3"
+                >
+                  <div className="text-sm font-medium text-slate-900">
                     {invite.email} ({invite.role})
                   </div>
-                  <div className="text-xs text-gray-600">
+                  <div className="text-xs text-slate-600">
                     Created: {new Date(invite.created_at).toLocaleString()}
                   </div>
-                  <div className="text-xs text-gray-600">
+                  <div className="text-xs text-slate-600">
                     Expires: {new Date(invite.expires_at).toLocaleString()}
                   </div>
-                  <div className="text-xs text-gray-600">
+                  <div className="text-xs text-slate-600">
                     Status: {invite.accepted_at ? "accepted" : "pending"}
                   </div>
                   {!invite.accepted_at && (
-                    <div className="text-xs break-all">
+                    <div className="break-all text-xs text-slate-700">
                       Accept link:{" "}
-                      <a href={fullLink} className="underline">
+                      <a href={fullLink} className="font-medium underline">
                         {fullLink}
                       </a>
                     </div>
@@ -171,4 +191,3 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
     </div>
   );
 }
-

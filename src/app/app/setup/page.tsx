@@ -2,31 +2,70 @@ import { redirect } from "next/navigation";
 import { getServerAuthOrgState } from "@/lib/supabase/server-org";
 
 export default async function SetupPage() {
-  const { userId, orgId } = await getServerAuthOrgState();
-  const showDevProvisionLink = process.env.NODE_ENV !== "production";
+  const { supabase, userId } = await getServerAuthOrgState();
 
   if (!userId) redirect("/login");
 
-  if (orgId) {
-    redirect("/app");
+  const { data: orgUser, error: orgUserError } = await supabase
+    .from("org_users")
+    .select("org_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (orgUserError) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Setup</h1>
+        <section className="max-w-xl rounded-2xl border border-red-200 bg-red-50 p-6">
+          <h2 className="text-base font-semibold text-red-900">Setup Error</h2>
+          <p className="mt-2 text-sm text-red-700">{orgUserError.message}</p>
+          <a href="/login" className="mt-4 inline-block text-sm font-medium underline">
+            Back to login
+          </a>
+        </section>
+      </div>
+    );
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border p-6 space-y-4">
-        <h1 className="text-xl font-semibold">Organization Assignment Required</h1>
-        <p className="text-sm text-gray-700">
-          Your account is signed in, but it is not assigned to an organization yet.
-        </p>
-        <p className="text-sm text-gray-700">
-          Ask your admin to invite or assign this user to the correct organization.
-        </p>
-        {showDevProvisionLink && (
-          <a href="/dev/provision" className="text-sm underline">
-            Dev: provision initial org owner
+  if (orgUser?.org_id) {
+    redirect("/app/today");
+  }
+
+  const { data: orgId, error: bootstrapError } = await supabase.rpc("rpc_bootstrap_org", {
+    p_org_name: "Dilly Dev Org",
+  });
+
+  if (bootstrapError) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Setup</h1>
+        <section className="max-w-xl rounded-2xl border border-red-200 bg-red-50 p-6">
+          <h2 className="text-base font-semibold text-red-900">Bootstrap Error</h2>
+          <p className="mt-2 text-sm text-red-700">{bootstrapError.message}</p>
+          <a href="/app/setup" className="mt-4 inline-block text-sm font-medium underline">
+            Retry setup
           </a>
-        )}
+        </section>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (!orgId) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Setup</h1>
+        <section className="max-w-xl rounded-2xl border border-red-200 bg-red-50 p-6">
+          <h2 className="text-base font-semibold text-red-900">Bootstrap Error</h2>
+          <p className="text-sm text-red-700">
+            Bootstrap returned no org id. Please retry.
+          </p>
+          <a href="/app/setup" className="mt-4 inline-block text-sm font-medium underline">
+            Retry setup
+          </a>
+        </section>
+      </div>
+    );
+  }
+
+  redirect("/app/today");
 }

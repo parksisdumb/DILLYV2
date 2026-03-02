@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "seed:dev": "tsx scripts/seed-dev-users.ts"
+    "seed:dev": "tsx scripts/seed-dev-users.ts && tsx scripts/seed-dev-data.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

@@ -20,7 +20,8 @@ type DevUser = { email: string; password: string };
 const DEV_USERS: DevUser[] = [
   { email: "admin@dilly.dev", password: "devpassword123!" },
   { email: "manager@dilly.dev", password: "devpassword123!" },
-  { email: "rep@dilly.dev", password: "devpassword123!" },
+  { email: "rep1@dilly.dev", password: "devpassword123!" },
+  { email: "rep2@dilly.dev", password: "devpassword123!" },
 ];
 
 async function listExistingEmails(): Promise<Set<string>> {

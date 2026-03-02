@@ -47,3 +47,21 @@ Environment required by the seeding script:
 
 - `SUPABASE_URL` (defaults to `http://127.0.0.1:54321`)
 - `SUPABASE_SERVICE_ROLE_KEY` (or `SERVICE_ROLE_KEY` from `supabase status -o env`)
+
+## RLS pgTAP Tests
+
+Run database policy tests with pgTAP:
+
+1. `npx supabase db reset`
+2. `npx supabase test db`
+
+Current core test coverage is in:
+
+- `supabase/tests/rls_core.test.sql`
+
+It verifies:
+
+- Rep org-wide `SELECT` access for accounts/contacts/properties.
+- Rep update restrictions for unassigned/not-created records.
+- Rep update allowance for assigned property.
+- Manager update allowance for unassigned property.

@@ -1,84 +1,85 @@
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
+import ContactsClient from "@/app/app/contacts/contacts-client";
 
-type AccountRow = {
+type ContactRow = {
   id: string;
-  name: string;
+  full_name: string | null;
+  title: string | null;
+  phone: string | null;
+  email: string | null;
+  decision_role: string | null;
+  account_id: string;
+  account_name: string | null;
+  last_touch_at: string | null;
+  updated_at: string;
 };
 
-export default async function ContactsPage() {
-  const { supabase, orgId } = await requireServerOrgContext();
+export type AccountOption = { id: string; name: string | null };
 
-  const [contactsResult, accountsResult] = await Promise.all([
+export default async function ContactsPage() {
+  const { supabase, userId } = await requireServerOrgContext();
+
+  const [contactsRes, accountsRes, tpRes, meRes] = await Promise.all([
     supabase
       .from("contacts")
-      .select("id,full_name,title,email,phone,decision_role,account_id,updated_at")
-      .eq("org_id", orgId)
+      .select("id,full_name,title,phone,email,decision_role,account_id,updated_at")
       .is("deleted_at", null)
-      .order("updated_at", { ascending: false })
-      .limit(250),
+      .order("full_name")
+      .limit(500),
     supabase
       .from("accounts")
       .select("id,name")
-      .eq("org_id", orgId)
       .is("deleted_at", null)
+      .order("name")
       .limit(500),
+    supabase
+      .from("touchpoints")
+      .select("contact_id,happened_at")
+      .not("contact_id", "is", null),
+    supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
   ]);
 
-  if (contactsResult.error) throw new Error(contactsResult.error.message);
-  if (accountsResult.error) throw new Error(accountsResult.error.message);
+  if (contactsRes.error) throw new Error(contactsRes.error.message);
 
-  const accountsById = new Map<string, string>();
-  for (const account of (accountsResult.data ?? []) as AccountRow[]) {
-    accountsById.set(account.id, account.name);
+  // Build last_touch_at per contact
+  const lastTouchByContact = new Map<string, string>();
+  for (const tp of tpRes.data ?? []) {
+    const cid = tp.contact_id as string;
+    const t = tp.happened_at as string;
+    const existing = lastTouchByContact.get(cid);
+    if (!existing || t > existing) lastTouchByContact.set(cid, t);
   }
 
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Contacts</h1>
-        <p className="text-sm text-slate-600">Showing active contacts in your organization.</p>
-      </div>
+  // Build accounts map
+  const accountsById = new Map<string, string | null>();
+  for (const a of accountsRes.data ?? []) {
+    accountsById.set(a.id as string, a.name as string | null);
+  }
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6">
-        {!contactsResult.data?.length ? (
-          <p className="text-sm text-slate-600">No contacts found.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-2 py-2 font-medium">Name</th>
-                  <th className="px-2 py-2 font-medium">Title</th>
-                  <th className="px-2 py-2 font-medium">Email</th>
-                  <th className="px-2 py-2 font-medium">Phone</th>
-                  <th className="px-2 py-2 font-medium">Decision Role</th>
-                  <th className="px-2 py-2 font-medium">Account</th>
-                  <th className="px-2 py-2 font-medium">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contactsResult.data.map((contact) => (
-                  <tr key={contact.id} className="border-b border-slate-100 text-slate-700">
-                    <td className="px-2 py-2 font-medium text-slate-900">{contact.full_name}</td>
-                    <td className="px-2 py-2">{contact.title || "-"}</td>
-                    <td className="px-2 py-2">{contact.email || "-"}</td>
-                    <td className="px-2 py-2">{contact.phone || "-"}</td>
-                    <td className="px-2 py-2">{contact.decision_role || "-"}</td>
-                    <td className="px-2 py-2">
-                      {contact.account_id
-                        ? accountsById.get(contact.account_id) || "Unknown account"
-                        : "-"}
-                    </td>
-                    <td className="px-2 py-2">
-                      {contact.updated_at ? new Date(contact.updated_at).toLocaleString() : "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
+  const rows: ContactRow[] = (contactsRes.data ?? []).map((c) => ({
+    id: c.id as string,
+    full_name: c.full_name as string | null,
+    title: c.title as string | null,
+    phone: c.phone as string | null,
+    email: c.email as string | null,
+    decision_role: c.decision_role as string | null,
+    account_id: c.account_id as string,
+    account_name: accountsById.get(c.account_id as string) ?? null,
+    last_touch_at: lastTouchByContact.get(c.id as string) ?? null,
+    updated_at: c.updated_at as string,
+  }));
+
+  const accounts: AccountOption[] = (accountsRes.data ?? []).map((a) => ({
+    id: a.id as string,
+    name: a.name as string | null,
+  }));
+
+  return (
+    <ContactsClient
+      contacts={rows}
+      accounts={accounts}
+      userId={userId}
+      userRole={meRes.data?.role ?? "rep"}
+    />
   );
 }

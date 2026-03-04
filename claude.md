@@ -231,3 +231,5 @@ Current migrations (applied in order):
 31. `20260228153000_next_actions_contact_first_v1` — next_actions contact-first model
 32. `20260302100000_next_actions_contact_required_v1` — next_actions.contact_id + account_id NOT NULL
 33. `20260302120000_engagement_phase_visibility_v1` — renames engagement_phase 'other' → 'visibility', updates check constraint + both RPCs
+34. `20260303093000_accounts_website_phone_v1` — adds `website text` and `phone text` columns to accounts table
+35. `20260303110000_properties_roof_metadata_v1` — adds `roof_type text`, `roof_age_years int`, `sq_footage int` to properties table

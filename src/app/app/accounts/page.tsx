@@ -1,55 +1,87 @@
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
+import AccountsClient from "@/app/app/accounts/accounts-client";
+
+type AccountRow = {
+  id: string;
+  name: string | null;
+  account_type: string | null;
+  status: string;
+  notes: string | null;
+  website: string | null;
+  phone: string | null;
+  updated_at: string;
+  created_by: string | null;
+  contact_count: number;
+  opportunity_count: number;
+  last_touch_at: string | null;
+};
 
 export default async function AccountsPage() {
-  const { supabase, orgId } = await requireServerOrgContext();
+  const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  const { data: accounts, error } = await supabase
-    .from("accounts")
-    .select("id,name,account_type,status,updated_at")
-    .eq("org_id", orgId)
-    .is("deleted_at", null)
-    .order("updated_at", { ascending: false })
-    .limit(250);
+  const [acctRes, contactRes, tpRes, oppRes, meRes] = await Promise.all([
+    supabase
+      .from("accounts")
+      .select("id,name,account_type,status,notes,website,phone,updated_at,created_by")
+      .is("deleted_at", null)
+      .order("updated_at", { ascending: false })
+      .limit(500),
+    supabase.from("contacts").select("account_id").is("deleted_at", null),
+    supabase
+      .from("touchpoints")
+      .select("account_id,happened_at")
+      .not("account_id", "is", null),
+    supabase.from("opportunities").select("account_id").not("account_id", "is", null),
+    supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
+  ]);
 
-  if (error) throw new Error(error.message);
+  const firstError = [acctRes.error, contactRes.error, tpRes.error, oppRes.error].find(Boolean);
+  if (firstError) throw new Error(firstError.message);
+
+  // Build lookup maps
+  const contactsByAccount = new Map<string, number>();
+  for (const c of contactRes.data ?? []) {
+    const id = c.account_id as string;
+    if (id) contactsByAccount.set(id, (contactsByAccount.get(id) ?? 0) + 1);
+  }
+
+  const lastTouchByAccount = new Map<string, string>();
+  for (const tp of tpRes.data ?? []) {
+    const id = tp.account_id as string;
+    const existing = lastTouchByAccount.get(id);
+    const happenedAt = tp.happened_at as string;
+    if (!existing || happenedAt > existing) lastTouchByAccount.set(id, happenedAt);
+  }
+
+  const oppsByAccount = new Map<string, number>();
+  for (const o of oppRes.data ?? []) {
+    const id = o.account_id as string;
+    if (id) oppsByAccount.set(id, (oppsByAccount.get(id) ?? 0) + 1);
+  }
+
+  const rows: AccountRow[] = (acctRes.data ?? []).map((a) => ({
+    id: a.id as string,
+    name: a.name as string | null,
+    account_type: a.account_type as string | null,
+    status: (a.status as string) ?? "active",
+    notes: a.notes as string | null,
+    website: (a as Record<string, unknown>).website as string | null ?? null,
+    phone: (a as Record<string, unknown>).phone as string | null ?? null,
+    updated_at: a.updated_at as string,
+    created_by: a.created_by as string | null,
+    contact_count: contactsByAccount.get(a.id as string) ?? 0,
+    opportunity_count: oppsByAccount.get(a.id as string) ?? 0,
+    last_touch_at: lastTouchByAccount.get(a.id as string) ?? null,
+  }));
+
+  const userRole = meRes.data?.role ?? "rep";
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Accounts</h1>
-        <p className="text-sm text-slate-600">Showing active accounts in your organization.</p>
-      </div>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-6">
-        {!accounts?.length ? (
-          <p className="text-sm text-slate-600">No accounts found.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-2 py-2 font-medium">Name</th>
-                  <th className="px-2 py-2 font-medium">Type</th>
-                  <th className="px-2 py-2 font-medium">Status</th>
-                  <th className="px-2 py-2 font-medium">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {accounts.map((account) => (
-                  <tr key={account.id} className="border-b border-slate-100 text-slate-700">
-                    <td className="px-2 py-2 font-medium text-slate-900">{account.name}</td>
-                    <td className="px-2 py-2">{account.account_type || "-"}</td>
-                    <td className="px-2 py-2">{account.status || "-"}</td>
-                    <td className="px-2 py-2">
-                      {account.updated_at ? new Date(account.updated_at).toLocaleString() : "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
+    <AccountsClient
+      accounts={rows}
+      orgId={orgId}
+      userId={userId}
+      userRole={userRole}
+    />
   );
 }

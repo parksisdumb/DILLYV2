@@ -74,7 +74,7 @@ function errorMessage(error: unknown): string {
     }
     try {
       const asObj = Object.fromEntries(
-        Object.entries(error as Record<string, unknown>),
+        Object.entries(error as unknown as Record<string, unknown>),
       );
       return JSON.stringify({ name: error.name, ...asObj });
     } catch {
@@ -131,7 +131,7 @@ async function listUsersByEmail(
 
 async function tryBootstrapOrgViaRpc(): Promise<string | null> {
   try {
-    const sessionClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+    const sessionClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY!, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
@@ -931,7 +931,7 @@ async function ensureTouchpoints(
         created_by: createdBy,
       };
     })
-    .filter((row): row is Record<string, unknown> => row !== null);
+    .filter((row): row is NonNullable<typeof row> => row !== null);
 
   if (missing.length > 0) {
     const { error: insertError } = await client.from("touchpoints").insert(missing);
@@ -1037,7 +1037,7 @@ async function ensureNextActions(
         created_by: createdBy,
       };
     })
-    .filter((row): row is Record<string, unknown> => row !== null);
+    .filter((row): row is NonNullable<typeof row> => row !== null);
 
   if (missing.length > 0) {
     const { error: insertError } = await client.from("next_actions").insert(missing);

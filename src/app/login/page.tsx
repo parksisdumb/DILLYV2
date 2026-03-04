@@ -1,5 +1,8 @@
 "use client";
 
+// Never prerender at build time — this page reads search params and auth state
+export const dynamic = "force-dynamic";
+
 import { Suspense, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { useRouter, useSearchParams } from "next/navigation";

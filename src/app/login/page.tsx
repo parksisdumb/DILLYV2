@@ -43,56 +43,71 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-2xl border p-6 space-y-4"
-      >
-        <h1 className="text-xl font-semibold">
-          {mode === "login" ? "Log in" : "Create account"}
-        </h1>
-
-        <div className="space-y-2">
-          <label className="text-sm">Email</label>
-          <input
-            className="w-full rounded-md border px-3 py-2"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            required
-          />
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+      <div className="w-full max-w-sm">
+        {/* Brand */}
+        <div className="mb-8 text-center">
+          <div className="text-2xl font-bold tracking-tight text-blue-600">Dilly</div>
+          <div className="mt-1 text-sm text-slate-500">Commercial Roofing BD OS</div>
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm">Password</label>
-          <input
-            className="w-full rounded-md border px-3 py-2"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            required
-          />
-        </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <button
-          className="w-full rounded-md border px-3 py-2"
-          disabled={loading}
+        <form
+          onSubmit={onSubmit}
+          className="w-full rounded-2xl border border-slate-200 bg-white p-8 shadow-sm space-y-5"
         >
-          {loading ? "..." : mode === "login" ? "Log in" : "Sign up"}
-        </button>
+          <h1 className="text-lg font-semibold text-slate-900">
+            {mode === "login" ? "Log in" : "Create account"}
+          </h1>
 
-        <button
-          type="button"
-          className="w-full text-sm underline"
-          onClick={() => setMode(mode === "login" ? "signup" : "login")}
-        >
-          {mode === "login"
-            ? "Need an account? Sign up"
-            : "Already have an account? Log in"}
-        </button>
-      </form>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-700">Email</label>
+            <input
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              autoComplete="email"
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-slate-700">Password</label>
+            <input
+              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              required
+            />
+          </div>
+
+          {error && (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={loading}
+          >
+            {loading ? "..." : mode === "login" ? "Log in" : "Sign up"}
+          </button>
+
+          <button
+            type="button"
+            className="w-full text-center text-sm text-slate-500 hover:text-slate-700"
+            onClick={() => setMode(mode === "login" ? "signup" : "login")}
+          >
+            {mode === "login"
+              ? "Need an account? Sign up"
+              : "Already have an account? Log in"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

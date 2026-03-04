@@ -1,67 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dilly v2
 
-## Getting Started
+Commercial roofing Business Development OS. Execution engine for BD reps:
+first-touch outreach, disciplined follow-up, territory-aware pipeline.
 
-First, run the development server:
+## Stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Next.js 16** (App Router), **React 19**
+- **Supabase** — PostgreSQL + Auth + Row Level Security
+- **Tailwind CSS v4**
+- **TypeScript** throughout
+
+## Local Development
+
+### Prerequisites
+
+- Node.js 20+
+- Supabase CLI: `npm install -g supabase`
+
+### Setup
+
+1. Clone the repo and install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Start Supabase locally:
+   ```bash
+   npx supabase start
+   ```
+
+3. Apply migrations and seed dev data:
+   ```bash
+   npx supabase db reset && npm run seed:dev
+   ```
+
+4. Copy the environment file:
+   ```bash
+   cp .env.local.example .env.local
+   ```
+
+5. Start the dev server:
+   ```bash
+   npm run dev
+   ```
+
+### Dev Credentials
+
+- **Admin:** `admin@dilly.dev` / `devpassword123!`
+- **Local app:** http://localhost:3000
+- **Supabase Studio:** http://127.0.0.1:54323
+
+## Project Structure
+
+```
+src/app/
+  app/                  Authenticated app shell (AppShell layout)
+    today/              Daily execution hub — Grow (outreach) + Advance (follow-up)
+    accounts/           Account list + detail
+    contacts/           Contact list + detail
+    properties/         Property list + detail
+    opportunities/      Pipeline view + deal detail
+    manager/            Manager dashboard (manager/admin only)
+    admin/              Team management + KPI targets
+    setup/              Org onboarding (first-time setup)
+  login/                Auth page (sign in / sign up)
+
+supabase/
+  migrations/           35 schema migrations — apply in order via `supabase db reset`
+  tests/                pgTAP RLS policy tests
+  seed.ts               Dev data seeder (accounts, contacts, properties, touchpoints)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Key Architecture Decisions
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Auth + RLS:** All queries are org-scoped via Supabase Row Level Security. Never add `org_id` filters to SELECT statements — RLS handles tenant isolation.
+- **Server context:** Always use `requireServerOrgContext()` from `@/lib/supabase/server-org` in Server Components and Server Actions. For auth-only checks (no org required), use `getServerAuthOrgState()`.
+- **Touchpoints are immutable:** Insert-only activity ledger. Never update or delete a touchpoint row.
+- **Contacts require an account:** `contacts.account_id` is NOT NULL.
+- **Opportunities require a property:** `opportunities.property_id` ties each deal to a building.
+- **Next actions are contact-first:** `next_actions.contact_id` and `account_id` are both NOT NULL.
+- **Write RPCs:** Use `rpc_log_outreach_touchpoint` for outreach (call/email/text/door_knock/site_visit) and `rpc_log_touchpoint` for non-outreach (inspection/bid/meeting). Never insert into `touchpoints` directly.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Database Tests
 
-## Learn More
+Run RLS policy tests with pgTAP:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npx supabase db reset
+npx supabase test db
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Test coverage is in `supabase/tests/rls_core.test.sql`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deployment
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## Local Dev User Seeding
-
-After resetting local Supabase, seed deterministic dev users:
-
-1. `npx supabase db reset`
-2. `npm run seed:dev`
-3. Log in with `admin@dilly.dev` / `devpassword123!`
-
-Environment required by the seeding script:
-
-- `SUPABASE_URL` (defaults to `http://127.0.0.1:54321`)
-- `SUPABASE_SERVICE_ROLE_KEY` (or `SERVICE_ROLE_KEY` from `supabase status -o env`)
-
-## RLS pgTAP Tests
-
-Run database policy tests with pgTAP:
-
-1. `npx supabase db reset`
-2. `npx supabase test db`
-
-Current core test coverage is in:
-
-- `supabase/tests/rls_core.test.sql`
-
-It verifies:
-
-- Rep org-wide `SELECT` access for accounts/contacts/properties.
-- Rep update restrictions for unassigned/not-created records.
-- Rep update allowance for assigned property.
-- Manager update allowance for unassigned property.
+Deployment requires a production Supabase project and a hosting provider (Vercel or equivalent). See the deployment guide — this repo is currently local-only.

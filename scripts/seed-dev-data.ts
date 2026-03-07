@@ -18,47 +18,170 @@ const DEV_USERS = [
   { email: "rep2@dilly.dev", role: "rep" as const },
 ];
 
-type TypeKeyRow = {
-  id: string;
-  key: string;
-};
+// ── Realistic commercial roofing seed data ─────────────────────────────
 
-type AccountRow = {
-  id: string;
-  name: string;
-};
+const ACCOUNT_SPECS = [
+  { name: "Lone Star Property Group", type: "owner", website: "https://lonestarpg.com", phone: "214-555-0100" },
+  { name: "Texas Commercial Realty", type: "commercial_property_management", website: "https://texascommercialrealty.com", phone: "972-555-0201" },
+  { name: "DFW Facilities Management", type: "facilities_management", website: "https://dfwfm.com", phone: "469-555-0302" },
+  { name: "Meridian Asset Partners", type: "asset_management", website: "https://meridianasset.com", phone: "214-555-0403" },
+  { name: "Summit General Contractors", type: "general_contractor", website: "https://summitgc.com", phone: "817-555-0504" },
+  { name: "Brazos Development Corp", type: "developer", website: "https://brazosdevelopment.com", phone: "254-555-0605" },
+  { name: "Capital Commercial Advisors", type: "broker", website: "https://capitalcommercial.com", phone: "512-555-0706" },
+  { name: "Pecan Park Office Partners", type: "owner", website: "https://pecanparkoffice.com", phone: "214-555-0807" },
+  { name: "Trinity Industrial Holdings", type: "owner", website: "https://trinityindustrial.com", phone: "817-555-0908" },
+  { name: "Crossroads Retail Group", type: "owner", website: "https://crossroadsretail.com", phone: "972-555-1009" },
+];
 
-type ContactRow = {
-  id: string;
-  email: string | null;
-  account_id: string;
-  full_name: string | null;
-};
+const CONTACT_SPECS: { firstName: string; lastName: string; title: string; phone: string; accountIdx: number }[] = [
+  // Lone Star Property Group (0)
+  { firstName: "Mike", lastName: "Hargrove", title: "Director of Facilities", phone: "214-555-1101", accountIdx: 0 },
+  { firstName: "Sarah", lastName: "Chen", title: "Property Manager", phone: "214-555-1102", accountIdx: 0 },
+  // Texas Commercial Realty (1)
+  { firstName: "James", lastName: "Whitfield", title: "VP of Operations", phone: "972-555-1201", accountIdx: 1 },
+  { firstName: "Rachel", lastName: "Dominguez", title: "Asset Manager", phone: "972-555-1202", accountIdx: 1 },
+  // DFW Facilities Management (2)
+  { firstName: "Tom", lastName: "Bradley", title: "Facilities Director", phone: "469-555-1301", accountIdx: 2 },
+  { firstName: "Anita", lastName: "Patel", title: "Maintenance Coordinator", phone: "469-555-1302", accountIdx: 2 },
+  { firstName: "Derek", lastName: "Simmons", title: "Regional Manager", phone: "469-555-1303", accountIdx: 2 },
+  // Meridian Asset Partners (3)
+  { firstName: "Karen", lastName: "Holloway", title: "Portfolio Manager", phone: "214-555-1401", accountIdx: 3 },
+  { firstName: "Luis", lastName: "Garza", title: "Asset Analyst", phone: "214-555-1402", accountIdx: 3 },
+  // Summit General Contractors (4)
+  { firstName: "Brian", lastName: "Kowalski", title: "Project Manager", phone: "817-555-1501", accountIdx: 4 },
+  { firstName: "Jen", lastName: "Thornton", title: "Estimator", phone: "817-555-1502", accountIdx: 4 },
+  // Brazos Development Corp (5)
+  { firstName: "Chris", lastName: "Nguyen", title: "Development Director", phone: "254-555-1601", accountIdx: 5 },
+  { firstName: "Amanda", lastName: "Reeves", title: "Project Coordinator", phone: "254-555-1602", accountIdx: 5 },
+  // Capital Commercial Advisors (6)
+  { firstName: "David", lastName: "Burke", title: "Senior Broker", phone: "512-555-1701", accountIdx: 6 },
+  { firstName: "Patricia", lastName: "Wells", title: "Associate Broker", phone: "512-555-1702", accountIdx: 6 },
+  // Pecan Park Office Partners (7)
+  { firstName: "Steve", lastName: "McAllister", title: "Managing Partner", phone: "214-555-1801", accountIdx: 7 },
+  { firstName: "Diana", lastName: "Ortiz", title: "Facilities Manager", phone: "214-555-1802", accountIdx: 7 },
+  // Trinity Industrial Holdings (8)
+  { firstName: "Robert", lastName: "Hale", title: "VP of Real Estate", phone: "817-555-1901", accountIdx: 8 },
+  { firstName: "Lisa", lastName: "Carpenter", title: "Property Coordinator", phone: "817-555-1902", accountIdx: 8 },
+  // Crossroads Retail Group (9)
+  { firstName: "Marcus", lastName: "Webb", title: "Director of Construction", phone: "972-555-2001", accountIdx: 9 },
+  { firstName: "Heather", lastName: "Flynn", title: "Lease Administrator", phone: "972-555-2002", accountIdx: 9 },
+  { firstName: "Tony", lastName: "Russo", title: "Maintenance Supervisor", phone: "972-555-2003", accountIdx: 9 },
+];
 
-type PropertyRow = {
-  id: string;
-  external_ref: string | null;
-  primary_account_id: string | null;
-  primary_contact_id: string | null;
-};
+const PROPERTY_SPECS: {
+  address: string; city: string; state: string; zip: string;
+  roofType: string; roofAge: number; sqFootage: number;
+  accountIdx: number; contactIdx: number;
+}[] = [
+  // Lone Star (0) — 2 properties
+  { address: "4200 Spring Valley Rd", city: "Dallas", state: "TX", zip: "75244", roofType: "TPO", roofAge: 8, sqFootage: 45000, accountIdx: 0, contactIdx: 0 },
+  { address: "1800 N Central Expy", city: "Richardson", state: "TX", zip: "75080", roofType: "Modified Bitumen", roofAge: 15, sqFootage: 32000, accountIdx: 0, contactIdx: 1 },
+  // Texas Commercial (1) — 2 properties
+  { address: "6100 Greenville Ave", city: "Dallas", state: "TX", zip: "75206", roofType: "EPDM", roofAge: 12, sqFootage: 28000, accountIdx: 1, contactIdx: 2 },
+  { address: "3400 W Plano Pkwy", city: "Plano", state: "TX", zip: "75075", roofType: "TPO", roofAge: 5, sqFootage: 55000, accountIdx: 1, contactIdx: 3 },
+  // DFW Facilities (2) — 2 properties
+  { address: "901 E Carpenter Fwy", city: "Irving", state: "TX", zip: "75062", roofType: "Built-Up (BUR)", roofAge: 20, sqFootage: 72000, accountIdx: 2, contactIdx: 4 },
+  { address: "2500 Dallas Pkwy", city: "Frisco", state: "TX", zip: "75034", roofType: "PVC", roofAge: 3, sqFootage: 38000, accountIdx: 2, contactIdx: 5 },
+  // Meridian (3) — 1 property
+  { address: "5050 Quorum Dr", city: "Dallas", state: "TX", zip: "75254", roofType: "Modified Bitumen", roofAge: 18, sqFootage: 90000, accountIdx: 3, contactIdx: 7 },
+  // Summit GC (4) — 1 property
+  { address: "1200 E Copeland Rd", city: "Arlington", state: "TX", zip: "76011", roofType: "Standing Seam Metal", roofAge: 2, sqFootage: 120000, accountIdx: 4, contactIdx: 9 },
+  // Brazos Dev (5) — 1 property
+  { address: "600 Congress Ave", city: "Austin", state: "TX", zip: "78701", roofType: "TPO", roofAge: 1, sqFootage: 65000, accountIdx: 5, contactIdx: 11 },
+  // Capital Commercial (6) — 1 property
+  { address: "300 W 6th St", city: "Austin", state: "TX", zip: "78701", roofType: "EPDM", roofAge: 14, sqFootage: 42000, accountIdx: 6, contactIdx: 13 },
+  // Pecan Park (7) — 2 properties
+  { address: "8700 N Stemmons Fwy", city: "Dallas", state: "TX", zip: "75247", roofType: "TPO", roofAge: 6, sqFootage: 52000, accountIdx: 7, contactIdx: 15 },
+  { address: "4000 McEwen Rd", city: "Farmers Branch", state: "TX", zip: "75234", roofType: "Built-Up (BUR)", roofAge: 22, sqFootage: 34000, accountIdx: 7, contactIdx: 16 },
+  // Trinity Industrial (8) — 2 properties
+  { address: "1500 Industrial Blvd", city: "Fort Worth", state: "TX", zip: "76104", roofType: "Standing Seam Metal", roofAge: 10, sqFootage: 150000, accountIdx: 8, contactIdx: 17 },
+  { address: "2200 Meacham Blvd", city: "Fort Worth", state: "TX", zip: "76106", roofType: "Modified Bitumen", roofAge: 16, sqFootage: 85000, accountIdx: 8, contactIdx: 18 },
+  // Crossroads Retail (9) — 2 properties
+  { address: "3200 Belt Line Rd", city: "Carrollton", state: "TX", zip: "75006", roofType: "TPO", roofAge: 7, sqFootage: 48000, accountIdx: 9, contactIdx: 19 },
+  { address: "5600 N Garland Ave", city: "Garland", state: "TX", zip: "75040", roofType: "EPDM", roofAge: 19, sqFootage: 36000, accountIdx: 9, contactIdx: 20 },
+];
 
-type OpportunityRow = {
-  id: string;
-  title: string | null;
-  property_id: string;
-  account_id: string | null;
-  primary_contact_id: string | null;
-};
+const OPPORTUNITY_SPECS: {
+  title: string; propertyIdx: number; scopeKey: string; stageKey: string;
+  estimatedValue: number;
+}[] = [
+  { title: "Spring Valley Roof Replacement", propertyIdx: 0, scopeKey: "replacement", stageKey: "proposal_sent", estimatedValue: 185000 },
+  { title: "Central Expy Leak Repair", propertyIdx: 1, scopeKey: "repair", stageKey: "inspection_scheduled", estimatedValue: 12000 },
+  { title: "Greenville Ave Annual Inspection", propertyIdx: 2, scopeKey: "inspection", stageKey: "open", estimatedValue: 3500 },
+  { title: "Plano Office Park Maintenance", propertyIdx: 3, scopeKey: "maintenance", stageKey: "open", estimatedValue: 8500 },
+  { title: "Carpenter Fwy Re-Roof", propertyIdx: 4, scopeKey: "replacement", stageKey: "proposal_sent", estimatedValue: 320000 },
+  { title: "Quorum Dr Coating Project", propertyIdx: 6, scopeKey: "maintenance", stageKey: "inspection_scheduled", estimatedValue: 45000 },
+  { title: "Arlington Warehouse Inspection", propertyIdx: 7, scopeKey: "inspection", stageKey: "open", estimatedValue: 5000 },
+  { title: "Congress Ave New Roof Warranty", propertyIdx: 8, scopeKey: "maintenance", stageKey: "open", estimatedValue: 2500 },
+  { title: "Stemmons Fwy TPO Overlay", propertyIdx: 10, scopeKey: "replacement", stageKey: "inspection_scheduled", estimatedValue: 210000 },
+  { title: "Industrial Blvd Metal Roof Repair", propertyIdx: 12, scopeKey: "repair", stageKey: "proposal_sent", estimatedValue: 28000 },
+];
 
-type TouchpointRow = {
-  id: string;
-  notes: string | null;
-};
+const TOUCHPOINT_TEMPLATES: {
+  typeKey: string; outcomeKey: string; phase: string; notes: string;
+  contactIdx: number; propertyIdx: number | null; daysAgo: number;
+}[] = [
+  // First-touch outreach wave (30-60 days ago)
+  { typeKey: "call", outcomeKey: "connected", phase: "first_touch", notes: "Intro call — discussed roof age, interested in inspection", contactIdx: 0, propertyIdx: 0, daysAgo: 55 },
+  { typeKey: "email", outcomeKey: "follow_up_sent", phase: "first_touch", notes: "Sent company intro and case studies", contactIdx: 2, propertyIdx: 2, daysAgo: 52 },
+  { typeKey: "door_knock", outcomeKey: "connected", phase: "first_touch", notes: "Stopped by office — spoke with facilities director about BUR roof", contactIdx: 4, propertyIdx: 4, daysAgo: 50 },
+  { typeKey: "call", outcomeKey: "no_answer", phase: "first_touch", notes: "No answer — left voicemail about roof inspection program", contactIdx: 7, propertyIdx: 6, daysAgo: 48 },
+  { typeKey: "call", outcomeKey: "connected", phase: "first_touch", notes: "Great conversation — she manages portfolio of 12 buildings", contactIdx: 7, propertyIdx: null, daysAgo: 45 },
+  { typeKey: "email", outcomeKey: "follow_up_sent", phase: "first_touch", notes: "Sent TPO vs EPDM comparison doc", contactIdx: 9, propertyIdx: 7, daysAgo: 44 },
+  { typeKey: "site_visit", outcomeKey: "inspection_set", phase: "first_touch", notes: "Walked roof with Mike — significant ponding water areas", contactIdx: 0, propertyIdx: 0, daysAgo: 42 },
+  { typeKey: "call", outcomeKey: "connected", phase: "first_touch", notes: "Intro call — new construction project needs roof spec", contactIdx: 11, propertyIdx: 8, daysAgo: 40 },
+  { typeKey: "door_knock", outcomeKey: "connected", phase: "first_touch", notes: "Met Steve at property — showed him hail damage on north section", contactIdx: 15, propertyIdx: 10, daysAgo: 38 },
+  { typeKey: "call", outcomeKey: "no_answer", phase: "first_touch", notes: "No answer — will try again Thursday", contactIdx: 17, propertyIdx: 12, daysAgo: 36 },
+  // Follow-up wave (15-35 days ago)
+  { typeKey: "call", outcomeKey: "connected", phase: "follow_up", notes: "Follow-up on inspection — ready for proposal", contactIdx: 0, propertyIdx: 0, daysAgo: 30 },
+  { typeKey: "email", outcomeKey: "follow_up_sent", phase: "follow_up", notes: "Sent proposal for Carpenter Fwy re-roof — $320k", contactIdx: 4, propertyIdx: 4, daysAgo: 28 },
+  { typeKey: "call", outcomeKey: "connected", phase: "follow_up", notes: "Discussed proposal — wants to compare with one more bid", contactIdx: 4, propertyIdx: 4, daysAgo: 25 },
+  { typeKey: "site_visit", outcomeKey: "inspection_set", phase: "follow_up", notes: "Roof inspection with Karen — measured 90k SF, noted seam failures", contactIdx: 7, propertyIdx: 6, daysAgo: 22 },
+  { typeKey: "email", outcomeKey: "follow_up_sent", phase: "follow_up", notes: "Sent maintenance agreement template", contactIdx: 3, propertyIdx: 3, daysAgo: 20 },
+  { typeKey: "call", outcomeKey: "connected", phase: "follow_up", notes: "Robert wants metal roof repair quote by Friday", contactIdx: 17, propertyIdx: 12, daysAgo: 18 },
+  { typeKey: "email", outcomeKey: "follow_up_sent", phase: "follow_up", notes: "Sent repair estimate — $28k for flashing and panel replacement", contactIdx: 17, propertyIdx: 12, daysAgo: 15 },
+  { typeKey: "call", outcomeKey: "connected", phase: "follow_up", notes: "Diana confirmed board approved TPO overlay project", contactIdx: 16, propertyIdx: 10, daysAgo: 12 },
+  // Recent activity (0-10 days ago)
+  { typeKey: "call", outcomeKey: "no_answer", phase: "follow_up", notes: "Checking on Greenville Ave inspection date", contactIdx: 2, propertyIdx: 2, daysAgo: 8 },
+  { typeKey: "site_visit", outcomeKey: "connected", phase: "follow_up", notes: "Walked Stemmons Fwy roof — measured for TPO overlay spec", contactIdx: 15, propertyIdx: 10, daysAgo: 7 },
+  { typeKey: "email", outcomeKey: "follow_up_sent", phase: "follow_up", notes: "Sent revised Spring Valley proposal with warranty options", contactIdx: 0, propertyIdx: 0, daysAgo: 5 },
+  { typeKey: "call", outcomeKey: "connected", phase: "follow_up", notes: "Brian confirmed Summit will sub us for the Arlington roof", contactIdx: 9, propertyIdx: 7, daysAgo: 4 },
+  { typeKey: "door_knock", outcomeKey: "connected", phase: "first_touch", notes: "Dropped by — introduced services to Marcus", contactIdx: 19, propertyIdx: 14, daysAgo: 3 },
+  { typeKey: "call", outcomeKey: "connected", phase: "follow_up", notes: "Mike wants to sign Spring Valley replacement contract next week", contactIdx: 0, propertyIdx: 0, daysAgo: 2 },
+  { typeKey: "email", outcomeKey: "follow_up_sent", phase: "first_touch", notes: "Sent intro packet to Belt Line property contacts", contactIdx: 19, propertyIdx: 14, daysAgo: 1 },
+  { typeKey: "call", outcomeKey: "connected", phase: "follow_up", notes: "Confirmed Carpenter Fwy proposal is with their board", contactIdx: 4, propertyIdx: 4, daysAgo: 0 },
+];
 
-type UserByEmail = {
-  id: string;
-  email: string;
-};
+const NEXT_ACTION_SPECS: {
+  contactIdx: number; propertyIdx: number | null; oppIdx: number | null;
+  typeKey: string; notes: string; daysFromNow: number; status: string;
+}[] = [
+  // Overdue
+  { contactIdx: 2, propertyIdx: 2, oppIdx: 2, typeKey: "call", notes: "Schedule Greenville Ave inspection date", daysFromNow: -3, status: "open" },
+  { contactIdx: 7, propertyIdx: 6, oppIdx: 5, typeKey: "email", notes: "Send Quorum Dr coating proposal", daysFromNow: -1, status: "open" },
+  // Today
+  { contactIdx: 0, propertyIdx: 0, oppIdx: 0, typeKey: "call", notes: "Confirm Spring Valley contract signing", daysFromNow: 0, status: "open" },
+  { contactIdx: 4, propertyIdx: 4, oppIdx: 4, typeKey: "call", notes: "Follow up on Carpenter Fwy board decision", daysFromNow: 0, status: "open" },
+  // Upcoming
+  { contactIdx: 17, propertyIdx: 12, oppIdx: 9, typeKey: "site_visit", notes: "Metal roof repair pre-work site visit", daysFromNow: 2, status: "open" },
+  { contactIdx: 15, propertyIdx: 10, oppIdx: 8, typeKey: "email", notes: "Send Stemmons TPO overlay proposal", daysFromNow: 3, status: "open" },
+  { contactIdx: 11, propertyIdx: 8, oppIdx: 7, typeKey: "call", notes: "Check on Congress Ave warranty paperwork", daysFromNow: 5, status: "open" },
+  { contactIdx: 3, propertyIdx: 3, oppIdx: 3, typeKey: "call", notes: "Follow up on Plano maintenance agreement", daysFromNow: 7, status: "open" },
+  { contactIdx: 19, propertyIdx: 14, oppIdx: null, typeKey: "door_knock", notes: "Second visit to Belt Line Rd property", daysFromNow: 4, status: "open" },
+  // Completed
+  { contactIdx: 0, propertyIdx: 0, oppIdx: 0, typeKey: "email", notes: "Send revised proposal with warranty options", daysFromNow: -5, status: "completed" },
+  { contactIdx: 9, propertyIdx: 7, oppIdx: 6, typeKey: "call", notes: "Confirm Arlington subcontract details", daysFromNow: -4, status: "completed" },
+];
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+type TypeKeyRow = { id: string; key: string };
+type AccountRow = { id: string; name: string };
+type ContactRow = { id: string; email: string | null; account_id: string; full_name: string | null };
+type PropertyRow = { id: string; external_ref: string | null; primary_account_id: string | null; primary_contact_id: string | null };
+type OpportunityRow = { id: string; title: string | null; property_id: string; account_id: string | null; primary_contact_id: string | null };
+type TouchpointRow = { id: string; notes: string | null };
+type UserByEmail = { id: string; email: string };
 
 if (!SERVICE_ROLE_KEY) {
   console.error("Missing SUPABASE_SERVICE_ROLE_KEY (or SERVICE_ROLE_KEY) in env");
@@ -67,39 +190,14 @@ if (!SERVICE_ROLE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    if (error.message && error.message.trim().length > 0) {
-      return error.message;
-    }
-    try {
-      const asObj = Object.fromEntries(
-        Object.entries(error as unknown as Record<string, unknown>),
-      );
-      return JSON.stringify({ name: error.name, ...asObj });
-    } catch {
-      return String(error);
-    }
-  }
+  if (error instanceof Error) return error.message || String(error);
   if (typeof error === "object" && error !== null) {
-    try {
-      return JSON.stringify(error);
-    } catch {
-      return String(error);
-    }
+    try { return JSON.stringify(error); } catch { return String(error); }
   }
   return String(error);
-}
-
-function assertString(value: unknown, label: string): string {
-  if (typeof value !== "string" || !value) {
-    throw new Error(`Expected ${label} to be a non-empty string`);
-  }
-  return value;
-}
-
-function noteFor(prefix: string, idx: number): string {
-  return `${prefix}-${String(idx).padStart(2, "0")}`;
 }
 
 async function listUsersByEmail(
@@ -108,24 +206,17 @@ async function listUsersByEmail(
 ): Promise<Map<string, UserByEmail>> {
   const wanted = new Set(emails.map((e) => e.toLowerCase()));
   const out = new Map<string, UserByEmail>();
-  const perPage = 200;
   let page = 1;
-
   while (true) {
-    const { data, error } = await client.auth.admin.listUsers({ page, perPage });
+    const { data, error } = await client.auth.admin.listUsers({ page, perPage: 200 });
     if (error) throw error;
-
     for (const user of data.users) {
       const email = (user.email || "").toLowerCase();
-      if (wanted.has(email) && user.id) {
-        out.set(email, { id: user.id, email });
-      }
+      if (wanted.has(email) && user.id) out.set(email, { id: user.id, email });
     }
-
-    if (data.users.length < perPage || out.size === wanted.size) break;
+    if (data.users.length < 200 || out.size === wanted.size) break;
     page++;
   }
-
   return out;
 }
 
@@ -134,67 +225,41 @@ async function tryBootstrapOrgViaRpc(): Promise<string | null> {
     const sessionClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY!, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-
     const { error: signInError } = await sessionClient.auth.signInWithPassword({
       email: "admin@dilly.dev",
       password: DEV_PASSWORD,
     });
+    if (signInError) return null;
 
-    if (signInError) {
-      return null;
-    }
-
-    const { data, error } = await sessionClient.rpc("rpc_bootstrap_org", {
-      p_org_name: DEV_ORG_NAME,
-    });
-
+    const { data, error } = await sessionClient.rpc("rpc_bootstrap_org", { p_org_name: DEV_ORG_NAME });
     await sessionClient.auth.signOut();
-
     if (error) return null;
-
     if (typeof data === "string" && data) return data;
-    if (Array.isArray(data) && data.length > 0 && typeof data[0] === "string") {
-      return data[0];
-    }
-
+    if (Array.isArray(data) && data.length > 0 && typeof data[0] === "string") return data[0];
     return null;
   } catch {
     return null;
   }
 }
 
-async function ensureDevOrg(
-  client: SupabaseClient,
-  adminUserId: string,
-): Promise<string> {
+async function ensureDevOrg(client: SupabaseClient, adminUserId: string): Promise<string> {
   const { data: existing, error: existingError } = await client
     .from("orgs")
     .select("id, created_at")
     .eq("name", DEV_ORG_NAME)
     .order("created_at", { ascending: true });
-
   if (existingError) throw existingError;
 
-  if (existing && existing.length > 0) {
-    if (existing.length > 1) {
-      console.log(
-        `WARN: Found ${existing.length} org rows named "${DEV_ORG_NAME}". Reusing oldest: ${existing[0].id}`,
-      );
-    }
-    return existing[0].id;
-  }
+  if (existing && existing.length > 0) return existing[0].id;
 
   const rpcOrgId = await tryBootstrapOrgViaRpc();
-  if (rpcOrgId) {
-    return rpcOrgId;
-  }
+  if (rpcOrgId) return rpcOrgId;
 
   const { data: inserted, error: insertError } = await client
     .from("orgs")
     .insert({ name: DEV_ORG_NAME, created_by: adminUserId })
     .select("id")
     .single();
-
   if (insertError) throw insertError;
   return inserted.id;
 }
@@ -207,31 +272,46 @@ async function ensureOrgUsers(
   const rows = DEV_USERS.map((u) => {
     const found = users.get(u.email.toLowerCase());
     if (!found) throw new Error(`Missing seeded auth user: ${u.email}`);
-
-    return {
-      org_id: orgId,
-      user_id: found.id,
-      role: u.role,
-    };
+    return { org_id: orgId, user_id: found.id, role: u.role };
   });
-
-  const { error } = await client.from("org_users").upsert(rows, {
-    onConflict: "user_id",
-    ignoreDuplicates: false,
-  });
-
+  const { error } = await client.from("org_users").upsert(rows, { onConflict: "user_id", ignoreDuplicates: false });
   if (error) throw error;
 }
+
+async function ensureProfiles(
+  client: SupabaseClient,
+  users: Map<string, UserByEmail>,
+): Promise<void> {
+  const profileSpecs = [
+    { email: "admin@dilly.dev", fullName: "Jordan Mitchell" },
+    { email: "manager@dilly.dev", fullName: "Casey Rivera" },
+    { email: "rep1@dilly.dev", fullName: "Tyler Dawson" },
+    { email: "rep2@dilly.dev", fullName: "Megan Foster" },
+  ];
+  for (const spec of profileSpecs) {
+    const user = users.get(spec.email.toLowerCase());
+    if (!user) continue;
+    const { data: existing } = await client
+      .from("profiles")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (existing) {
+      await client.from("profiles").update({ full_name: spec.fullName }).eq("user_id", user.id);
+    } else {
+      await client.from("profiles").insert({ user_id: user.id, full_name: spec.fullName });
+    }
+  }
+}
+
+// ── Type tables (touchpoint_types, outcomes, scope_types, stages, etc.) ──
 
 async function upsertKeyRows(
   client: SupabaseClient,
   table: string,
   rows: Record<string, unknown>[],
 ): Promise<void> {
-  const { error } = await client.from(table).upsert(rows, {
-    onConflict: "org_id,key",
-    ignoreDuplicates: false,
-  });
+  const { error } = await client.from(table).upsert(rows, { onConflict: "org_id,key", ignoreDuplicates: false });
   if (error) throw error;
 }
 
@@ -241,14 +321,8 @@ async function fetchKeyIdMap(
   orgId: string,
   keys: string[],
 ): Promise<Map<string, string>> {
-  const { data, error } = await client
-    .from(table)
-    .select("id,key")
-    .eq("org_id", orgId)
-    .in("key", keys);
-
+  const { data, error } = await client.from(table).select("id,key").eq("org_id", orgId).in("key", keys);
   if (error) throw error;
-
   const map = new Map<string, string>();
   for (const row of (data ?? []) as TypeKeyRow[]) {
     if (row.key) map.set(row.key, row.id);
@@ -265,8 +339,6 @@ async function ensureTypeTables(
   stages: Map<string, string>;
   touchpointTypes: Map<string, string>;
   touchpointOutcomes: Map<string, string>;
-  milestoneTypes: Map<string, string>;
-  lostReasons: Map<string, string>;
 }> {
   const scopeRows = [
     { org_id: orgId, key: "inspection", name: "Inspection", sort_order: 10, created_by: createdBy },
@@ -294,9 +366,21 @@ async function ensureTypeTables(
     { org_id: orgId, key: "inspection", name: "Inspection", sort_order: 60, is_outreach: false, created_by: createdBy },
     { org_id: orgId, key: "bid_sent", name: "Bid Sent", sort_order: 70, is_outreach: false, created_by: createdBy },
     { org_id: orgId, key: "meeting", name: "Meeting", sort_order: 80, is_outreach: false, created_by: createdBy },
-    { org_id: orgId, key: "note", name: "Note", sort_order: 90, is_outreach: false, created_by: createdBy },
   ];
   await upsertKeyRows(client, "touchpoint_types", touchpointTypeRows);
+
+  const touchpointTypeMap = await fetchKeyIdMap(
+    client, "touchpoint_types", orgId,
+    touchpointTypeRows.map((r) => r.key),
+  );
+
+  const outcomeRows = [
+    { org_id: orgId, key: "connected", name: "Connected", category: "engagement", sort_order: 10, touchpoint_type_id: touchpointTypeMap.get("call") ?? null, created_by: createdBy },
+    { org_id: orgId, key: "no_answer", name: "No Answer", category: "engagement", sort_order: 20, touchpoint_type_id: touchpointTypeMap.get("call") ?? null, created_by: createdBy },
+    { org_id: orgId, key: "follow_up_sent", name: "Follow Up Sent", category: "engagement", sort_order: 30, touchpoint_type_id: touchpointTypeMap.get("email") ?? null, created_by: createdBy },
+    { org_id: orgId, key: "inspection_set", name: "Inspection Set", category: "inspection", sort_order: 40, touchpoint_type_id: touchpointTypeMap.get("site_visit") ?? null, created_by: createdBy },
+  ];
+  await upsertKeyRows(client, "touchpoint_outcomes", outcomeRows);
 
   const milestoneRows = [
     { org_id: orgId, key: "inspection_scheduled", name: "Inspection Scheduled", sort_order: 10, default_points: 5, created_by: createdBy },
@@ -313,108 +397,50 @@ async function ensureTypeTables(
   ];
   await upsertKeyRows(client, "lost_reason_types", lostReasonRows);
 
-  const touchpointTypeMap = await fetchKeyIdMap(
-    client,
-    "touchpoint_types",
-    orgId,
-    touchpointTypeRows.map((r) => assertString(r.key, "touchpoint type key")),
-  );
-
-  const outcomeRows = [
-    {
-      org_id: orgId,
-      key: "connected",
-      name: "Connected",
-      category: "engagement",
-      sort_order: 10,
-      touchpoint_type_id: touchpointTypeMap.get("call") ?? null,
-      created_by: createdBy,
-    },
-    {
-      org_id: orgId,
-      key: "no_answer",
-      name: "No Answer",
-      category: "engagement",
-      sort_order: 20,
-      touchpoint_type_id: touchpointTypeMap.get("call") ?? null,
-      created_by: createdBy,
-    },
-    {
-      org_id: orgId,
-      key: "follow_up_sent",
-      name: "Follow Up Sent",
-      category: "engagement",
-      sort_order: 30,
-      touchpoint_type_id: touchpointTypeMap.get("email") ?? null,
-      created_by: createdBy,
-    },
-    {
-      org_id: orgId,
-      key: "inspection_set",
-      name: "Inspection Set",
-      category: "inspection",
-      sort_order: 40,
-      touchpoint_type_id: touchpointTypeMap.get("site_visit") ?? null,
-      created_by: createdBy,
-    },
-  ];
-  await upsertKeyRows(client, "touchpoint_outcomes", outcomeRows);
-
   return {
-    scopeTypes: await fetchKeyIdMap(client, "scope_types", orgId, scopeRows.map((r) => assertString(r.key, "scope key"))),
-    stages: await fetchKeyIdMap(client, "opportunity_stages", orgId, stageRows.map((r) => assertString(r.key, "stage key"))),
+    scopeTypes: await fetchKeyIdMap(client, "scope_types", orgId, scopeRows.map((r) => r.key)),
+    stages: await fetchKeyIdMap(client, "opportunity_stages", orgId, stageRows.map((r) => r.key)),
     touchpointTypes: touchpointTypeMap,
-    touchpointOutcomes: await fetchKeyIdMap(client, "touchpoint_outcomes", orgId, outcomeRows.map((r) => assertString(r.key, "outcome key"))),
-    milestoneTypes: await fetchKeyIdMap(client, "milestone_types", orgId, milestoneRows.map((r) => assertString(r.key, "milestone key"))),
-    lostReasons: await fetchKeyIdMap(client, "lost_reason_types", orgId, lostReasonRows.map((r) => assertString(r.key, "lost reason key"))),
+    touchpointOutcomes: await fetchKeyIdMap(client, "touchpoint_outcomes", orgId, outcomeRows.map((r) => r.key)),
   };
 }
+
+// ── Accounts ───────────────────────────────────────────────────────────────
 
 async function ensureAccounts(
   client: SupabaseClient,
   orgId: string,
   createdBy: string,
 ): Promise<AccountRow[]> {
-  const specs = Array.from({ length: 10 }, (_, i) => ({
-    name: `Seed Account ${String(i + 1).padStart(2, "0")}`,
-    account_type: i % 2 === 0 ? "owner" : "property_manager",
-    notes: `seed-account-${String(i + 1).padStart(2, "0")}`,
-  }));
-
-  const names = specs.map((s) => s.name);
+  const names = ACCOUNT_SPECS.map((s) => s.name);
   const { data: existing, error: existingError } = await client
-    .from("accounts")
-    .select("id,name")
-    .eq("org_id", orgId)
-    .in("name", names);
-
+    .from("accounts").select("id,name").eq("org_id", orgId).in("name", names);
   if (existingError) throw existingError;
 
-  const existingNames = new Set((existing ?? []).map((row) => row.name));
-  const missing = specs
+  const existingNames = new Set((existing ?? []).map((r) => r.name));
+  const missing = ACCOUNT_SPECS
     .filter((s) => !existingNames.has(s.name))
     .map((s) => ({
       org_id: orgId,
       name: s.name,
-      account_type: s.account_type,
-      notes: s.notes,
+      account_type: s.type,
+      website: s.website,
+      phone: s.phone,
       created_by: createdBy,
     }));
 
   if (missing.length > 0) {
-    const { error: insertError } = await client.from("accounts").insert(missing);
-    if (insertError) throw insertError;
+    const { error } = await client.from("accounts").insert(missing);
+    if (error) throw error;
   }
 
   const { data: rows, error: fetchError } = await client
-    .from("accounts")
-    .select("id,name")
-    .eq("org_id", orgId)
-    .in("name", names);
+    .from("accounts").select("id,name").eq("org_id", orgId).in("name", names);
   if (fetchError) throw fetchError;
-
   return (rows ?? []) as AccountRow[];
 }
+
+// ── Contacts ───────────────────────────────────────────────────────────────
 
 async function ensureContacts(
   client: SupabaseClient,
@@ -422,71 +448,51 @@ async function ensureContacts(
   createdBy: string,
   accounts: AccountRow[],
 ): Promise<ContactRow[]> {
-  const accountIds = accounts.map((a) => a.id);
-  if (accountIds.length === 0) {
-    throw new Error("Cannot seed contacts without at least one account.");
+  const accountByIdx = new Map<number, string>();
+  for (let i = 0; i < ACCOUNT_SPECS.length; i++) {
+    const account = accounts.find((a) => a.name === ACCOUNT_SPECS[i].name);
+    if (account) accountByIdx.set(i, account.id);
   }
 
-  const specs = Array.from({ length: 25 }, (_, i) => {
-    const idx = i + 1;
-    const firstName = `Contact${String(idx).padStart(2, "0")}`;
-    const lastName = "Seed";
-    const accountId = accountIds[i % accountIds.length];
-    if (!accountId) {
-      throw new Error(`Missing account id for contact seed index ${idx}`);
-    }
+  const specs = CONTACT_SPECS.map((c, i) => {
+    const accountId = accountByIdx.get(c.accountIdx);
+    if (!accountId) throw new Error(`Missing account for contact ${c.firstName} ${c.lastName}`);
+    const email = `${c.firstName.toLowerCase()}.${c.lastName.toLowerCase()}@dilly.dev`;
     return {
-      email: `contact${String(idx).padStart(2, "0")}@dilly.dev`,
-      full_name: `${firstName} ${lastName}`,
-      first_name: firstName,
-      last_name: lastName,
-      title: idx % 3 === 0 ? "Facilities Manager" : "Owner Rep",
-      phone: `555-010${String(idx % 10)}`,
-      decision_role: idx % 2 === 0 ? "decision_maker" : "influencer",
-      priority_score: Number((idx % 7) + 1),
+      email,
+      full_name: `${c.firstName} ${c.lastName}`,
+      first_name: c.firstName,
+      last_name: c.lastName,
+      title: c.title,
+      phone: c.phone,
+      decision_role: i % 2 === 0 ? "decision_maker" : "influencer",
+      priority_score: Math.min(7, Math.floor(i / 3) + 1),
       account_id: accountId,
     };
   });
 
   const emails = specs.map((s) => s.email);
   const { data: existing, error: existingError } = await client
-    .from("contacts")
-    .select("id,email,account_id,full_name")
-    .eq("org_id", orgId)
-    .in("email", emails);
+    .from("contacts").select("id,email,account_id,full_name").eq("org_id", orgId).in("email", emails);
   if (existingError) throw existingError;
 
-  const existingEmails = new Set((existing ?? []).map((row) => (row.email || "").toLowerCase()));
+  const existingEmails = new Set((existing ?? []).map((r) => (r.email || "").toLowerCase()));
   const missing = specs
     .filter((s) => !existingEmails.has(s.email.toLowerCase()))
-    .map((s) => ({
-      org_id: orgId,
-      account_id: s.account_id,
-      full_name: s.full_name,
-      first_name: s.first_name,
-      last_name: s.last_name,
-      title: s.title,
-      email: s.email,
-      phone: s.phone,
-      decision_role: s.decision_role,
-      priority_score: s.priority_score,
-      created_by: createdBy,
-    }));
+    .map((s) => ({ org_id: orgId, ...s, created_by: createdBy }));
 
   if (missing.length > 0) {
-    const { error: insertError } = await client.from("contacts").insert(missing);
-    if (insertError) throw insertError;
+    const { error } = await client.from("contacts").insert(missing);
+    if (error) throw error;
   }
 
   const { data: rows, error: fetchError } = await client
-    .from("contacts")
-    .select("id,email,account_id,full_name")
-    .eq("org_id", orgId)
-    .in("email", emails);
+    .from("contacts").select("id,email,account_id,full_name").eq("org_id", orgId).in("email", emails);
   if (fetchError) throw fetchError;
-
   return (rows ?? []) as ContactRow[];
 }
+
+// ── Properties ─────────────────────────────────────────────────────────────
 
 async function ensureProperties(
   client: SupabaseClient,
@@ -495,109 +501,60 @@ async function ensureProperties(
   accounts: AccountRow[],
   contacts: ContactRow[],
 ): Promise<PropertyRow[]> {
-  const accountIds = accounts.map((a) => a.id);
-  const contactsByAccount = new Map<string, ContactRow[]>();
-  for (const contact of contacts) {
-    const list = contactsByAccount.get(contact.account_id) ?? [];
-    list.push(contact);
-    contactsByAccount.set(contact.account_id, list);
+  const accountByIdx = new Map<number, string>();
+  for (let i = 0; i < ACCOUNT_SPECS.length; i++) {
+    const account = accounts.find((a) => a.name === ACCOUNT_SPECS[i].name);
+    if (account) accountByIdx.set(i, account.id);
+  }
+  const contactByIdx = new Map<number, string>();
+  for (let i = 0; i < CONTACT_SPECS.length; i++) {
+    const spec = CONTACT_SPECS[i];
+    const contact = contacts.find((c) => c.full_name === `${spec.firstName} ${spec.lastName}`);
+    if (contact) contactByIdx.set(i, contact.id);
   }
 
-  const specs = Array.from({ length: 15 }, (_, i) => {
-    const idx = i + 1;
-    const primaryAccountId = accountIds[i % accountIds.length] ?? null;
-    const accountContacts = primaryAccountId ? (contactsByAccount.get(primaryAccountId) ?? []) : [];
-    const primaryContactId =
-      accountContacts.length > 0 ? accountContacts[i % accountContacts.length]?.id ?? null : null;
-
-    return {
-      external_ref: `seed-property-${String(idx).padStart(2, "0")}`,
-      address_line1: `${1000 + idx} Seed St`,
-      city: idx % 2 === 0 ? "Austin" : "Dallas",
-      state: "TX",
-      postal_code: `75${String(100 + idx).slice(-3)}`,
-      country: "US",
-      notes: `Seed property ${idx}`,
-      primary_account_id: primaryAccountId,
-      primary_contact_id: primaryContactId,
-    };
-  });
-
-  const refs = specs.map((s) => s.external_ref);
+  const refs = PROPERTY_SPECS.map((_, i) => `seed-prop-${String(i + 1).padStart(2, "0")}`);
   const { data: existing, error: existingError } = await client
-    .from("properties")
-    .select("id,external_ref,primary_account_id,primary_contact_id")
-    .eq("org_id", orgId)
-    .in("external_ref", refs);
+    .from("properties").select("id,external_ref,primary_account_id,primary_contact_id")
+    .eq("org_id", orgId).in("external_ref", refs);
   if (existingError) throw existingError;
 
-  const existingRefs = new Set((existing ?? []).map((row) => row.external_ref));
-  const missing = specs
-    .filter((s) => !existingRefs.has(s.external_ref))
-    .map((s) => ({
-      org_id: orgId,
-      external_ref: s.external_ref,
-      address_line1: s.address_line1,
-      city: s.city,
-      state: s.state,
-      postal_code: s.postal_code,
-      country: s.country,
-      notes: s.notes,
-      primary_account_id: s.primary_account_id,
-      primary_contact_id: s.primary_contact_id,
-      created_by: createdBy,
-    }));
+  const existingRefs = new Set((existing ?? []).map((r) => r.external_ref));
+  const missing = PROPERTY_SPECS
+    .map((p, i) => {
+      const ref = refs[i];
+      if (existingRefs.has(ref)) return null;
+      return {
+        org_id: orgId,
+        external_ref: ref,
+        address_line1: p.address,
+        city: p.city,
+        state: p.state,
+        postal_code: p.zip,
+        country: "US",
+        roof_type: p.roofType,
+        roof_age_years: p.roofAge,
+        sq_footage: p.sqFootage,
+        primary_account_id: accountByIdx.get(p.accountIdx) ?? null,
+        primary_contact_id: contactByIdx.get(p.contactIdx) ?? null,
+        created_by: createdBy,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (missing.length > 0) {
-    const { error: insertError } = await client.from("properties").insert(missing);
-    if (insertError) throw insertError;
+    const { error } = await client.from("properties").insert(missing);
+    if (error) throw error;
   }
 
   const { data: rows, error: fetchError } = await client
-    .from("properties")
-    .select("id,external_ref,primary_account_id,primary_contact_id")
-    .eq("org_id", orgId)
-    .in("external_ref", refs);
+    .from("properties").select("id,external_ref,primary_account_id,primary_contact_id")
+    .eq("org_id", orgId).in("external_ref", refs);
   if (fetchError) throw fetchError;
-  const properties = (rows ?? []) as PropertyRow[];
-
-  const propertyByRef = new Map(
-    properties
-      .filter((p) => p.external_ref)
-      .map((p) => [p.external_ref as string, p]),
-  );
-
-  for (const spec of specs) {
-    const property = propertyByRef.get(spec.external_ref);
-    if (!property) continue;
-
-    const patch: Record<string, unknown> = {};
-    if (!property.primary_account_id && spec.primary_account_id) {
-      patch.primary_account_id = spec.primary_account_id;
-    }
-    if (!property.primary_contact_id && spec.primary_contact_id) {
-      patch.primary_contact_id = spec.primary_contact_id;
-    }
-
-    if (Object.keys(patch).length === 0) continue;
-
-    const { error: updateError } = await client
-      .from("properties")
-      .update(patch)
-      .eq("id", property.id)
-      .eq("org_id", orgId);
-    if (updateError) throw updateError;
-  }
-
-  const { data: refreshed, error: refreshError } = await client
-    .from("properties")
-    .select("id,external_ref,primary_account_id,primary_contact_id")
-    .eq("org_id", orgId)
-    .in("external_ref", refs);
-  if (refreshError) throw refreshError;
-
-  return (refreshed ?? []) as PropertyRow[];
+  return (rows ?? []) as PropertyRow[];
 }
+
+// ── Property links & assignments ───────────────────────────────────────────
 
 async function ensurePropertyAssignments(
   client: SupabaseClient,
@@ -608,30 +565,12 @@ async function ensurePropertyAssignments(
   rep2Id: string,
 ): Promise<void> {
   const rows = properties.flatMap((p, i) => {
-    const primaryRep = i % 2 === 0 ? rep1Id : rep2Id;
-    const secondaryRep = i % 2 === 0 ? rep2Id : rep1Id;
+    const primary = i % 2 === 0 ? rep1Id : rep2Id;
     return [
-      {
-        org_id: orgId,
-        property_id: p.id,
-        user_id: primaryRep,
-        assignment_role: "assigned_rep",
-        created_by: createdBy,
-      },
-      {
-        org_id: orgId,
-        property_id: p.id,
-        user_id: secondaryRep,
-        assignment_role: "viewer",
-        created_by: createdBy,
-      },
+      { org_id: orgId, property_id: p.id, user_id: primary, assignment_role: "assigned_rep", created_by: createdBy },
     ];
   });
-
-  const { error } = await client.from("property_assignments").upsert(rows, {
-    onConflict: "property_id,user_id",
-    ignoreDuplicates: false,
-  });
+  const { error } = await client.from("property_assignments").upsert(rows, { onConflict: "property_id,user_id", ignoreDuplicates: false });
   if (error) throw error;
 }
 
@@ -641,68 +580,30 @@ async function ensurePropertyLinks(
   createdBy: string,
   properties: PropertyRow[],
 ): Promise<void> {
-  const propertyAccountRows = properties
-    .filter((p) => p.primary_account_id)
-    .map((p) => ({
-      org_id: orgId,
-      property_id: p.id,
-      account_id: p.primary_account_id as string,
-      relationship_type: "property_manager",
-      is_primary: true,
-      active: true,
-      starts_on: null,
-      ends_on: null,
-      created_by: createdBy,
-    }));
-
-  if (propertyAccountRows.length > 0) {
-    for (const row of propertyAccountRows) {
-      const { data: exists, error: existsError } = await client
-        .from("property_accounts")
-        .select("id,is_primary,active")
-        .eq("org_id", orgId)
-        .eq("property_id", row.property_id)
-        .eq("account_id", row.account_id)
-        .eq("relationship_type", row.relationship_type)
-        .is("starts_on", null)
-        .limit(1);
-      if (existsError) throw existsError;
-
-      if (exists && exists.length > 0) {
-        const { error: updateError } = await client
-          .from("property_accounts")
-          .update({ is_primary: true, active: true })
-          .eq("id", exists[0].id);
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await client.from("property_accounts").insert(row);
-        if (insertError) throw insertError;
-      }
-    }
+  for (const p of properties) {
+    if (!p.primary_account_id) continue;
+    const { data: exists } = await client
+      .from("property_accounts").select("id")
+      .eq("org_id", orgId).eq("property_id", p.id).eq("account_id", p.primary_account_id).limit(1);
+    if (exists && exists.length > 0) continue;
+    await client.from("property_accounts").insert({
+      org_id: orgId, property_id: p.id, account_id: p.primary_account_id,
+      relationship_type: "property_manager", is_primary: true, active: true, created_by: createdBy,
+    });
   }
 
-  const propertyContactRows = properties
-    .filter((p) => p.primary_contact_id)
-    .map((p) => ({
-      org_id: orgId,
-      property_id: p.id,
-      contact_id: p.primary_contact_id as string,
-      role_category: "decision_maker",
-      role_label: "Primary Contact",
-      priority_rank: 1,
-      is_primary: true,
-      active: true,
-      created_by: createdBy,
-    }));
-
-  if (propertyContactRows.length > 0) {
-    const { error } = await client.from("property_contacts").upsert(propertyContactRows, {
-      onConflict: "property_id,contact_id,role_category",
-      ignoreDuplicates: false,
-    });
+  for (const p of properties) {
+    if (!p.primary_contact_id) continue;
+    const { error } = await client.from("property_contacts").upsert({
+      org_id: orgId, property_id: p.id, contact_id: p.primary_contact_id,
+      role_category: "decision_maker", role_label: "Primary Contact", priority_rank: 1,
+      is_primary: true, active: true, created_by: createdBy,
+    }, { onConflict: "property_id,contact_id,role_category", ignoreDuplicates: false });
     if (error) throw error;
   }
 }
+
+// ── Opportunities ──────────────────────────────────────────────────────────
 
 async function ensureOpportunities(
   client: SupabaseClient,
@@ -712,27 +613,22 @@ async function ensureOpportunities(
   scopeTypeIds: Map<string, string>,
   stageIds: Map<string, string>,
 ): Promise<OpportunityRow[]> {
-  const scopeKeys = ["inspection", "repair", "replacement", "maintenance"];
-  const stageKeys = ["open", "inspection_scheduled", "proposal_sent", "open"];
+  const propertyByRef = new Map(properties.filter((p) => p.external_ref).map((p) => [p.external_ref as string, p]));
 
-  const specs = Array.from({ length: 20 }, (_, i) => {
-    const idx = i + 1;
-    const property = properties[i % properties.length];
-    const scopeKey = scopeKeys[i % scopeKeys.length];
-    const stageKey = stageKeys[i % stageKeys.length];
-    const scopeTypeId = scopeTypeIds.get(scopeKey);
-    const stageId = stageIds.get(stageKey);
-    if (!scopeTypeId || !stageId) {
-      throw new Error(`Missing scope/stage ids for opportunity seed (${scopeKey}, ${stageKey})`);
-    }
-
+  const specs = OPPORTUNITY_SPECS.map((o) => {
+    const ref = `seed-prop-${String(o.propertyIdx + 1).padStart(2, "0")}`;
+    const property = propertyByRef.get(ref);
+    if (!property) throw new Error(`Missing property for opportunity: ${o.title} (ref=${ref})`);
+    const scopeId = scopeTypeIds.get(o.scopeKey);
+    const stageId = stageIds.get(o.stageKey);
+    if (!scopeId || !stageId) throw new Error(`Missing scope/stage for ${o.title}`);
     return {
-      title: `Seed Opportunity ${String(idx).padStart(2, "0")}`,
+      title: o.title,
       property_id: property.id,
-      scope_type_id: scopeTypeId,
+      scope_type_id: scopeId,
       stage_id: stageId,
-      status: "open",
-      estimated_value: 10000 + idx * 500,
+      status: "open" as const,
+      estimated_value: o.estimatedValue,
       created_reason: "manual_seed",
       account_id: property.primary_account_id,
       primary_contact_id: property.primary_contact_id,
@@ -741,76 +637,24 @@ async function ensureOpportunities(
 
   const titles = specs.map((s) => s.title);
   const { data: existing, error: existingError } = await client
-    .from("opportunities")
-    .select("id,title")
-    .eq("org_id", orgId)
-    .in("title", titles);
+    .from("opportunities").select("id,title").eq("org_id", orgId).in("title", titles);
   if (existingError) throw existingError;
 
-  const existingTitles = new Set((existing ?? []).map((row) => row.title));
+  const existingTitles = new Set((existing ?? []).map((r) => r.title));
   const missing = specs
     .filter((s) => !existingTitles.has(s.title))
-    .map((s) => ({
-      org_id: orgId,
-      title: s.title,
-      property_id: s.property_id,
-      scope_type_id: s.scope_type_id,
-      stage_id: s.stage_id,
-      status: s.status,
-      estimated_value: s.estimated_value,
-      created_reason: s.created_reason,
-      account_id: s.account_id,
-      primary_contact_id: s.primary_contact_id,
-      created_by: createdBy,
-    }));
+    .map((s) => ({ org_id: orgId, ...s, created_by: createdBy }));
 
   if (missing.length > 0) {
-    const { error: insertError } = await client.from("opportunities").insert(missing);
-    if (insertError) throw insertError;
+    const { error } = await client.from("opportunities").insert(missing);
+    if (error) throw error;
   }
 
   const { data: rows, error: fetchError } = await client
-    .from("opportunities")
-    .select("id,title,property_id,account_id,primary_contact_id")
-    .eq("org_id", orgId)
-    .in("title", titles);
+    .from("opportunities").select("id,title,property_id,account_id,primary_contact_id")
+    .eq("org_id", orgId).in("title", titles);
   if (fetchError) throw fetchError;
-  const opportunities = (rows ?? []) as OpportunityRow[];
-  const opportunityByTitle = new Map(
-    opportunities
-      .filter((o) => o.title)
-      .map((o) => [o.title as string, o]),
-  );
-
-  for (const spec of specs) {
-    const opportunity = opportunityByTitle.get(spec.title);
-    if (!opportunity) continue;
-
-    const patch: Record<string, unknown> = {};
-    if (!opportunity.account_id && spec.account_id) {
-      patch.account_id = spec.account_id;
-    }
-    if (!opportunity.primary_contact_id && spec.primary_contact_id) {
-      patch.primary_contact_id = spec.primary_contact_id;
-    }
-    if (Object.keys(patch).length === 0) continue;
-
-    const { error: updateError } = await client
-      .from("opportunities")
-      .update(patch)
-      .eq("id", opportunity.id)
-      .eq("org_id", orgId);
-    if (updateError) throw updateError;
-  }
-
-  const { data: refreshed, error: refreshError } = await client
-    .from("opportunities")
-    .select("id,title,property_id,account_id,primary_contact_id")
-    .eq("org_id", orgId)
-    .in("title", titles);
-  if (refreshError) throw refreshError;
-
-  return (refreshed ?? []) as OpportunityRow[];
+  return (rows ?? []) as OpportunityRow[];
 }
 
 async function ensureOpportunityAssignments(
@@ -821,273 +665,171 @@ async function ensureOpportunityAssignments(
   rep1Id: string,
   rep2Id: string,
 ): Promise<void> {
-  const rows = opportunities.flatMap((opp, i) => {
-    const primaryRep = i % 2 === 0 ? rep1Id : rep2Id;
-    const collaborator = i % 3 === 0 ? (primaryRep === rep1Id ? rep2Id : rep1Id) : null;
-
-    const base = [
-      {
-        org_id: orgId,
-        opportunity_id: opp.id,
-        user_id: primaryRep,
-        assignment_role: "primary_rep",
-        is_primary: true,
-        created_by: createdBy,
-      },
-    ];
-
-    if (collaborator) {
-      base.push({
-        org_id: orgId,
-        opportunity_id: opp.id,
-        user_id: collaborator,
-        assignment_role: "sales_support",
-        is_primary: false,
-        created_by: createdBy,
-      });
-    }
-
-    return base;
-  });
-
-  const { error } = await client.from("opportunity_assignments").upsert(rows, {
-    onConflict: "opportunity_id,user_id",
-    ignoreDuplicates: false,
-  });
+  const rows = opportunities.map((opp, i) => ({
+    org_id: orgId,
+    opportunity_id: opp.id,
+    user_id: i % 2 === 0 ? rep1Id : rep2Id,
+    assignment_role: "primary_rep",
+    is_primary: true,
+    created_by: createdBy,
+  }));
+  const { error } = await client.from("opportunity_assignments").upsert(rows, { onConflict: "opportunity_id,user_id", ignoreDuplicates: false });
   if (error) throw error;
 }
+
+// ── Touchpoints ────────────────────────────────────────────────────────────
 
 async function ensureTouchpoints(
   client: SupabaseClient,
   orgId: string,
-  createdBy: string,
   properties: PropertyRow[],
   contacts: ContactRow[],
-  opportunities: OpportunityRow[],
   touchpointTypeIds: Map<string, string>,
   touchpointOutcomeIds: Map<string, string>,
   rep1Id: string,
-  rep2Id: string,
+  managerId: string,
 ): Promise<TouchpointRow[]> {
-  const propertyById = new Map(properties.map((p) => [p.id, p]));
-  const contactById = new Map(contacts.map((c) => [c.id, c]));
-  const contactIds = contacts.map((c) => c.id);
-  const markers = Array.from({ length: 40 }, (_, i) => noteFor("seed-touchpoint", i + 1));
+  const propertyByRef = new Map(properties.filter((p) => p.external_ref).map((p) => [p.external_ref as string, p]));
+  const contactByIdx = new Map<number, ContactRow>();
+  for (let i = 0; i < CONTACT_SPECS.length; i++) {
+    const spec = CONTACT_SPECS[i];
+    const contact = contacts.find((c) => c.full_name === `${spec.firstName} ${spec.lastName}`);
+    if (contact) contactByIdx.set(i, contact);
+  }
 
+  const markers = TOUCHPOINT_TEMPLATES.map((_, i) => `seed-tp-${String(i + 1).padStart(2, "0")}`);
   const { data: existing, error: existingError } = await client
-    .from("touchpoints")
-    .select("id,notes")
-    .eq("org_id", orgId)
-    .in("notes", markers);
+    .from("touchpoints").select("id,notes").eq("org_id", orgId).in("notes", markers);
   if (existingError) throw existingError;
+  const existingMarkers = new Set((existing ?? []).map((r) => r.notes));
 
-  const existingMarkers = new Set((existing ?? []).map((row) => row.notes));
-  const typeCycle = ["call", "email", "text", "site_visit", "door_knock"] as const;
-
-  const missing = markers
-    .map((marker, i) => {
-      const idx = i + 1;
+  const missing = TOUCHPOINT_TEMPLATES
+    .map((t, i) => {
+      const marker = markers[i];
       if (existingMarkers.has(marker)) return null;
 
-      const opportunity = opportunities[i % opportunities.length];
-      const property = propertyById.get(opportunity.property_id) ?? properties[i % properties.length];
-      const fallbackContactId = contactIds[i % contactIds.length] ?? null;
-      const touchpointContactId = opportunity.primary_contact_id || property.primary_contact_id || fallbackContactId;
-      const touchpointAccountId =
-        (touchpointContactId ? contactById.get(touchpointContactId)?.account_id : null) ||
-        opportunity.account_id ||
-        property.primary_account_id ||
-        null;
-      const typeKey = typeCycle[i % typeCycle.length];
+      const typeId = touchpointTypeIds.get(t.typeKey);
+      if (!typeId) throw new Error(`Missing touchpoint type: ${t.typeKey}`);
+      const outcomeId = touchpointOutcomeIds.get(t.outcomeKey) ?? null;
+      const contact = contactByIdx.get(t.contactIdx);
+      if (!contact) throw new Error(`Missing contact at index ${t.contactIdx}`);
 
-      const touchpointTypeId = touchpointTypeIds.get(typeKey);
-      if (!touchpointTypeId) {
-        throw new Error(`Missing touchpoint_type_id for key: ${typeKey}`);
+      let propertyId: string | null = null;
+      if (t.propertyIdx !== null) {
+        const ref = `seed-prop-${String(t.propertyIdx + 1).padStart(2, "0")}`;
+        propertyId = propertyByRef.get(ref)?.id ?? null;
       }
 
-      let outcomeKey = "connected";
-      if (typeKey === "call" && idx % 3 === 0) outcomeKey = "no_answer";
-      if (typeKey === "email") outcomeKey = "follow_up_sent";
-      if (typeKey === "site_visit") outcomeKey = "inspection_set";
-
-      const outcomeId = touchpointOutcomeIds.get(outcomeKey) ?? null;
-      const repUserId = idx % 2 === 0 ? rep1Id : rep2Id;
-
       const happenedAt = new Date();
-      happenedAt.setUTCDate(happenedAt.getUTCDate() - (idx % 12));
-      happenedAt.setUTCHours(8 + (idx % 8), 0, 0, 0);
+      happenedAt.setUTCDate(happenedAt.getUTCDate() - t.daysAgo);
+      happenedAt.setUTCHours(8 + (i % 8), (i * 15) % 60, 0, 0);
+
+      // Alternate between rep1 and manager for touchpoint ownership
+      const repUserId = i % 3 === 0 ? managerId : rep1Id;
 
       return {
         org_id: orgId,
         rep_user_id: repUserId,
-        property_id: property.id,
-        account_id: touchpointAccountId,
-        contact_id: touchpointContactId,
-        opportunity_id: opportunity.id,
-        touchpoint_type_id: touchpointTypeId,
+        property_id: propertyId,
+        account_id: contact.account_id,
+        contact_id: contact.id,
+        touchpoint_type_id: typeId,
         outcome_id: outcomeId,
+        engagement_phase: t.phase,
         happened_at: happenedAt.toISOString(),
         notes: marker,
-        created_by: createdBy,
+        created_by: repUserId,
       };
     })
-    .filter((row): row is NonNullable<typeof row> => row !== null);
+    .filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (missing.length > 0) {
-    const { error: insertError } = await client.from("touchpoints").insert(missing);
-    if (insertError) throw insertError;
+    const { error } = await client.from("touchpoints").insert(missing);
+    if (error) throw error;
   }
 
   const { data: rows, error: fetchError } = await client
-    .from("touchpoints")
-    .select("id,notes")
-    .eq("org_id", orgId)
-    .in("notes", markers);
+    .from("touchpoints").select("id,notes").eq("org_id", orgId).in("notes", markers);
   if (fetchError) throw fetchError;
-
   return (rows ?? []) as TouchpointRow[];
 }
+
+// ── Next Actions ───────────────────────────────────────────────────────────
 
 async function ensureNextActions(
   client: SupabaseClient,
   orgId: string,
-  createdBy: string,
-  opportunities: OpportunityRow[],
-  properties: PropertyRow[],
   contacts: ContactRow[],
+  properties: PropertyRow[],
+  opportunities: OpportunityRow[],
   touchpointTypeIds: Map<string, string>,
   rep1Id: string,
-  rep2Id: string,
 ): Promise<void> {
-  const propertyById = new Map(properties.map((p) => [p.id, p]));
-  const contactsById = new Map(contacts.map((c) => [c.id, c]));
-  const contactsByAccount = new Map<string, ContactRow[]>();
-  for (const contact of contacts) {
-    const list = contactsByAccount.get(contact.account_id) ?? [];
-    list.push(contact);
-    contactsByAccount.set(contact.account_id, list);
+  const contactByIdx = new Map<number, ContactRow>();
+  for (let i = 0; i < CONTACT_SPECS.length; i++) {
+    const spec = CONTACT_SPECS[i];
+    const contact = contacts.find((c) => c.full_name === `${spec.firstName} ${spec.lastName}`);
+    if (contact) contactByIdx.set(i, contact);
   }
 
-  const resolveContactAndAccount = (opportunity: OpportunityRow, idx: number) => {
-    const property = propertyById.get(opportunity.property_id);
+  const propertyByRef = new Map(properties.filter((p) => p.external_ref).map((p) => [p.external_ref as string, p]));
+  const oppByTitle = new Map(opportunities.filter((o) => o.title).map((o) => [o.title as string, o]));
 
-    let contactId =
-      opportunity.primary_contact_id ||
-      property?.primary_contact_id ||
-      null;
-
-    if (!contactId && property?.primary_account_id) {
-      const accountContacts = contactsByAccount.get(property.primary_account_id) ?? [];
-      contactId = accountContacts[idx % accountContacts.length]?.id ?? null;
-    }
-
-    if (!contactId && contacts.length > 0) {
-      contactId = contacts[idx % contacts.length]?.id ?? null;
-    }
-
-    if (!contactId) {
-      throw new Error("Cannot seed next_actions: no contact available to attach.");
-    }
-
-    const contact = contactsById.get(contactId);
-    const accountId =
-      contact?.account_id ||
-      opportunity.account_id ||
-      property?.primary_account_id ||
-      null;
-
-    return { contactId, accountId };
-  };
-
-  const markers = Array.from({ length: 15 }, (_, i) => noteFor("seed-next-action", i + 1));
-
+  const markers = NEXT_ACTION_SPECS.map((_, i) => `seed-na-${String(i + 1).padStart(2, "0")}`);
   const { data: existing, error: existingError } = await client
-    .from("next_actions")
-    .select("id,notes")
-    .eq("org_id", orgId)
-    .in("notes", markers);
+    .from("next_actions").select("id,notes").eq("org_id", orgId).in("notes", markers);
   if (existingError) throw existingError;
+  const existingMarkers = new Set((existing ?? []).map((r) => r.notes));
 
-  const existingMarkers = new Set((existing ?? []).map((row) => row.notes));
-  const recommendedTypeId = touchpointTypeIds.get("call") ?? null;
-
-  const missing = markers
-    .map((marker, i) => {
+  const missing = NEXT_ACTION_SPECS
+    .map((na, i) => {
+      const marker = markers[i];
       if (existingMarkers.has(marker)) return null;
 
-      const opportunity = opportunities[i % opportunities.length];
-      const assignedUserId = i % 2 === 0 ? rep1Id : rep2Id;
-      const resolved = resolveContactAndAccount(opportunity, i);
+      const contact = contactByIdx.get(na.contactIdx);
+      if (!contact) return null;
+
+      let propertyId: string | null = null;
+      if (na.propertyIdx !== null) {
+        const ref = `seed-prop-${String(na.propertyIdx + 1).padStart(2, "0")}`;
+        propertyId = propertyByRef.get(ref)?.id ?? null;
+      }
+
+      let opportunityId: string | null = null;
+      if (na.oppIdx !== null) {
+        const opp = opportunities[na.oppIdx];
+        if (opp) opportunityId = opp.id;
+      }
+
+      const typeId = touchpointTypeIds.get(na.typeKey) ?? null;
 
       const dueAt = new Date();
-      dueAt.setUTCDate(dueAt.getUTCDate() + (i % 7));
+      dueAt.setUTCDate(dueAt.getUTCDate() + na.daysFromNow);
       dueAt.setUTCHours(14, 0, 0, 0);
 
       return {
         org_id: orgId,
-        property_id: opportunity.property_id,
-        contact_id: resolved.contactId,
-        account_id: resolved.accountId,
-        opportunity_id: opportunity.id,
-        assigned_user_id: assignedUserId,
-        recommended_touchpoint_type_id: recommendedTypeId,
+        contact_id: contact.id,
+        account_id: contact.account_id,
+        property_id: propertyId,
+        opportunity_id: opportunityId,
+        assigned_user_id: rep1Id,
+        recommended_touchpoint_type_id: typeId,
         due_at: dueAt.toISOString(),
-        status: "open",
+        status: na.status,
         notes: marker,
-        created_by: createdBy,
+        created_by: rep1Id,
       };
     })
-    .filter((row): row is NonNullable<typeof row> => row !== null);
+    .filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (missing.length > 0) {
-    const { error: insertError } = await client.from("next_actions").insert(missing);
-    if (insertError) throw insertError;
-  }
-
-  const { data: seededRows, error: seededRowsError } = await client
-    .from("next_actions")
-    .select("id,notes,contact_id,account_id")
-    .eq("org_id", orgId)
-    .in("notes", markers);
-  if (seededRowsError) throw seededRowsError;
-
-  const seededByNote = new Map(
-    (seededRows ?? [])
-      .filter((row) => row.notes)
-      .map((row) => [String(row.notes), row]),
-  );
-
-  for (let i = 0; i < markers.length; i++) {
-    const marker = markers[i];
-    const row = seededByNote.get(marker);
-    if (!row) continue;
-
-    const opportunity = opportunities[i % opportunities.length];
-    const resolved = resolveContactAndAccount(opportunity, i);
-    const patch: Record<string, unknown> = {};
-    if (!row.contact_id) {
-      patch.contact_id = resolved.contactId;
-    }
-
-    const rowContactId = (row.contact_id as string | null) ?? null;
-    const rowContact = rowContactId ? contactsById.get(rowContactId) : null;
-    const derivedRowAccountId = rowContact?.account_id ?? resolved.accountId;
-    if (!row.account_id && derivedRowAccountId) {
-      patch.account_id = derivedRowAccountId;
-    } else if (row.account_id && derivedRowAccountId && row.account_id !== derivedRowAccountId) {
-      patch.account_id = derivedRowAccountId;
-    }
-
-    if (Object.keys(patch).length === 0) continue;
-
-    const { error: updateError } = await client
-      .from("next_actions")
-      .update(patch)
-      .eq("id", row.id)
-      .eq("org_id", orgId);
-    if (updateError) throw updateError;
+    const { error } = await client.from("next_actions").insert(missing);
+    if (error) throw error;
   }
 }
+
+// ── Score rules & events ───────────────────────────────────────────────────
 
 async function ensureScoreRules(
   client: SupabaseClient,
@@ -1102,226 +844,155 @@ async function ensureScoreRules(
     { type: "email", outcome: "follow_up_sent", points: 3 },
     { type: "site_visit", outcome: "inspection_set", points: 8 },
   ];
-
   for (const combo of combos) {
     const typeId = touchpointTypeIds.get(combo.type);
     const outcomeId = touchpointOutcomeIds.get(combo.outcome);
     if (!typeId || !outcomeId) continue;
 
-    const { data: existing, error: existingError } = await client
-      .from("score_rules")
-      .select("id")
-      .eq("org_id", orgId)
-      .eq("touchpoint_type_id", typeId)
-      .eq("outcome_id", outcomeId)
-      .limit(1);
+    const { data: exists } = await client
+      .from("score_rules").select("id").eq("org_id", orgId)
+      .eq("touchpoint_type_id", typeId).eq("outcome_id", outcomeId).limit(1);
+    if (exists && exists.length > 0) continue;
 
-    if (existingError) throw existingError;
-    if (existing && existing.length > 0) continue;
-
-    const { error: insertError } = await client.from("score_rules").insert({
-      org_id: orgId,
-      touchpoint_type_id: typeId,
-      outcome_id: outcomeId,
-      points: combo.points,
-      is_bonus: false,
-      created_by: createdBy,
+    await client.from("score_rules").insert({
+      org_id: orgId, touchpoint_type_id: typeId, outcome_id: outcomeId,
+      points: combo.points, is_bonus: false, created_by: createdBy,
     });
-    if (insertError) throw insertError;
   }
 }
 
 async function ensureScoreEvents(
   client: SupabaseClient,
   orgId: string,
-  createdBy: string,
   touchpoints: TouchpointRow[],
   rep1Id: string,
-  rep2Id: string,
+  managerId: string,
 ): Promise<void> {
   const selected = touchpoints.slice(0, 12);
-
   for (let i = 0; i < selected.length; i++) {
     const tp = selected[i];
-    const reason = `seed-touchpoint-award-${String(i + 1).padStart(2, "0")}`;
-    const userId = i % 2 === 0 ? rep1Id : rep2Id;
-    const points = i % 4 === 0 ? 8 : 3;
+    const reason = `seed-score-${String(i + 1).padStart(2, "0")}`;
+    const userId = i % 3 === 0 ? managerId : rep1Id;
+    const points = i % 4 === 0 ? 8 : i % 3 === 0 ? 5 : 3;
 
-    const { data: existing, error: existingError } = await client
-      .from("score_events")
-      .select("id")
-      .eq("org_id", orgId)
-      .eq("touchpoint_id", tp.id)
-      .eq("reason", reason)
-      .limit(1);
+    const { data: exists } = await client
+      .from("score_events").select("id").eq("org_id", orgId)
+      .eq("touchpoint_id", tp.id).eq("reason", reason).limit(1);
+    if (exists && exists.length > 0) continue;
 
-    if (existingError) throw existingError;
-    if (existing && existing.length > 0) continue;
-
-    const { error: insertError } = await client.from("score_events").insert({
-      org_id: orgId,
-      user_id: userId,
-      touchpoint_id: tp.id,
-      points,
-      reason,
-      created_by: createdBy,
+    await client.from("score_events").insert({
+      org_id: orgId, user_id: userId, touchpoint_id: tp.id,
+      points, reason, created_by: userId,
     });
-    if (insertError) throw insertError;
   }
 }
 
-async function countByOrg(
-  client: SupabaseClient,
-  table: string,
-  orgId: string,
-): Promise<number> {
+// ── Count helper ───────────────────────────────────────────────────────────
+
+async function countByOrg(client: SupabaseClient, table: string, orgId: string): Promise<number> {
   const { count, error } = await client
-    .from(table)
-    .select("*", { head: true, count: "exact" })
-    .eq("org_id", orgId);
+    .from(table).select("*", { head: true, count: "exact" }).eq("org_id", orgId);
   if (error) throw error;
   return count ?? 0;
 }
 
+// ── Main ───────────────────────────────────────────────────────────────────
+
 async function main() {
-  console.log("Seeding dev data...");
+  console.log("Seeding dev data (commercial roofing)...\n");
   let stage = "init";
   try {
-    const usersByEmail = await listUsersByEmail(
-      supabase,
-      DEV_USERS.map((u) => u.email),
-    );
-
+    const usersByEmail = await listUsersByEmail(supabase, DEV_USERS.map((u) => u.email));
     for (const user of DEV_USERS) {
       if (!usersByEmail.has(user.email.toLowerCase())) {
-        throw new Error(
-          `Missing required auth user ${user.email}. Run "npm run seed:dev" from a clean reset.`,
-        );
+        throw new Error(`Missing required auth user ${user.email}. Run seed-dev-users.ts first.`);
       }
     }
 
-    const adminId = usersByEmail.get("admin@dilly.dev")?.id;
-    const rep1Id = usersByEmail.get("rep1@dilly.dev")?.id;
-    const rep2Id = usersByEmail.get("rep2@dilly.dev")?.id;
+    const adminId = usersByEmail.get("admin@dilly.dev")!.id;
+    const managerId = usersByEmail.get("manager@dilly.dev")!.id;
+    const rep1Id = usersByEmail.get("rep1@dilly.dev")!.id;
+    const rep2Id = usersByEmail.get("rep2@dilly.dev")!.id;
 
-    if (!adminId || !rep1Id || !rep2Id) {
-      throw new Error("Missing required admin/rep ids after user lookup");
-    }
-
-    stage = "ensure org + memberships";
-    console.log("Ensuring org + memberships...");
+    stage = "org + memberships";
+    console.log("  Org + memberships...");
     const orgId = await ensureDevOrg(supabase, adminId);
     await ensureOrgUsers(supabase, orgId, usersByEmail);
+    await ensureProfiles(supabase, usersByEmail);
 
-    stage = "seed type tables";
-    console.log("Seeding type tables...");
+    stage = "type tables";
+    console.log("  Type tables...");
     const types = await ensureTypeTables(supabase, orgId, adminId);
-    stage = "seed accounts/contacts/properties";
-    console.log("Seeding accounts/contacts/properties...");
+
+    stage = "accounts";
+    console.log("  Accounts...");
     const accounts = await ensureAccounts(supabase, orgId, adminId);
+
+    stage = "contacts";
+    console.log("  Contacts...");
     const contacts = await ensureContacts(supabase, orgId, adminId, accounts);
+
+    stage = "properties";
+    console.log("  Properties...");
     const properties = await ensureProperties(supabase, orgId, adminId, accounts, contacts);
 
-    stage = "seed assignments/opportunities";
-    console.log("Seeding assignments/opportunities...");
+    stage = "property links + assignments";
+    console.log("  Property links + assignments...");
     await ensurePropertyLinks(supabase, orgId, adminId, properties);
     await ensurePropertyAssignments(supabase, orgId, adminId, properties, rep1Id, rep2Id);
 
-    const opportunities = await ensureOpportunities(
-      supabase,
-      orgId,
-      adminId,
-      properties,
-      types.scopeTypes,
-      types.stages,
-    );
+    stage = "opportunities";
+    console.log("  Opportunities...");
+    const opportunities = await ensureOpportunities(supabase, orgId, adminId, properties, types.scopeTypes, types.stages);
+    await ensureOpportunityAssignments(supabase, orgId, adminId, opportunities, rep1Id, rep2Id);
 
-    await ensureOpportunityAssignments(
-      supabase,
-      orgId,
-      adminId,
-      opportunities,
-      rep1Id,
-      rep2Id,
-    );
-
-    stage = "seed touchpoints/next actions/scoring";
-    console.log("Seeding touchpoints/next actions/scoring...");
+    stage = "touchpoints";
+    console.log("  Touchpoints...");
     const touchpoints = await ensureTouchpoints(
-      supabase,
-      orgId,
-      adminId,
-      properties,
-      contacts,
-      opportunities,
-      types.touchpointTypes,
-      types.touchpointOutcomes,
-      rep1Id,
-      rep2Id,
+      supabase, orgId, properties, contacts,
+      types.touchpointTypes, types.touchpointOutcomes,
+      rep1Id, managerId,
     );
 
-    stage = "seed next actions";
-    await ensureNextActions(
-      supabase,
-      orgId,
-      adminId,
-      opportunities,
-      properties,
-      contacts,
-      types.touchpointTypes,
-      rep1Id,
-      rep2Id,
-    );
+    stage = "next actions";
+    console.log("  Next actions...");
+    await ensureNextActions(supabase, orgId, contacts, properties, opportunities, types.touchpointTypes, rep1Id);
 
-    stage = "seed score rules";
-    await ensureScoreRules(
-      supabase,
-      orgId,
-      adminId,
-      types.touchpointTypes,
-      types.touchpointOutcomes,
-    );
+    stage = "scoring";
+    console.log("  Score rules + events...");
+    await ensureScoreRules(supabase, orgId, adminId, types.touchpointTypes, types.touchpointOutcomes);
+    await ensureScoreEvents(supabase, orgId, touchpoints, rep1Id, managerId);
 
-    stage = "seed score events";
-    await ensureScoreEvents(supabase, orgId, adminId, touchpoints, rep1Id, rep2Id);
-
-    stage = "summary counts";
+    // Summary
     const summary = {
       org_users: await countByOrg(supabase, "org_users", orgId),
       accounts: await countByOrg(supabase, "accounts", orgId),
       contacts: await countByOrg(supabase, "contacts", orgId),
       properties: await countByOrg(supabase, "properties", orgId),
-      property_assignments: await countByOrg(supabase, "property_assignments", orgId),
       opportunities: await countByOrg(supabase, "opportunities", orgId),
-      opportunity_assignments: await countByOrg(supabase, "opportunity_assignments", orgId),
       touchpoints: await countByOrg(supabase, "touchpoints", orgId),
       next_actions: await countByOrg(supabase, "next_actions", orgId),
-      score_rules: await countByOrg(supabase, "score_rules", orgId),
       score_events: await countByOrg(supabase, "score_events", orgId),
     };
 
-    stage = "rep1 next actions count";
-    const { count: rep1OpenNextActions, error: rep1OpenError } = await supabase
-      .from("next_actions")
-      .select("id", { head: true, count: "exact" })
-      .eq("org_id", orgId)
-      .eq("assigned_user_id", rep1Id)
-      .eq("status", "open");
-    if (rep1OpenError) throw rep1OpenError;
-
-    console.log(`Seeded org: ${orgId} (${DEV_ORG_NAME})`);
-    console.log("Summary counts:");
+    console.log(`\nSeeded org: ${orgId} ("${DEV_ORG_NAME}")`);
+    console.log("Counts:");
     for (const [key, value] of Object.entries(summary)) {
       console.log(`  ${key}: ${value}`);
     }
-    console.log(`  rep1_open_next_actions: ${rep1OpenNextActions ?? 0}`);
+    console.log("\nDev users:");
+    console.log("  admin@dilly.dev  (Jordan Mitchell, admin)");
+    console.log("  manager@dilly.dev (Casey Rivera, manager)");
+    console.log("  rep1@dilly.dev   (Tyler Dawson, rep)");
+    console.log("  rep2@dilly.dev   (Megan Foster, rep)");
+    console.log("  Password: devpassword123!");
+    console.log("\nDone.");
   } catch (error: unknown) {
     throw new Error(`seed-dev-data failed at stage "${stage}": ${errorMessage(error)}`);
   }
 }
 
 main().catch((error: unknown) => {
-  const msg = errorMessage(error);
-  console.error(msg);
+  console.error(errorMessage(error));
   process.exit(1);
 });

@@ -31,8 +31,11 @@ first-touch outreach, disciplined follow-up, territory-aware pipeline.
 
 3. Apply migrations and seed dev data:
    ```bash
-   npx supabase db reset && npm run seed:dev
+   npx supabase db reset
+   npm run seed:dev
    ```
+   This creates auth users, an org, and populates realistic commercial roofing data
+   (accounts, contacts, properties, opportunities, touchpoints, next actions, scoring).
 
 4. Copy the environment file:
    ```bash
@@ -46,9 +49,26 @@ first-touch outreach, disciplined follow-up, territory-aware pipeline.
 
 ### Dev Credentials
 
-- **Admin:** `admin@dilly.dev` / `devpassword123!`
+All accounts use password: `devpassword123!`
+
+| Email | Name | Role |
+|---|---|---|
+| `admin@dilly.dev` | Jordan Mitchell | admin |
+| `manager@dilly.dev` | Casey Rivera | manager |
+| `rep1@dilly.dev` | Tyler Dawson | rep |
+| `rep2@dilly.dev` | Megan Foster | rep |
+
 - **Local app:** http://localhost:3000
 - **Supabase Studio:** http://127.0.0.1:54323
+
+### Re-seeding
+
+To reset everything and start fresh:
+
+```bash
+npx supabase db reset
+npm run seed:dev
+```
 
 ## Project Structure
 
@@ -65,10 +85,13 @@ src/app/
     setup/              Org onboarding (first-time setup)
   login/                Auth page (sign in / sign up)
 
+scripts/
+  seed-dev-users.ts     Auth user creation (4 dev accounts)
+  seed-dev-data.ts      Full data seeder (org, accounts, contacts, properties, etc.)
+
 supabase/
   migrations/           35 schema migrations — apply in order via `supabase db reset`
   tests/                pgTAP RLS policy tests
-  seed.ts               Dev data seeder (accounts, contacts, properties, touchpoints)
 ```
 
 ## Key Architecture Decisions

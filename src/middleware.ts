@@ -18,7 +18,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = request.cookies.get('admin_session')
+  const session = request.cookies.get('__Host-admin-session')
   const adminSecret = process.env.ADMIN_SECRET_KEY
 
   console.log('MW path:', pathname)

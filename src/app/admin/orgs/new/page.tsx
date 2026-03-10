@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdminAuth } from "@/lib/admin-auth";
 
+export const runtime = "nodejs";
+
 type Props = {
   searchParams: Promise<{ error?: string }>;
 };

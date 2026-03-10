@@ -3,11 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Only protect /admin routes (except /admin/login)
-  if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
+  // Only protect /admin routes (except /admin/login and /admin/logout)
+  if (
+    pathname.startsWith("/admin") &&
+    pathname !== "/admin/login" &&
+    pathname !== "/admin/logout"
+  ) {
     const adminSecret = process.env.ADMIN_SECRET_KEY;
     if (!adminSecret) {
-      // If no secret is configured, block access entirely
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
 

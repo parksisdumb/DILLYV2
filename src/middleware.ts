@@ -18,6 +18,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Debug logging (temporary)
+  console.log('MIDDLEWARE PATH:', pathname)
+  console.log('MIDDLEWARE COOKIE:', request.cookies.get('admin_session')?.value?.slice(0, 6))
+  console.log('MIDDLEWARE SECRET:', process.env.ADMIN_SECRET_KEY?.slice(0, 6))
+
   // Check cookie
   const session = request.cookies.get("admin_session");
   const adminSecret = process.env.ADMIN_SECRET_KEY;

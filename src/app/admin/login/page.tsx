@@ -1,29 +1,4 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-
 export const dynamic = "force-dynamic";
-
-async function loginAction(formData: FormData) {
-  "use server";
-
-  const password = String(formData.get("password") ?? "").trim();
-  const adminSecret = process.env.ADMIN_SECRET_KEY;
-
-  if (!adminSecret || password !== adminSecret) {
-    redirect("/admin/login?error=invalid");
-  }
-
-  const cookieStore = await cookies();
-  cookieStore.set("admin_session", adminSecret, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24, // 24 hours
-  });
-
-  redirect("/admin");
-}
 
 type Props = {
   searchParams: Promise<{ error?: string }>;
@@ -41,7 +16,8 @@ export default async function AdminLoginPage({ searchParams }: Props) {
         </div>
 
         <form
-          action={loginAction}
+          method="POST"
+          action="/admin/login/submit"
           className="w-full rounded-2xl border border-slate-700 bg-slate-800 p-8 shadow-sm space-y-5"
         >
           <h1 className="text-lg font-semibold text-white">Admin Access</h1>
@@ -58,7 +34,7 @@ export default async function AdminLoginPage({ searchParams }: Props) {
             />
           </div>
 
-          {params.error === "invalid" && (
+          {params.error && (
             <p className="rounded-xl border border-red-800 bg-red-900/50 px-3 py-2 text-sm text-red-300">
               Invalid secret key
             </p>

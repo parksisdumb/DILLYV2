@@ -1,5 +1,3 @@
-export const runtime = "nodejs";
-
 type Props = {
   searchParams: Promise<{ error?: string }>;
 };

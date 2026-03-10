@@ -1,8 +1,6 @@
 import { ReactNode } from "react";
 import Link from "next/link";
 
-export const runtime = "nodejs";
-
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-900 text-white">

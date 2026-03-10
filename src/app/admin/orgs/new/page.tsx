@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 
@@ -35,7 +34,6 @@ async function createOrgAction(formData: FormData) {
 }
 
 export default async function NewOrgPage({ searchParams }: Props) {
-  await requireAdminAuth();
   const params = await searchParams;
 
   return (

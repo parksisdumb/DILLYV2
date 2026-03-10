@@ -1,9 +1,12 @@
 import { ReactNode } from "react";
 import Link from "next/link";
+import { requireAdminAuth } from "@/lib/admin-auth";
 
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
+export default async function AdminLayout({ children }: { children: ReactNode }) {
+  await requireAdminAuth();
+
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       <header className="border-b border-slate-800">

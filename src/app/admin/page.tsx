@@ -1,11 +1,9 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 
 export default async function AdminDashboard() {
-  await requireAdminAuth();
   const admin = createAdminClient();
 
   const { data: orgs, error: orgsError } = await admin

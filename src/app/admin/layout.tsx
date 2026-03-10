@@ -1,12 +1,9 @@
 import { ReactNode } from "react";
 import Link from "next/link";
-import { requireAdminAuth } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 
-export default async function AdminLayout({ children }: { children: ReactNode }) {
-  await requireAdminAuth();
-
+export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       <header className="border-b border-slate-800">

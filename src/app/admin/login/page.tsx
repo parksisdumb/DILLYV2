@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
+const ADMIN_SESSION_TOKEN = "dilly-admin-authenticated";
+
 async function loginAction(formData: FormData) {
   "use server";
 
@@ -13,8 +15,10 @@ async function loginAction(formData: FormData) {
     redirect("/admin/login?error=invalid");
   }
 
+  // Set a known token — not the raw secret — so middleware can check it
+  // without needing to read the env var in Edge Runtime
   const cookieStore = await cookies();
-  cookieStore.set("admin_session", adminSecret, {
+  cookieStore.set("admin_session", ADMIN_SESSION_TOKEN, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const ADMIN_SESSION_TOKEN = "dilly-admin-authenticated";
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -9,13 +11,8 @@ export function middleware(request: NextRequest) {
     pathname !== "/admin/login" &&
     pathname !== "/admin/logout"
   ) {
-    const adminSecret = process.env.ADMIN_SECRET_KEY;
-    if (!adminSecret) {
-      return NextResponse.redirect(new URL("/admin/login", request.url));
-    }
-
     const sessionCookie = request.cookies.get("admin_session");
-    if (!sessionCookie || sessionCookie.value !== adminSecret) {
+    if (!sessionCookie || sessionCookie.value !== ADMIN_SESSION_TOKEN) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
   }

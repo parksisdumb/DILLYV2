@@ -6,10 +6,10 @@ export async function POST(request: NextRequest) {
   const adminSecret = process.env.ADMIN_SECRET_KEY;
 
   if (!adminSecret || password !== adminSecret) {
-    return NextResponse.redirect(new URL("/admin/login?error=1", request.url));
+    return NextResponse.redirect(new URL("/admin/login?error=1", request.url), 303);
   }
 
-  const response = NextResponse.redirect(new URL("/admin", request.url));
+  const response = NextResponse.redirect(new URL("/admin", request.url), 303);
   response.cookies.set("admin_session", adminSecret, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

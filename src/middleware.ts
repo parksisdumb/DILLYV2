@@ -18,17 +18,16 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Debug logging (temporary)
-  console.log('MIDDLEWARE PATH:', pathname)
-  console.log('MIDDLEWARE COOKIE:', request.cookies.get('admin_session')?.value?.slice(0, 6))
-  console.log('MIDDLEWARE SECRET:', process.env.ADMIN_SECRET_KEY?.slice(0, 6))
+  const session = request.cookies.get('admin_session')
+  const adminSecret = process.env.ADMIN_SECRET_KEY
 
-  // Check cookie
-  const session = request.cookies.get("admin_session");
-  const adminSecret = process.env.ADMIN_SECRET_KEY;
+  console.log('MW path:', pathname)
+  console.log('MW cookie:', session?.value?.slice(0, 4) ?? 'NONE')
+  console.log('MW secret:', adminSecret?.slice(0, 4) ?? 'MISSING')
+  console.log('MW match:', session?.value === adminSecret)
 
   if (!adminSecret || !session || session.value !== adminSecret) {
-    return NextResponse.redirect(new URL("/admin/login", request.url));
+    return NextResponse.redirect(new URL('/admin/login', request.url))
   }
 
   return NextResponse.next();

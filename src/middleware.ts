@@ -18,9 +18,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = request.cookies.get('__Host-admin-session')
+  const session = request.cookies.get('admin_session')
   const adminSecret = process.env.ADMIN_SECRET_KEY
 
+  console.log('ALL COOKIES:', request.cookies.getAll().map(c => c.name).join(', '))
   console.log('MW path:', pathname)
   console.log('MW cookie:', session?.value?.slice(0, 4) ?? 'NONE')
   console.log('MW secret:', adminSecret?.slice(0, 4) ?? 'MISSING')

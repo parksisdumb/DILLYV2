@@ -10,9 +10,9 @@ export async function POST(request: NextRequest) {
   }
 
   const response = NextResponse.redirect(new URL("/admin", request.url), 303);
-  response.cookies.set("__Host-admin-session", adminSecret, {
+  response.cookies.set("admin_session", adminSecret, {
     httpOnly: true,
-    secure: true,
+    secure: false,
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24, // 24 hours

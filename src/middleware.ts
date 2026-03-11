@@ -1,2 +1,3 @@
-export { default } from 'next/dist/server/web/exports/next-response'
+import { NextResponse } from 'next/server'
+export function middleware() { return NextResponse.next() }
 export const config = { matcher: [] }

@@ -10,12 +10,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Dilly</span>
             <span className="text-sm font-medium text-slate-400">Admin</span>
           </Link>
-          <Link
-            href="/admin/logout"
-            className="text-xs text-slate-500 hover:text-slate-300"
-          >
-            Logout
-          </Link>
+          <form action="/admin/logout" method="POST" className="inline">
+            <button
+              type="submit"
+              className="text-xs text-slate-500 hover:text-slate-300"
+            >
+              Logout
+            </button>
+          </form>
         </div>
       </header>
       {children}

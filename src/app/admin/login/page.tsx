@@ -1,9 +1,14 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import crypto from "crypto";
 
 type Props = {
   searchParams: Promise<{ error?: string }>;
 };
+
+function adminToken(secret: string): string {
+  return crypto.createHash("sha256").update(secret).digest("hex");
+}
 
 async function loginAction(formData: FormData) {
   "use server";
@@ -15,8 +20,11 @@ async function loginAction(formData: FormData) {
     redirect("/admin/login?error=1");
   }
 
+  const token = adminToken(adminSecret);
+  console.log("[admin-login] setting cookie, token length:", token.length, "first8:", token.slice(0, 8));
+
   const cookieStore = await cookies();
-  cookieStore.set("admin_session", adminSecret, {
+  cookieStore.set("admin_session", token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

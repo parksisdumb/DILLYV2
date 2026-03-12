@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
+import { sendInviteEmail } from "@/lib/supabase/invite";
 
 type TeamPageSearchParams = {
   status?: string;
@@ -42,7 +43,7 @@ async function createInviteAction(formData: FormData) {
   const role = inviterRole === "manager" ? "rep" : requestedRole;
   const note = String(formData.get("note") ?? "").trim();
 
-  const { error } = await supabase.rpc("rpc_invite_user", {
+  const { data: invite, error } = await supabase.rpc("rpc_invite_user", {
     p_email: email,
     p_role: role,
     p_note: note || null,
@@ -50,6 +51,19 @@ async function createInviteAction(formData: FormData) {
 
   if (error) {
     redirect(`/app/admin/team?status=error&message=${encodeURIComponent(error.message)}`);
+  }
+
+  // Send invite email via Supabase (creates auth user if needed)
+  const token = invite?.token;
+  const redirectPath = token ? `/invite/accept/${token}` : "/auth/set-password";
+  const { error: emailError } = await sendInviteEmail(email, { redirectPath });
+
+  // If user already exists in auth, the invite email will fail — that's OK,
+  // the org_invite record was still created and the link is shown on screen.
+  if (emailError && !emailError.message?.includes("already been registered")) {
+    redirect(
+      `/app/admin/team?status=error&message=${encodeURIComponent(`Invite created but email failed: ${emailError.message}`)}`,
+    );
   }
 
   revalidatePath("/app/admin/team");
@@ -99,7 +113,7 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
 
       {status === "success" && (
         <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-          Invite created.
+          Invite sent. They&apos;ll receive an email with a link to join.
         </p>
       )}
       {status === "error" && (
@@ -144,7 +158,7 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
           />
         </div>
         <button className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-          Create invite
+          Send invite
         </button>
       </form>
 

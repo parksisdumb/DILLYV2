@@ -1,6 +1,31 @@
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
 type Props = {
   searchParams: Promise<{ error?: string }>;
 };
+
+async function loginAction(formData: FormData) {
+  "use server";
+
+  const password = String(formData.get("password") ?? "").trim();
+  const adminSecret = process.env.ADMIN_SECRET_KEY;
+
+  if (!adminSecret || password !== adminSecret) {
+    redirect("/admin/login?error=1");
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set("admin_session", adminSecret, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24,
+  });
+
+  redirect("/admin");
+}
 
 export default async function AdminLoginPage({ searchParams }: Props) {
   const params = await searchParams;
@@ -14,8 +39,7 @@ export default async function AdminLoginPage({ searchParams }: Props) {
         </div>
 
         <form
-          method="POST"
-          action="/admin/login/submit"
+          action={loginAction}
           className="w-full rounded-2xl border border-slate-700 bg-slate-800 p-8 shadow-sm space-y-5"
         >
           <h1 className="text-lg font-semibold text-white">Admin Access</h1>

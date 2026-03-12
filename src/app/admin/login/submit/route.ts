@@ -9,13 +9,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(new URL("/admin/login?error=1", request.url), 303);
   }
 
-  const response = NextResponse.redirect(new URL("/admin", request.url), 303);
-  response.cookies.set("admin_session", adminSecret, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24,
+  // Return a 200 HTML page that sets the cookie and redirects via meta refresh.
+  // This avoids Set-Cookie on a 303 redirect, which Vercel's edge may strip.
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  const cookieHeader = `admin_session=${adminSecret}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=86400`;
+
+  const html = `<!DOCTYPE html>
+<html><head>
+<meta http-equiv="refresh" content="0;url=/admin">
+</head><body><p>Redirecting...</p></body></html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html",
+      "Set-Cookie": cookieHeader,
+    },
   });
-  return response;
 }

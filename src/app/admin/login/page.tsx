@@ -1,42 +1,45 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import crypto from "crypto";
+"use client";
 
-type Props = {
-  searchParams: Promise<{ error?: string }>;
-};
+import { useState } from "react";
 
-function adminToken(secret: string): string {
-  return crypto.createHash("sha256").update(secret).digest("hex");
-}
+export default function AdminLoginPage() {
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-async function loginAction(formData: FormData) {
-  "use server";
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(false);
+    setLoading(true);
 
-  const password = String(formData.get("password") ?? "").trim();
-  const adminSecret = process.env.ADMIN_SECRET_KEY;
+    const form = new FormData(e.currentTarget);
+    const password = form.get("password");
 
-  if (!adminSecret || password !== adminSecret) {
-    redirect("/admin/login?error=1");
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+
+      if (!res.ok) {
+        setError(true);
+        setLoading(false);
+        return;
+      }
+
+      const { token } = await res.json();
+
+      // Set cookie directly from the browser — bypasses all server-side cookie issues
+      const secure = location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = `admin_session=${token}; Path=/; Max-Age=86400; SameSite=Lax${secure}`;
+
+      // Full page navigation to /admin (not client-side routing)
+      window.location.href = "/admin";
+    } catch {
+      setError(true);
+      setLoading(false);
+    }
   }
-
-  const token = adminToken(adminSecret);
-  console.log("[admin-login] setting cookie, token length:", token.length, "first8:", token.slice(0, 8));
-
-  const cookieStore = await cookies();
-  cookieStore.set("admin_session", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24,
-  });
-
-  redirect("/admin");
-}
-
-export default async function AdminLoginPage({ searchParams }: Props) {
-  const params = await searchParams;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-900 p-4">
@@ -47,7 +50,7 @@ export default async function AdminLoginPage({ searchParams }: Props) {
         </div>
 
         <form
-          action={loginAction}
+          onSubmit={handleSubmit}
           className="w-full rounded-2xl border border-slate-700 bg-slate-800 p-8 shadow-sm space-y-5"
         >
           <h1 className="text-lg font-semibold text-white">Admin Access</h1>
@@ -64,7 +67,7 @@ export default async function AdminLoginPage({ searchParams }: Props) {
             />
           </div>
 
-          {params.error && (
+          {error && (
             <p className="rounded-xl border border-red-800 bg-red-900/50 px-3 py-2 text-sm text-red-300">
               Invalid secret key
             </p>
@@ -72,9 +75,10 @@ export default async function AdminLoginPage({ searchParams }: Props) {
 
           <button
             type="submit"
-            className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+            disabled={loading}
+            className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            Sign in
+            {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
       </div>

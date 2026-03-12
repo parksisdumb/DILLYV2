@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
-
+import { requireAdmin } from "@/lib/admin-auth";
 
 type Props = {
   searchParams: Promise<{ error?: string }>;
@@ -33,6 +33,7 @@ async function createOrgAction(formData: FormData) {
 }
 
 export default async function NewOrgPage({ searchParams }: Props) {
+  await requireAdmin();
   const params = await searchParams;
 
   return (

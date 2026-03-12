@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
-
+import { requireAdmin } from "@/lib/admin-auth";
 
 type Props = {
   params: Promise<{ id: string }>;
 };
 
 export default async function OrgDetailPage({ params }: Props) {
+  await requireAdmin();
   const { id: orgId } = await params;
   const admin = createAdminClient();
 

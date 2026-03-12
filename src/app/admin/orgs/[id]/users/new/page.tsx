@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdminAuth } from "@/lib/admin-auth";
+
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -87,7 +87,6 @@ async function addUserAction(formData: FormData) {
 }
 
 export default async function AddUserPage({ params, searchParams }: Props) {
-  await requireAdminAuth();
   const { id: orgId } = await params;
   const sp = await searchParams;
   const admin = createAdminClient();

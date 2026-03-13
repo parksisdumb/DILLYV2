@@ -87,15 +87,43 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
     redirect("/app");
   }
 
-  const { data: invites, error: invitesError } = await supabase
-    .from("org_invites")
-    .select("id, email, role, token, created_at, expires_at, accepted_at")
-    .eq("org_id", orgId)
-    .is("revoked_at", null)
-    .order("created_at", { ascending: false })
-    .limit(100);
+  // Fetch current org members, their profiles, and pending invites in parallel
+  const [membersResult, profilesResult, invitesResult] = await Promise.all([
+    supabase
+      .from("org_users")
+      .select("user_id, role")
+      .order("role"),
+    supabase.from("profiles").select("user_id, full_name, email"),
+    supabase
+      .from("org_invites")
+      .select("id, email, role, token, created_at, expires_at, accepted_at")
+      .eq("org_id", orgId)
+      .is("revoked_at", null)
+      .order("created_at", { ascending: false })
+      .limit(100),
+  ]);
 
-  if (invitesError) throw new Error(invitesError.message);
+  if (membersResult.error) throw new Error(membersResult.error.message);
+  if (invitesResult.error) throw new Error(invitesResult.error.message);
+
+  const members = membersResult.data ?? [];
+  const profiles = profilesResult.data ?? [];
+  const invites = invitesResult.data ?? [];
+
+  const profileMap = new Map<string, { full_name: string | null; email: string | null }>();
+  for (const p of profiles) {
+    profileMap.set(p.user_id, { full_name: p.full_name, email: p.email });
+  }
+
+  const teamMembers = members.map((m) => {
+    const prof = profileMap.get(m.user_id);
+    return {
+      user_id: m.user_id,
+      role: m.role,
+      fullName: prof?.full_name ?? m.user_id,
+      email: prof?.email ?? null,
+    };
+  });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const roles = inviterRole === "manager" ? ["rep"] : ["rep", "manager", "admin"];
@@ -162,6 +190,40 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
         </button>
       </form>
 
+      {/* Current Members */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Members ({teamMembers.length})
+        </h2>
+        {!teamMembers.length ? (
+          <p className="mt-2 text-sm text-slate-600">No members yet.</p>
+        ) : (
+          <div className="mt-3 space-y-1">
+            {teamMembers.map((m) => (
+              <div
+                key={m.user_id}
+                className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2"
+              >
+                <div>
+                  <span className="text-sm font-medium text-slate-900">
+                    {m.fullName}
+                  </span>
+                  {m.email && (
+                    <span className="ml-2 text-xs text-slate-500">
+                      {m.email}
+                    </span>
+                  )}
+                </div>
+                <span className="rounded-md bg-slate-200 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">
+                  {m.role}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Invites */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Invites</h2>
         {!invites?.length ? (

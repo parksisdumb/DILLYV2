@@ -95,6 +95,7 @@ export default function PropertyDetailClient({
   orgId,
   userId,
   userRole,
+  availableContacts,
 }: {
   property: Property;
   account: Account;
@@ -108,6 +109,7 @@ export default function PropertyDetailClient({
   orgId: string;
   userId: string;
   userRole: string;
+  availableContacts: { id: string; full_name: string | null }[];
 }) {
   const supabase = createBrowserSupabase();
 
@@ -117,9 +119,18 @@ export default function PropertyDetailClient({
   const [activeAction, setActiveAction] = useState<"log" | "opportunity" | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
+  // Link contact state (declared early — other state depends on localPropContacts)
+  const [linkContactId, setLinkContactId] = useState("");
+  const [linkRoleLabel, setLinkRoleLabel] = useState("");
+  const [linkPrimary, setLinkPrimary] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [localPropContacts, setLocalPropContacts] = useState(propContacts);
+  const [localAvailable, setLocalAvailable] = useState(availableContacts);
+
   // Log touchpoint form
   const [logTypeId, setLogTypeId] = useState("");
-  const [logContactId, setLogContactId] = useState(propContacts[0]?.contact_id ?? "");
+  const [logContactId, setLogContactId] = useState(localPropContacts[0]?.contact_id ?? "");
   const [logOutcomeId, setLogOutcomeId] = useState("");
   const [logPhase, setLogPhase] = useState("visibility");
   const [logNotes, setLogNotes] = useState("");
@@ -152,7 +163,7 @@ export default function PropertyDetailClient({
   const outcomeById = new Map(touchpointOutcomes.map((o) => [o.id, o]));
   const scopeById = new Map(scopeTypes.map((s) => [s.id, s]));
   const stageById = new Map(stages.map((s) => [s.id, s]));
-  const contactNameById = new Map(propContacts.map((pc) => [pc.contact_id, pc.contact.full_name]));
+  const contactNameById = new Map(localPropContacts.map((pc) => [pc.contact_id, pc.contact.full_name]));
 
   const selectedType = logTypeId ? typeById.get(logTypeId) : null;
   const logOutcomes = touchpointOutcomes.filter(
@@ -185,6 +196,43 @@ export default function PropertyDetailClient({
     setOppError(null);
   }
 
+  async function handleLinkContact(e: React.FormEvent) {
+    e.preventDefault();
+    if (!linkContactId) { setLinkError("Select a contact."); return; }
+    setLinkBusy(true);
+    setLinkError(null);
+    try {
+      const { error } = await supabase.rpc("rpc_upsert_property_contact", {
+        p_property_id: property.id,
+        p_contact_id: linkContactId,
+        p_role_category: "decision_maker",
+        p_role_label: linkRoleLabel.trim() || null,
+        p_is_primary: linkPrimary,
+      });
+      if (error) { setLinkError(error.message); return; }
+
+      const linked = localAvailable.find((c) => c.id === linkContactId);
+      if (linked) {
+        setLocalPropContacts((prev) => [
+          ...prev,
+          {
+            contact_id: linked.id,
+            role_label: linkRoleLabel.trim() || null,
+            is_primary: linkPrimary,
+            contact: { id: linked.id, full_name: linked.full_name, account_id: "" },
+          },
+        ]);
+        setLocalAvailable((prev) => prev.filter((c) => c.id !== linkContactId));
+      }
+      setLinkContactId("");
+      setLinkRoleLabel("");
+      setLinkPrimary(false);
+      showToast("success", "Contact linked.");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
   async function handleLogSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!logTypeId) {
@@ -205,7 +253,7 @@ export default function PropertyDetailClient({
       let tpId: string | null = null;
 
       if (selectedType?.is_outreach) {
-        const pc = propContacts.find((p) => p.contact_id === logContactId);
+        const pc = localPropContacts.find((p) => p.contact_id === logContactId);
         const { data, error } = await supabase.rpc("rpc_log_outreach_touchpoint", {
           p_contact_id: logContactId,
           p_account_id: pc!.contact.account_id,
@@ -241,7 +289,7 @@ export default function PropertyDetailClient({
       };
       setTouchpoints((prev) => [newTp, ...prev]);
       setLogTypeId("");
-      setLogContactId(propContacts[0]?.contact_id ?? "");
+      setLogContactId(localPropContacts[0]?.contact_id ?? "");
       setLogOutcomeId("");
       setLogPhase("visibility");
       setLogNotes("");
@@ -413,7 +461,7 @@ export default function PropertyDetailClient({
               </div>
             </div>
             {/* Contact selector */}
-            {propContacts.length > 0 && (
+            {localPropContacts.length > 0 && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">
                   Contact{selectedType?.is_outreach ? " *" : " (optional)"}
@@ -424,7 +472,7 @@ export default function PropertyDetailClient({
                   onChange={(e) => setLogContactId(e.target.value)}
                 >
                   {!selectedType?.is_outreach && <option value="">None</option>}
-                  {propContacts.map((pc) => (
+                  {localPropContacts.map((pc) => (
                     <option key={pc.contact_id} value={pc.contact_id}>
                       {pc.contact.full_name ?? "Unknown"}
                       {pc.role_label ? ` (${pc.role_label})` : ""}
@@ -433,7 +481,7 @@ export default function PropertyDetailClient({
                 </select>
               </div>
             )}
-            {propContacts.length === 0 && selectedType?.is_outreach && (
+            {localPropContacts.length === 0 && selectedType?.is_outreach && (
               <p className="text-xs text-amber-600">
                 No contacts linked to this property. Outreach requires a contact.
               </p>
@@ -577,7 +625,7 @@ export default function PropertyDetailClient({
                 />
               </div>
             </div>
-            {propContacts.length > 0 && (
+            {localPropContacts.length > 0 && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">
                   Primary Contact (optional)
@@ -588,7 +636,7 @@ export default function PropertyDetailClient({
                   onChange={(e) => setOppContactId(e.target.value)}
                 >
                   <option value="">None</option>
-                  {propContacts.map((pc) => (
+                  {localPropContacts.map((pc) => (
                     <option key={pc.contact_id} value={pc.contact_id}>
                       {pc.contact.full_name ?? "Unknown"}
                     </option>
@@ -623,7 +671,7 @@ export default function PropertyDetailClient({
           {(
             [
               { key: "opportunities", label: `Opportunities (${opportunities.length})` },
-              { key: "contacts", label: `Contacts (${propContacts.length})` },
+              { key: "contacts", label: `Contacts (${localPropContacts.length})` },
               { key: "timeline", label: `Timeline (${touchpoints.length})` },
             ] as const
           ).map(({ key, label }) => (
@@ -696,12 +744,58 @@ export default function PropertyDetailClient({
       {/* Tab: Contacts */}
       {tab === "contacts" && (
         <div className="space-y-3">
-          {propContacts.length === 0 ? (
+          {/* Link contact form */}
+          {localAvailable.length > 0 && (
+            <form onSubmit={handleLinkContact} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+              <p className="text-xs font-medium text-slate-600">Link a contact to this property</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <select
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                  value={linkContactId}
+                  onChange={(e) => setLinkContactId(e.target.value)}
+                >
+                  <option value="">Select contact…</option>
+                  {localAvailable.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.full_name ?? c.id.slice(0, 8)}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                  value={linkRoleLabel}
+                  onChange={(e) => setLinkRoleLabel(e.target.value)}
+                  placeholder="Role (optional)"
+                />
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={linkPrimary}
+                      onChange={(e) => setLinkPrimary(e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    Primary
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={linkBusy}
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {linkBusy ? "Linking…" : "Link"}
+                  </button>
+                </div>
+              </div>
+              {linkError && <p className="text-xs text-red-600">{linkError}</p>}
+            </form>
+          )}
+
+          {localPropContacts.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500">
               No contacts linked to this property.
             </p>
           ) : (
-            propContacts.map((pc) => (
+            localPropContacts.map((pc) => (
               <a
                 key={pc.contact_id}
                 href={`/app/contacts/${pc.contact_id}`}

@@ -42,6 +42,7 @@ export default async function PropertyDetailPage({
     scopeRes,
     stageRes,
     meRes,
+    allContactsRes,
   ] = await Promise.all([
     prop.primary_account_id
       ? supabase
@@ -71,6 +72,7 @@ export default async function PropertyDetailPage({
     supabase.from("scope_types").select("id,name,key").order("sort_order"),
     supabase.from("opportunity_stages").select("id,name,key,is_closed_stage").order("sort_order"),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
+    supabase.from("contacts").select("id,full_name,account_id").is("deleted_at", null).order("full_name"),
   ]);
 
   // Extract typed property contacts from join
@@ -82,6 +84,12 @@ export default async function PropertyDetailPage({
       contact: pc.contacts as unknown as { id: string; full_name: string | null; account_id: string },
     }))
     .filter((pc) => pc.contact != null);
+
+  // All contacts for linking (exclude already-linked ones)
+  const linkedContactIds = new Set(propContacts.map((pc) => pc.contact_id));
+  const availableContacts = (allContactsRes.data ?? [])
+    .filter((c) => !linkedContactIds.has(c.id as string))
+    .map((c) => ({ id: c.id as string, full_name: c.full_name as string | null }));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cast = <T,>(v: unknown) => (v ?? []) as T[];
@@ -100,6 +108,7 @@ export default async function PropertyDetailPage({
       orgId={orgId}
       userId={userId}
       userRole={meRes.data?.role ?? "rep"}
+      availableContacts={availableContacts}
     />
   );
 }

@@ -20,8 +20,8 @@ export default async function ContactDetailPage({
 
   if (!contactRes.data) notFound();
 
-  // 2. Parallel: account, touchpoints, next_actions, linked properties, lookup tables, role
-  const [accountRes, tpRes, nextActionsRes, propContactsRes, ttRes, toRes, meRes] =
+  // 2. Parallel: account, touchpoints, next_actions, linked properties, lookup tables, role, all properties
+  const [accountRes, tpRes, nextActionsRes, propContactsRes, ttRes, toRes, meRes, allPropsRes] =
     await Promise.all([
       supabase
         .from("accounts")
@@ -47,12 +47,25 @@ export default async function ContactDetailPage({
       supabase.from("touchpoint_types").select("id,name,key,is_outreach").order("sort_order"),
       supabase.from("touchpoint_outcomes").select("id,name,touchpoint_type_id").order("sort_order"),
       supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
+      supabase.from("properties").select("id,address_line1,city,state,postal_code").is("deleted_at", null).order("address_line1"),
     ]);
 
   // Extract property objects from the junction table join
   const properties = (propContactsRes.data ?? [])
     .map((pc) => pc.properties as unknown as { id: string; address_line1: string; city: string | null; state: string | null; postal_code: string | null } | null)
     .filter((p): p is NonNullable<typeof p> => p !== null);
+
+  // All properties for linking (exclude already-linked ones)
+  const linkedPropertyIds = new Set(properties.map((p) => p.id));
+  const availableProperties = (allPropsRes.data ?? [])
+    .filter((p) => !linkedPropertyIds.has(p.id as string))
+    .map((p) => ({
+      id: p.id as string,
+      address_line1: p.address_line1 as string,
+      city: p.city as string | null,
+      state: p.state as string | null,
+      postal_code: p.postal_code as string | null,
+    }));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cast = <T,>(v: unknown) => (v ?? []) as T[];
@@ -69,6 +82,7 @@ export default async function ContactDetailPage({
       userId={userId}
       orgId={orgId}
       userRole={meRes.data?.role ?? "rep"}
+      availableProperties={availableProperties}
     />
   );
 }

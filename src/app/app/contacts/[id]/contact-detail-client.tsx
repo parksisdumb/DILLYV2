@@ -104,6 +104,7 @@ export default function ContactDetailClient({
   userId,
   orgId,
   userRole,
+  availableProperties,
 }: {
   contact: Contact;
   account: Account;
@@ -115,6 +116,7 @@ export default function ContactDetailClient({
   userId: string;
   orgId: string;
   userRole: string;
+  availableProperties: Property[];
 }) {
   const supabase = createBrowserSupabase();
 
@@ -130,6 +132,15 @@ export default function ContactDetailClient({
   const [logNotes, setLogNotes] = useState("");
   const [logBusy, setLogBusy] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
+
+  // Link property form
+  const [linkPropId, setLinkPropId] = useState("");
+  const [linkRoleLabel, setLinkRoleLabel] = useState("");
+  const [linkPrimary, setLinkPrimary] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [localProperties, setLocalProperties] = useState(initialProperties);
+  const [localAvailableProps, setLocalAvailableProps] = useState(availableProperties);
 
   // Schedule follow-up form
   const [fuPropertyId, setFuPropertyId] = useState(initialProperties[0]?.id ?? "");
@@ -150,10 +161,39 @@ export default function ContactDetailClient({
     setFuError(null);
   }
 
+  async function handleLinkProperty(e: React.FormEvent) {
+    e.preventDefault();
+    if (!linkPropId) { setLinkError("Select a property."); return; }
+    setLinkBusy(true);
+    setLinkError(null);
+    try {
+      const { error } = await supabase.rpc("rpc_upsert_property_contact", {
+        p_property_id: linkPropId,
+        p_contact_id: contact.id,
+        p_role_category: "decision_maker",
+        p_role_label: linkRoleLabel.trim() || null,
+        p_is_primary: linkPrimary,
+      });
+      if (error) { setLinkError(error.message); return; }
+
+      const linked = localAvailableProps.find((p) => p.id === linkPropId);
+      if (linked) {
+        setLocalProperties((prev) => [...prev, linked]);
+        setLocalAvailableProps((prev) => prev.filter((p) => p.id !== linkPropId));
+      }
+      setLinkPropId("");
+      setLinkRoleLabel("");
+      setLinkPrimary(false);
+      showToast("success", "Property linked.");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
   // Lookup maps
   const typeById = new Map(touchpointTypes.map((t) => [t.id, t]));
   const outcomeById = new Map(touchpointOutcomes.map((o) => [o.id, o]));
-  const propertyById = new Map(initialProperties.map((p) => [p.id, p]));
+  const propertyById = new Map(localProperties.map((p) => [p.id, p]));
 
   const outreachTypes = touchpointTypes.filter((t) => t.is_outreach);
   const logOutcomes = touchpointOutcomes.filter(
@@ -396,9 +436,9 @@ export default function ContactDetailClient({
       {activeAction === "followup" && (
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">Schedule Follow-Up</h2>
-          {initialProperties.length === 0 ? (
+          {localProperties.length === 0 ? (
             <p className="text-sm text-slate-600">
-              No properties linked to this contact. Associate a property first to schedule a
+              No properties linked to this contact. Link a property first to schedule a
               follow-up.
             </p>
           ) : (
@@ -420,7 +460,7 @@ export default function ContactDetailClient({
                     value={fuPropertyId}
                     onChange={(e) => setFuPropertyId(e.target.value)}
                   >
-                    {initialProperties.map((p) => (
+                    {localProperties.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.address_line1}
                       </option>
@@ -487,7 +527,7 @@ export default function ContactDetailClient({
             [
               { key: "timeline", label: `Timeline (${touchpoints.length})` },
               { key: "next_actions", label: `Follow-Ups (${nextActions.length})` },
-              { key: "properties", label: `Properties (${initialProperties.length})` },
+              { key: "properties", label: `Properties (${localProperties.length})` },
             ] as const
           ).map(({ key, label }) => (
             <button
@@ -590,18 +630,68 @@ export default function ContactDetailClient({
       {/* Tab: Properties */}
       {tab === "properties" && (
         <div className="space-y-3">
-          {initialProperties.length === 0 ? (
+          {/* Link property form */}
+          {localAvailableProps.length > 0 && (
+            <form onSubmit={handleLinkProperty} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+              <p className="text-xs font-medium text-slate-600">Link a property to this contact</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <select
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                  value={linkPropId}
+                  onChange={(e) => setLinkPropId(e.target.value)}
+                >
+                  <option value="">Select property…</option>
+                  {localAvailableProps.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.address_line1}{p.city ? `, ${p.city}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                  value={linkRoleLabel}
+                  onChange={(e) => setLinkRoleLabel(e.target.value)}
+                  placeholder="Role (optional)"
+                />
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={linkPrimary}
+                      onChange={(e) => setLinkPrimary(e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    Primary
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={linkBusy}
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {linkBusy ? "Linking…" : "Link"}
+                  </button>
+                </div>
+              </div>
+              {linkError && <p className="text-xs text-red-600">{linkError}</p>}
+            </form>
+          )}
+
+          {localProperties.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500">
               No properties linked to this contact.
             </p>
           ) : (
-            initialProperties.map((p) => (
-              <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+            localProperties.map((p) => (
+              <a
+                key={p.id}
+                href={`/app/properties/${p.id}`}
+                className="block rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50"
+              >
                 <p className="font-medium text-slate-900">{p.address_line1}</p>
                 <p className="text-sm text-slate-500">
                   {[p.city, p.state, p.postal_code].filter(Boolean).join(", ") || "—"}
                 </p>
-              </div>
+              </a>
             ))
           )}
         </div>

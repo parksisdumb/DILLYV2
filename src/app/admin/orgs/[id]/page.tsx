@@ -1,15 +1,57 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin-auth";
+import { DeleteUserButton } from "./delete-user-button";
 
 type Props = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ deleted?: string; error?: string }>;
 };
 
-export default async function OrgDetailPage({ params }: Props) {
+async function deleteUserAction(formData: FormData) {
+  "use server";
+  await requireAdmin();
+
+  const orgId = String(formData.get("org_id") ?? "").trim();
+  const userId = String(formData.get("user_id") ?? "").trim();
+  const base = `/admin/orgs/${orgId}`;
+
+  if (!userId || !orgId) {
+    redirect(`${base}?error=Missing+user+or+org+ID`);
+  }
+
+  const admin = createAdminClient();
+
+  // 1. Remove from org_users
+  const { error: orgUserError } = await admin
+    .from("org_users")
+    .delete()
+    .eq("org_id", orgId)
+    .eq("user_id", userId);
+
+  if (orgUserError) {
+    redirect(`${base}?error=${encodeURIComponent(orgUserError.message)}`);
+  }
+
+  // 2. Remove profile
+  await admin.from("profiles").delete().eq("user_id", userId);
+
+  // 3. Delete auth user
+  const { error: authError } = await admin.auth.admin.deleteUser(userId);
+  if (authError) {
+    redirect(`${base}?error=${encodeURIComponent(`Removed from org but auth delete failed: ${authError.message}`)}`);
+  }
+
+  revalidatePath(base);
+  redirect(`${base}?deleted=1`);
+}
+
+export default async function OrgDetailPage({ params, searchParams }: Props) {
   await requireAdmin();
   const { id: orgId } = await params;
+  const sp = await searchParams;
   const admin = createAdminClient();
 
   // Fetch org
@@ -96,6 +138,17 @@ export default async function OrgDetailPage({ params }: Props) {
         </Link>
       </div>
 
+      {sp.deleted && (
+        <div className="mt-4 rounded-xl border border-green-800 bg-green-900/30 px-4 py-3 text-sm text-green-300">
+          User deleted successfully.
+        </div>
+      )}
+      {sp.error && (
+        <div className="mt-4 rounded-xl border border-red-800 bg-red-900/50 px-4 py-3 text-sm text-red-300">
+          {sp.error}
+        </div>
+      )}
+
       {/* Users list */}
       <div className="mt-6">
         <h2 className="text-sm font-medium uppercase tracking-wide text-slate-400">
@@ -123,9 +176,16 @@ export default async function OrgDetailPage({ params }: Props) {
                   Added {new Date(u.createdAt).toLocaleDateString()}
                 </div>
               </div>
-              <span className="rounded-lg bg-slate-700 px-2.5 py-1 text-xs font-medium capitalize text-slate-300">
-                {u.role}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-lg bg-slate-700 px-2.5 py-1 text-xs font-medium capitalize text-slate-300">
+                  {u.role}
+                </span>
+                <form action={deleteUserAction}>
+                  <input type="hidden" name="org_id" value={orgId} />
+                  <input type="hidden" name="user_id" value={u.userId} />
+                  <DeleteUserButton name={u.fullName || u.email} />
+                </form>
+              </div>
             </div>
           ))}
         </div>

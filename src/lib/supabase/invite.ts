@@ -23,7 +23,7 @@ export async function sendInviteEmail(
 
   const fullName = [opts.firstName, opts.lastName].filter(Boolean).join(" ");
 
-  return admin.auth.admin.inviteUserByEmail(email, {
+  const result = await admin.auth.admin.inviteUserByEmail(email, {
     redirectTo,
     data: {
       ...(opts.firstName && { first_name: opts.firstName }),
@@ -31,4 +31,14 @@ export async function sendInviteEmail(
       ...(fullName && { full_name: fullName }),
     },
   });
+
+  // Immediately confirm the email so the user can log in with password
+  // without needing to click the invite link first.
+  if (result.data?.user?.id) {
+    await admin.auth.admin.updateUserById(result.data.user.id, {
+      email_confirm: true,
+    });
+  }
+
+  return result;
 }

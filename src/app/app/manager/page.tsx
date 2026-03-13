@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
-import { createAdminClient } from "@/lib/supabase/admin";
 import ManagerClient from "@/app/app/manager/manager-client";
 
 // ── Exported types consumed by manager-client ──────────────────────────────
@@ -9,6 +8,7 @@ export type RepStat = {
   userId: string;
   name: string;
   email: string | null;
+  role: string;
   firstTouchToday: number;
   followUpToday: number;
   targetFirstTouch: number;
@@ -35,34 +35,6 @@ export type TopAccount = {
   touchpointCount30d: number;
 };
 
-// ── Email helper (same pattern as admin/kpis) ──────────────────────────────
-
-async function listEmailsByUserId(userIds: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  if (!userIds.length) return out;
-  const wanted = new Set(userIds);
-  try {
-    const admin = createAdminClient();
-    const perPage = 200;
-    let page = 1;
-    while (wanted.size > 0) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-      if (error) throw new Error(error.message);
-      for (const user of data.users) {
-        if (user.id && wanted.has(user.id)) {
-          out.set(user.id, user.email ?? "");
-          wanted.delete(user.id);
-        }
-      }
-      if (data.users.length < perPage) break;
-      page += 1;
-    }
-  } catch {
-    return out;
-  }
-  return out;
-}
-
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default async function ManagerPage() {
@@ -86,8 +58,7 @@ export default async function ManagerPage() {
 
   // Parallel fetches — no org_id filters (RLS handles scoping)
   const [
-    repsRes,
-    profilesRes,
+    orgUsersRes,
     ttypesRes,
     todayTpsRes,
     kpiDefsRes,
@@ -99,8 +70,7 @@ export default async function ManagerPage() {
     recentTpsRes,
     accountsRes,
   ] = await Promise.all([
-    supabase.from("org_users").select("user_id,role").eq("role", "rep"),
-    supabase.from("profiles").select("user_id,full_name"),
+    supabase.from("org_users").select("user_id, role, full_name, email").order("full_name"),
     supabase.from("touchpoint_types").select("id,is_outreach,key"),
     supabase
       .from("touchpoints")
@@ -136,18 +106,10 @@ export default async function ManagerPage() {
     supabase.from("accounts").select("id,name").is("deleted_at", null),
   ]);
 
-  const repRows = (repsRes.data ?? []) as { user_id: string; role: string }[];
-  const repUserIds = repRows.map((r) => r.user_id);
-
-  // Fetch emails via admin client
-  const emailByUserId = await listEmailsByUserId(repUserIds);
+  const orgUserRows = orgUsersRes.data ?? [];
+  const repUserIds = orgUserRows.map((r) => r.user_id);
 
   // ── Build lookup maps ──────────────────────────────────────────────────
-
-  const profileByUserId = new Map<string, string | null>();
-  for (const p of profilesRes.data ?? []) {
-    profileByUserId.set(p.user_id as string, (p.full_name as string | null));
-  }
 
   const ttypeById = new Map<string, { is_outreach: boolean; key: string }>();
   for (const t of ttypesRes.data ?? []) {
@@ -210,8 +172,8 @@ export default async function ManagerPage() {
   const ftDefId = kpiDefByKey.get("daily_first_touch_outreach");
   const fuDefId = kpiDefByKey.get("daily_follow_up_outreach");
 
-  const repStats: RepStat[] = repRows.map((rep) => {
-    const uid = rep.user_id;
+  const repStats: RepStat[] = orgUserRows.map((member) => {
+    const uid = member.user_id;
     const todayTps = todayByRep.get(uid) ?? [];
 
     const firstTouchToday = todayTps.filter((t) => {
@@ -240,14 +202,13 @@ export default async function ManagerPage() {
     const complianceRate =
       nextActionsTotal30d > 0 ? Math.round((nextActionsCompleted30d / nextActionsTotal30d) * 100) : 0;
 
-    const fullName = profileByUserId.get(uid);
-    const email = emailByUserId.get(uid) ?? null;
-    const name = fullName?.trim() || email?.split("@")[0] || uid.slice(0, 8);
+    const name = member.full_name?.trim() || member.email?.split("@")[0] || uid.slice(0, 8);
 
     return {
       userId: uid,
       name,
-      email,
+      email: member.email ?? null,
+      role: member.role,
       firstTouchToday,
       followUpToday,
       targetFirstTouch,

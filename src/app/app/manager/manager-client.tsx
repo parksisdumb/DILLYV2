@@ -101,9 +101,9 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, g
         <>
           {repStats.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              No reps found.{" "}
+              No team members found.{" "}
               <Link href="/app/admin/team" className="text-blue-600 hover:underline">
-                Invite reps from the Team page.
+                Invite members from the Team page.
               </Link>
             </div>
           ) : (
@@ -112,7 +112,12 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, g
                 <div key={rep.userId} className="rounded-2xl border border-slate-200 bg-white p-4">
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <div>
-                      <div className="font-semibold text-slate-900">{rep.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-900">{rep.name}</span>
+                        <span className="rounded-md bg-slate-200 px-1.5 py-0.5 text-xs font-medium capitalize text-slate-600">
+                          {rep.role}
+                        </span>
+                      </div>
                       {rep.email && <div className="text-xs text-slate-400">{rep.email}</div>}
                     </div>
                     <button

@@ -87,13 +87,12 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
     redirect("/app");
   }
 
-  // Fetch current org members, their profiles, and pending invites in parallel
-  const [membersResult, profilesResult, invitesResult] = await Promise.all([
+  // Fetch current org members and pending invites in parallel
+  const [membersResult, invitesResult] = await Promise.all([
     supabase
       .from("org_users")
-      .select("user_id, role")
+      .select("user_id, role, full_name, email")
       .order("role"),
-    supabase.from("profiles").select("user_id, full_name, email"),
     supabase
       .from("org_invites")
       .select("id, email, role, token, created_at, expires_at, accepted_at")
@@ -106,24 +105,13 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
   if (membersResult.error) throw new Error(membersResult.error.message);
   if (invitesResult.error) throw new Error(invitesResult.error.message);
 
-  const members = membersResult.data ?? [];
-  const profiles = profilesResult.data ?? [];
+  const teamMembers = (membersResult.data ?? []).map((m) => ({
+    user_id: m.user_id,
+    role: m.role,
+    fullName: m.full_name ?? m.email ?? m.user_id,
+    email: m.email ?? null,
+  }));
   const invites = invitesResult.data ?? [];
-
-  const profileMap = new Map<string, { full_name: string | null; email: string | null }>();
-  for (const p of profiles) {
-    profileMap.set(p.user_id, { full_name: p.full_name, email: p.email });
-  }
-
-  const teamMembers = members.map((m) => {
-    const prof = profileMap.get(m.user_id);
-    return {
-      user_id: m.user_id,
-      role: m.role,
-      fullName: prof?.full_name ?? m.user_id,
-      email: prof?.email ?? null,
-    };
-  });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const roles = inviterRole === "manager" ? ["rep"] : ["rep", "manager", "admin"];

@@ -1,6 +1,5 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 
 type KpisPageSearchParams = {
@@ -10,16 +9,6 @@ type KpisPageSearchParams = {
 
 type KpisPageProps = {
   searchParams: Promise<KpisPageSearchParams>;
-};
-
-type RepOrgUserRow = {
-  user_id: string;
-  role: string;
-};
-
-type ProfileRow = {
-  user_id: string;
-  full_name: string | null;
 };
 
 type KpiTargetRow = {
@@ -110,38 +99,6 @@ async function ensureOutreachKpiDefinition(context: ManagerContext): Promise<str
   return data.id;
 }
 
-async function listEmailsByUserId(userIds: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  if (!userIds.length) return out;
-
-  const wanted = new Set(userIds);
-
-  try {
-    const admin = createAdminClient();
-    const perPage = 200;
-    let page = 1;
-
-    while (wanted.size > 0) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-      if (error) throw new Error(error.message);
-
-      for (const user of data.users) {
-        if (user.id && wanted.has(user.id)) {
-          out.set(user.id, user.email ?? "");
-          wanted.delete(user.id);
-        }
-      }
-
-      if (data.users.length < perPage) break;
-      page += 1;
-    }
-  } catch {
-    return out;
-  }
-
-  return out;
-}
-
 async function saveRepTargetAction(formData: FormData) {
   "use server";
 
@@ -160,16 +117,16 @@ async function saveRepTargetAction(formData: FormData) {
     errorRedirect(message);
   }
 
-  const { data: repRow, error: repError } = await context.supabase
+  const { data: memberRow, error: memberError } = await context.supabase
     .from("org_users")
-    .select("user_id,role")
+    .select("user_id")
     .eq("org_id", context.orgId)
     .eq("user_id", repUserId)
     .maybeSingle();
 
-  if (repError) errorRedirect(repError.message);
-  if (!repRow || repRow.role !== "rep") {
-    errorRedirect("Selected user is not a rep in your org.");
+  if (memberError) errorRedirect(memberError.message);
+  if (!memberRow) {
+    errorRedirect("Selected user is not a member of your org.");
   }
 
   let outreachDefinitionId: string;
@@ -210,61 +167,42 @@ export default async function AdminKpisPage({ searchParams }: KpisPageProps) {
 
   const { data: repUsers, error: repUsersError } = await context.supabase
     .from("org_users")
-    .select("user_id,role")
+    .select("user_id, role, full_name, email")
     .eq("org_id", context.orgId)
-    .eq("role", "rep")
-    .order("user_id");
+    .order("role")
+    .order("full_name");
 
   if (repUsersError) throw new Error(repUsersError.message);
 
-  const repRows = (repUsers ?? []) as RepOrgUserRow[];
-  const repUserIds = repRows.map((row) => row.user_id);
+  const orgUserRows = repUsers ?? [];
+  const userIds = orgUserRows.map((row) => row.user_id);
 
-  const [profilesResult, targetsResult, emailByUserId] = await Promise.all([
-    repUserIds.length
-      ? context.supabase
-          .from("profiles")
-          .select("user_id,full_name")
-          .in("user_id", repUserIds)
-      : Promise.resolve({ data: [], error: null }),
-    repUserIds.length
-      ? context.supabase
-          .from("kpi_targets")
-          .select("user_id,target_value")
-          .eq("org_id", context.orgId)
-          .eq("period", "daily")
-          .eq("kpi_definition_id", outreachDefinitionId)
-          .in("user_id", repUserIds)
-      : Promise.resolve({ data: [], error: null }),
-    listEmailsByUserId(repUserIds),
-  ]);
+  const { data: targetsData, error: targetsError } = userIds.length
+    ? await context.supabase
+        .from("kpi_targets")
+        .select("user_id,target_value")
+        .eq("org_id", context.orgId)
+        .eq("period", "daily")
+        .eq("kpi_definition_id", outreachDefinitionId)
+        .in("user_id", userIds)
+    : { data: [], error: null };
 
-  if (profilesResult.error) throw new Error(profilesResult.error.message);
-  if (targetsResult.error) throw new Error(targetsResult.error.message);
-
-  const profileByUserId = new Map<string, ProfileRow>();
-  for (const row of (profilesResult.data ?? []) as ProfileRow[]) {
-    profileByUserId.set(row.user_id, row);
-  }
+  if (targetsError) throw new Error(targetsError.message);
 
   const targetByUserId = new Map<string, number>();
-  for (const row of (targetsResult.data ?? []) as KpiTargetRow[]) {
+  for (const row of (targetsData ?? []) as KpiTargetRow[]) {
     const numericValue = toNumber(row.target_value);
     if (numericValue === null) continue;
     targetByUserId.set(row.user_id, numericValue);
   }
 
-  const rows = repRows.map((rep) => {
-    const profile = profileByUserId.get(rep.user_id);
-    const outreach = targetByUserId.get(rep.user_id);
-
-    return {
-      userId: rep.user_id,
-      name: profile?.full_name?.trim() || null,
-      email: emailByUserId.get(rep.user_id) || null,
-      outreachTarget: outreach ?? OUTREACH_DEFAULT_TARGET,
-    };
-  });
+  const rows = orgUserRows.map((u) => ({
+    userId: u.user_id,
+    name: u.full_name?.trim() || null,
+    email: u.email || null,
+    role: u.role,
+    outreachTarget: targetByUserId.get(u.user_id) ?? OUTREACH_DEFAULT_TARGET,
+  }));
 
   const status = params.status;
   const message = params.message;
@@ -291,7 +229,7 @@ export default async function AdminKpisPage({ searchParams }: KpisPageProps) {
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         {!rows.length ? (
-          <p className="p-5 text-sm text-slate-600">No reps found in this organization.</p>
+          <p className="p-5 text-sm text-slate-600">No team members found in this organization.</p>
         ) : (
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
@@ -305,8 +243,13 @@ export default async function AdminKpisPage({ searchParams }: KpisPageProps) {
               {rows.map((row) => (
                 <tr key={row.userId}>
                   <td className="px-4 py-3 align-top">
-                    <div className="text-sm font-medium text-slate-900">
-                      {row.name || row.email || row.userId.slice(0, 8)}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-900">
+                        {row.name || row.email || row.userId.slice(0, 8)}
+                      </span>
+                      <span className="rounded-md bg-slate-200 px-1.5 py-0.5 text-xs font-medium capitalize text-slate-600">
+                        {row.role}
+                      </span>
                     </div>
                     <div className="text-xs text-slate-600">
                       {row.email || `${row.userId.slice(0, 8)}...`}

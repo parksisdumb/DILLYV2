@@ -10,6 +10,7 @@ type Props = {
     status?: string;
     error?: string;
     email?: string;
+    password?: string;
     name?: string;
     role?: string;
   }>;
@@ -22,6 +23,7 @@ async function addUserAction(formData: FormData) {
   const firstName = String(formData.get("first_name") ?? "").trim();
   const lastName = String(formData.get("last_name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "").trim();
   const role = String(formData.get("role") ?? "rep").trim();
 
   const base = `/admin/orgs/${orgId}/users/new`;
@@ -34,6 +36,9 @@ async function addUserAction(formData: FormData) {
   }
   if (!email) {
     redirect(`${base}?error=Email+is+required`);
+  }
+  if (!password || password.length < 6) {
+    redirect(`${base}?error=Password+must+be+at+least+6+characters`);
   }
 
   // 1. Send invite email (creates auth user + sends email)
@@ -50,7 +55,16 @@ async function addUserAction(formData: FormData) {
   const userId = invited.user.id;
   const admin = createAdminClient();
 
-  // 2. Insert profile
+  // 2. Set the password so the user can also log in directly
+  const { error: pwError } = await admin.auth.admin.updateUserById(userId, {
+    password,
+  });
+
+  if (pwError) {
+    redirect(`${base}?error=${encodeURIComponent(`User created but password failed: ${pwError.message}`)}`);
+  }
+
+  // 3. Insert profile
   const fullName = `${firstName} ${lastName}`;
   const { error: profileError } = await admin.from("profiles").upsert(
     { user_id: userId, full_name: fullName },
@@ -61,7 +75,7 @@ async function addUserAction(formData: FormData) {
     redirect(`${base}?error=${encodeURIComponent(`Profile: ${profileError.message}`)}`);
   }
 
-  // 3. Insert org_users
+  // 4. Insert org_users
   const { error: orgUserError } = await admin
     .from("org_users")
     .insert({ org_id: orgId, user_id: userId, role });
@@ -71,7 +85,7 @@ async function addUserAction(formData: FormData) {
   }
 
   redirect(
-    `${base}?status=success&email=${encodeURIComponent(email)}&name=${encodeURIComponent(fullName)}&role=${encodeURIComponent(role)}`,
+    `${base}?status=success&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}&name=${encodeURIComponent(fullName)}&role=${encodeURIComponent(role)}`,
   );
 }
 
@@ -91,6 +105,8 @@ export default async function AddUserPage({ params, searchParams }: Props) {
   if (orgError) throw new Error(orgError.message);
   if (!org) notFound();
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://dillyv2.vercel.app";
+
   return (
     <div className="mx-auto max-w-lg px-4 py-8 sm:px-6">
       <Link href={`/admin/orgs/${orgId}`} className="text-sm text-slate-400 hover:text-white">
@@ -106,16 +122,27 @@ export default async function AddUserPage({ params, searchParams }: Props) {
       {sp.status === "success" && (
         <div className="mt-6 space-y-4">
           <div className="rounded-2xl border border-green-800 bg-green-900/30 p-6 space-y-3">
-            <div className="text-base font-semibold text-green-300">Invite sent successfully</div>
+            <div className="text-base font-semibold text-green-300">User created &amp; invite sent</div>
             <div className="space-y-1 text-sm text-green-200">
               <div><span className="text-green-400">Name:</span> {sp.name}</div>
               <div><span className="text-green-400">Email:</span> {sp.email}</div>
               <div><span className="text-green-400">Role:</span> {sp.role}</div>
+              <div><span className="text-green-400">Password:</span> {sp.password}</div>
             </div>
             <p className="text-sm text-green-200/80">
-              An invite email has been sent to {sp.email}. They&apos;ll click the link
-              in the email to set their password and access Dilly.
+              An invite email has been sent. They can also log in directly
+              at {appUrl}/login with the password above.
             </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-700 bg-slate-800 p-5 space-y-2">
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Copy and send to the user
+            </div>
+            <div className="rounded-xl border border-slate-600 bg-slate-700 p-4 text-sm leading-relaxed text-slate-200">
+              Your Dilly account is ready. Log in at {appUrl}/login with
+              email {sp.email} and password {sp.password}
+            </div>
           </div>
 
           <div className="flex gap-3">
@@ -181,6 +208,18 @@ export default async function AddUserPage({ params, searchParams }: Props) {
             </div>
 
             <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-300">Password</label>
+              <input
+                className="w-full rounded-xl border border-slate-600 bg-slate-700 px-3 py-2.5 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                name="password"
+                type="text"
+                required
+                placeholder="Minimum 6 characters"
+                minLength={6}
+              />
+            </div>
+
+            <div className="space-y-1.5">
               <label className="text-sm font-medium text-slate-300">Role</label>
               <select
                 name="role"
@@ -198,7 +237,7 @@ export default async function AddUserPage({ params, searchParams }: Props) {
             type="submit"
             className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
           >
-            Send Invite
+            Create User &amp; Send Invite
           </button>
         </form>
       )}

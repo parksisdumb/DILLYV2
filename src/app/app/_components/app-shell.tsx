@@ -125,6 +125,7 @@ export default function AppShell({
     ...(canSeeAdmin
       ? [
           { href: "/app/manager", label: "Manager" },
+          { href: "/app/manager/territories", label: "Territories" },
           { href: "/app/admin/team", label: "Team" },
           { href: "/app/admin/kpis", label: "KPIs" },
         ]

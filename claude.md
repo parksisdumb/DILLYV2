@@ -104,6 +104,9 @@ Both RPCs handle score_events and streak updates atomically.
 | `kpi_targets` | Per-user targets: `(org_id, user_id, period, kpi_definition_id, target_value)` — unique per user+period+definition |
 | `streaks` | Daily streak counts per user: `(org_id, user_id, streak_type, current_count, last_earned_date)` |
 | `org_invites` | Pending invitations to join an org |
+| `territories` | Named geographic territories (org-scoped, manager-managed) |
+| `territory_regions` | Regions within a territory — `region_type` (zip/city/county), `region_value`, `state` |
+| `territory_assignments` | Rep ↔ territory assignment with `role` (primary/secondary/manager) |
 
 ---
 
@@ -233,3 +236,4 @@ Current migrations (applied in order):
 33. `20260302120000_engagement_phase_visibility_v1` — renames engagement_phase 'other' → 'visibility', updates check constraint + both RPCs
 34. `20260303093000_accounts_website_phone_v1` — adds `website text` and `phone text` columns to accounts table
 35. `20260303110000_properties_roof_metadata_v1` — adds `roof_type text`, `roof_age_years int`, `sq_footage int` to properties table
+36. `20260313100000_territories_v1` — `territories`, `territory_regions`, `territory_assignments` tables with RLS (manager/admin write, org-member read)

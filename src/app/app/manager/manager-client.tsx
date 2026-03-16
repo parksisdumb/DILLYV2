@@ -8,6 +8,7 @@ type Props = {
   repStats: RepStat[];
   stageSummaries: StageSummary[];
   topAccounts: TopAccount[];
+  queueCounts: Record<string, number>;
   generatedAt: string;
 };
 
@@ -51,7 +52,7 @@ function ComplianceBadge({ rate }: { rate: number }) {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function ManagerClient({ repStats, stageSummaries, topAccounts, generatedAt }: Props) {
+export default function ManagerClient({ repStats, stageSummaries, topAccounts, queueCounts, generatedAt }: Props) {
   const [tab, setTab] = useState<Tab>("today");
 
   const generatedDate = new Date(generatedAt);
@@ -120,13 +121,19 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, g
                       </div>
                       {rep.email && <div className="text-xs text-slate-400">{rep.email}</div>}
                     </div>
-                    <button
-                      disabled
-                      title="Coming in Phase 2"
-                      className="shrink-0 cursor-not-allowed rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-400"
-                    >
-                      Assign Prospect
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {(queueCounts[rep.userId] ?? 0) > 0 && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          {queueCounts[rep.userId]} queued
+                        </span>
+                      )}
+                      <Link
+                        href="/app/manager/prospects"
+                        className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                      >
+                        Assign Prospect
+                      </Link>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <div>

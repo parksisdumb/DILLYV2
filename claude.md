@@ -107,6 +107,12 @@ Both RPCs handle score_events and streak updates atomically.
 | `territories` | Named geographic territories (org-scoped, manager-managed) |
 | `territory_regions` | Regions within a territory — `region_type` (zip/city/county), `region_value`, `state` |
 | `territory_assignments` | Rep ↔ territory assignment with `role` (primary/secondary/manager) |
+| `icp_profiles` | Ideal Customer Profile definitions (org-scoped, optional territory link) |
+| `icp_criteria` | Targeting criteria rows for an ICP profile — `criteria_type` + `criteria_value` |
+| `prospects` | Staging table for external data (Apollo, ZoomInfo, CSV imports) — dedup on domain + address |
+| `import_batches` | Tracks CSV import history — filename, row_count, duplicates_skipped |
+| `suggested_outreach` | Manager-curated prospect queue for reps — status (new/accepted/dismissed/converted), reason_codes jsonb |
+| `benchmark_snapshots` | Anonymized benchmark aggregates — org_id null = platform-wide, calculated by daily cron |
 
 ---
 
@@ -237,3 +243,10 @@ Current migrations (applied in order):
 34. `20260303093000_accounts_website_phone_v1` — adds `website text` and `phone text` columns to accounts table
 35. `20260303110000_properties_roof_metadata_v1` — adds `roof_type text`, `roof_age_years int`, `sq_footage int` to properties table
 36. `20260313100000_territories_v1` — `territories`, `territory_regions`, `territory_assignments` tables with RLS (manager/admin write, org-member read)
+37. `20260313120000_icp_profiles_v1` — `icp_profiles` + `icp_criteria` tables with RLS (manager/admin write, org-member read)
+38. `20260313140000_prospects_v1` — `prospects` + `import_batches` tables with dedup indexes on domain + address, RLS (manager/admin write, org-member read)
+39. `20260313160000_suggested_outreach_v1` — `suggested_outreach` table with rep self-update policy, RLS (manager write, org-member read, rep update own)
+40. `20260314100000_rpc_convert_prospect_v1` — `rpc_convert_prospect` RPC: atomically creates account + optional contact/property/touchpoint, marks prospect converted
+41. `20260315100000_prospects_contact_fields_v1` — adds `contact_first_name`, `contact_last_name`, `contact_title` to prospects table
+42. `20260315110000_rpc_convert_prospect_fix_v1` — re-creates `rpc_convert_prospect` without `updated_at` references
+43. `20260316100000_benchmark_snapshots_v1` — `benchmark_snapshots` table + `rpc_calculate_benchmarks` RPC for anonymized benchmark data pipeline

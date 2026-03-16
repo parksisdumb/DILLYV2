@@ -270,11 +270,24 @@ export default async function ManagerPage() {
       touchpointCount30d: count,
     }));
 
+  // ── Build queue counts per rep ──────────────────────────────────────────
+  const { data: queueData } = await supabase
+    .from("suggested_outreach")
+    .select("user_id")
+    .eq("status", "new");
+  const queueCounts = new Map<string, number>();
+  for (const row of queueData ?? []) {
+    const uid = row.user_id as string;
+    queueCounts.set(uid, (queueCounts.get(uid) ?? 0) + 1);
+  }
+  const queueCountsObj: Record<string, number> = Object.fromEntries(queueCounts);
+
   return (
     <ManagerClient
       repStats={repStats}
       stageSummaries={stageSummaries}
       topAccounts={topAccounts}
+      queueCounts={queueCountsObj}
       generatedAt={now.toISOString()}
     />
   );

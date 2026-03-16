@@ -152,35 +152,45 @@ export default async function TerritoriesPage({ searchParams }: PageProps) {
           </div>
         ) : (
           territories.map((t) => (
-            <Link
+            <div
               key={t.id}
-              href={`/app/manager/territories/${t.id}`}
-              className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 hover:shadow"
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
             >
-              <div>
-                <div className="text-sm font-medium text-slate-900">
-                  {t.name}
+              <div className="flex items-center justify-between">
+                <div>
+                  <Link
+                    href={`/app/manager/territories/${t.id}`}
+                    className="text-sm font-medium text-slate-900 hover:text-blue-600 hover:underline"
+                  >
+                    {t.name}
+                  </Link>
+                  {t.description && (
+                    <div className="mt-0.5 text-xs text-slate-500 line-clamp-1">
+                      {t.description}
+                    </div>
+                  )}
                 </div>
-                {t.description && (
-                  <div className="mt-0.5 text-xs text-slate-500 line-clamp-1">
-                    {t.description}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                  {regionCounts.get(t.id) ?? 0} regions
-                </span>
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                  {assignmentCounts.get(t.id) ?? 0} reps
-                </span>
-                {!t.active && (
-                  <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
-                    Inactive
+                <div className="flex items-center gap-2">
+                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                    {regionCounts.get(t.id) ?? 0} regions
                   </span>
-                )}
+                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                    {assignmentCounts.get(t.id) ?? 0} reps
+                  </span>
+                  {!t.active && (
+                    <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                      Inactive
+                    </span>
+                  )}
+                  <Link
+                    href={`/app/manager/territories/${t.id}/penetration`}
+                    className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600 hover:bg-blue-100"
+                  >
+                    Penetration
+                  </Link>
+                </div>
               </div>
-            </Link>
+            </div>
           ))
         )}
       </div>

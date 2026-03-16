@@ -6,6 +6,8 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
 import Scoreboard from "@/app/app/today/scoreboard";
 import GrowForm from "@/app/app/today/grow-form";
 import AdvanceList from "@/app/app/today/advance-list";
+import SuggestedOutreach from "@/app/app/today/suggested-outreach";
+import type { SuggestionRow } from "@/app/app/today/suggested-outreach";
 
 type Tab = "grow" | "advance";
 
@@ -79,6 +81,7 @@ export default function TodayClient({ userId }: { userId: string }) {
   const [touchpointTypes, setTouchpointTypes] = useState<TouchpointType[]>([]);
   const [touchpointOutcomes, setTouchpointOutcomes] = useState<Outcome[]>([]);
   const [nextActions, setNextActions] = useState<NextAction[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestionRow[]>([]);
 
   const [dashboard, setDashboard] = useState<DashboardRow>({
     points_today: 0,
@@ -207,6 +210,33 @@ export default function TodayClient({ userId }: { userId: string }) {
       setTouchpointOutcomes((to.data ?? []) as Outcome[]);
       setNextActions((na.data ?? []) as NextAction[]);
 
+      // Fetch suggested outreach for this rep
+      const { data: sugData } = await supabase
+        .from("suggested_outreach")
+        .select("id,prospect_id,rank_score,reason_codes,prospects(company_name,email,phone,website,city,state,account_type,notes)")
+        .eq("user_id", userId)
+        .eq("status", "new")
+        .order("rank_score", { ascending: false })
+        .limit(5);
+      const mapped: SuggestionRow[] = ((sugData ?? []) as Record<string, unknown>[]).map((s) => {
+        const pr = (s.prospects ?? {}) as Record<string, unknown>;
+        return {
+          id: s.id as string,
+          prospect_id: s.prospect_id as string,
+          rank_score: s.rank_score as number,
+          reason_codes: (s.reason_codes ?? []) as string[],
+          company_name: (pr.company_name as string) ?? "Unknown",
+          email: (pr.email as string | null) ?? null,
+          phone: (pr.phone as string | null) ?? null,
+          website: (pr.website as string | null) ?? null,
+          city: (pr.city as string | null) ?? null,
+          state: (pr.state as string | null) ?? null,
+          account_type: (pr.account_type as string | null) ?? null,
+          notes: (pr.notes as string | null) ?? null,
+        };
+      });
+      setSuggestions(mapped);
+
       const dashRow = Array.isArray(dash.data)
         ? ((dash.data[0] as Partial<DashboardRow> | undefined) ?? undefined)
         : undefined;
@@ -266,6 +296,24 @@ export default function TodayClient({ userId }: { userId: string }) {
   function handleActionCompleted() {
     showToast("success", "Done!");
     void load();
+  }
+
+  // ── Suggested outreach handlers ───────────────────────────────────────
+
+  async function handleAcceptSuggestion(s: SuggestionRow) {
+    // Mark accepted
+    await supabase
+      .from("suggested_outreach")
+      .update({ status: "accepted" })
+      .eq("id", s.id);
+    setSuggestions((prev) => prev.filter((x) => x.id !== s.id));
+    // Switch to Grow tab — rep will use the "Add new contact" flow with prospect context in mind
+    setTab("grow");
+    showToast("success", `Starting outreach for ${s.company_name}`);
+  }
+
+  function handleDismissSuggestion(id: string) {
+    setSuggestions((prev) => prev.filter((s) => s.id !== id));
   }
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -328,6 +376,14 @@ export default function TodayClient({ userId }: { userId: string }) {
           outreachTypes={outreachTypes}
           outcomes={touchpointOutcomes}
           onActionCompleted={handleActionCompleted}
+        />
+      )}
+
+      {suggestions.length > 0 && (
+        <SuggestedOutreach
+          suggestions={suggestions}
+          onAccept={(s) => void handleAcceptSuggestion(s)}
+          onDismiss={handleDismissSuggestion}
         />
       )}
 

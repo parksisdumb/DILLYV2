@@ -68,6 +68,20 @@ type Outcome = {
   touchpoint_type_id?: string | null;
 };
 
+type AvailableProperty = {
+  id: string;
+  address_line1: string;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+};
+
+type AvailableContact = {
+  id: string;
+  full_name: string | null;
+  title: string | null;
+};
+
 type Props = {
   account: Account;
   contacts: Contact[];
@@ -79,6 +93,8 @@ type Props = {
   userId: string;
   orgId: string;
   userRole: string;
+  availableProperties: AvailableProperty[];
+  availableContacts: AvailableContact[];
 };
 
 type Tab = "contacts" | "properties" | "opportunities" | "timeline";
@@ -179,6 +195,8 @@ export default function AccountDetailClient({
   userId,
   orgId,
   userRole,
+  availableProperties,
+  availableContacts,
 }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
@@ -219,6 +237,20 @@ export default function AccountDetailClient({
   const [pPostal, setPPostal] = useState("");
   const [pBusy, setPBusy] = useState(false);
   const [pError, setPError] = useState<string | null>(null);
+
+  // ── Link Existing Property form ──
+  const [showLinkProperty, setShowLinkProperty] = useState(false);
+  const [linkPropId, setLinkPropId] = useState("");
+  const [linkPropBusy, setLinkPropBusy] = useState(false);
+  const [linkPropError, setLinkPropError] = useState<string | null>(null);
+  const [localAvailableProps, setLocalAvailableProps] = useState(availableProperties);
+
+  // ── Link Existing Contact form ──
+  const [showLinkContact, setShowLinkContact] = useState(false);
+  const [linkContactId, setLinkContactId] = useState("");
+  const [linkContactBusy, setLinkContactBusy] = useState(false);
+  const [linkContactError, setLinkContactError] = useState<string | null>(null);
+  const [localAvailableContacts, setLocalAvailableContacts] = useState(availableContacts);
 
   // ── Toast ──
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
@@ -370,6 +402,58 @@ export default function AccountDetailClient({
     showToast("success", "Property added.");
   }
 
+  // ── Link Existing Property submit ──
+  async function onLinkProperty() {
+    if (!linkPropId) { setLinkPropError("Select a property."); return; }
+    setLinkPropError(null);
+    setLinkPropBusy(true);
+
+    const { error } = await supabase
+      .from("properties")
+      .update({ primary_account_id: account.id })
+      .eq("id", linkPropId);
+
+    setLinkPropBusy(false);
+
+    if (error) { setLinkPropError(error.message); return; }
+
+    const linked = localAvailableProps.find((p) => p.id === linkPropId);
+    if (linked) {
+      setProperties((prev) => [...prev, { id: linked.id, address_line1: linked.address_line1, city: linked.city, state: linked.state, postal_code: linked.postal_code }].sort((a, b) => a.address_line1.localeCompare(b.address_line1)));
+      setLocalAvailableProps((prev) => prev.filter((p) => p.id !== linkPropId));
+    }
+    setShowLinkProperty(false);
+    setLinkPropId("");
+    setTab("properties");
+    showToast("success", "Property linked.");
+  }
+
+  // ── Link Existing Contact submit ──
+  async function onLinkContact() {
+    if (!linkContactId) { setLinkContactError("Select a contact."); return; }
+    setLinkContactError(null);
+    setLinkContactBusy(true);
+
+    const { error } = await supabase
+      .from("contacts")
+      .update({ account_id: account.id })
+      .eq("id", linkContactId);
+
+    setLinkContactBusy(false);
+
+    if (error) { setLinkContactError(error.message); return; }
+
+    const linked = localAvailableContacts.find((c) => c.id === linkContactId);
+    if (linked) {
+      setContacts((prev) => [...prev, { id: linked.id, full_name: linked.full_name, title: linked.title, phone: null, email: null, decision_role: null, updated_at: new Date().toISOString() }].sort((a, b) => (a.full_name ?? "").localeCompare(b.full_name ?? "")));
+      setLocalAvailableContacts((prev) => prev.filter((c) => c.id !== linkContactId));
+    }
+    setShowLinkContact(false);
+    setLinkContactId("");
+    setTab("contacts");
+    showToast("success", "Contact linked.");
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
@@ -432,25 +516,43 @@ export default function AccountDetailClient({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => { setShowLogForm(!showLogForm); setShowAddContact(false); setShowAddProperty(false); setLogError(null); }}
+          onClick={() => { setShowLogForm(!showLogForm); setShowAddContact(false); setShowAddProperty(false); setShowLinkProperty(false); setShowLinkContact(false); setLogError(null); }}
           className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${showLogForm ? "bg-blue-700 text-white" : "bg-blue-600 text-white hover:bg-blue-700"}`}
         >
           Log Touchpoint
         </button>
         <button
           type="button"
-          onClick={() => { setShowAddContact(!showAddContact); setShowLogForm(false); setShowAddProperty(false); setCError(null); }}
+          onClick={() => { setShowAddContact(!showAddContact); setShowLogForm(false); setShowAddProperty(false); setShowLinkProperty(false); setShowLinkContact(false); setCError(null); }}
           className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${showAddContact ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
         >
           + Contact
         </button>
         <button
           type="button"
-          onClick={() => { setShowAddProperty(!showAddProperty); setShowLogForm(false); setShowAddContact(false); setPError(null); }}
+          onClick={() => { setShowAddProperty(!showAddProperty); setShowLogForm(false); setShowAddContact(false); setShowLinkProperty(false); setShowLinkContact(false); setPError(null); }}
           className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${showAddProperty ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
         >
           + Property
         </button>
+        {localAvailableContacts.length > 0 && (
+          <button
+            type="button"
+            onClick={() => { setShowLinkContact(!showLinkContact); setShowLogForm(false); setShowAddContact(false); setShowAddProperty(false); setShowLinkProperty(false); setLinkContactError(null); }}
+            className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${showLinkContact ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+          >
+            Link Contact
+          </button>
+        )}
+        {localAvailableProps.length > 0 && (
+          <button
+            type="button"
+            onClick={() => { setShowLinkProperty(!showLinkProperty); setShowLogForm(false); setShowAddContact(false); setShowAddProperty(false); setShowLinkContact(false); setLinkPropError(null); }}
+            className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${showLinkProperty ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+          >
+            Link Property
+          </button>
+        )}
       </div>
 
       {/* ── Log Touchpoint form ── */}
@@ -638,6 +740,90 @@ export default function AccountDetailClient({
         </div>
       )}
 
+      {/* ── Link Existing Contact form ── */}
+      {showLinkContact && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Link Existing Contact</div>
+
+          {linkContactError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{linkContactError}</div>
+          )}
+
+          <div>
+            <label className={sectionLabel}>Contact</label>
+            <select
+              className={input}
+              value={linkContactId}
+              onChange={(e) => { setLinkContactId(e.target.value); setLinkContactError(null); }}
+            >
+              <option value="">Select contact...</option>
+              {localAvailableContacts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.full_name ?? "Unnamed"}{c.title ? ` — ${c.title}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <p className="text-xs text-slate-500">This will reassign the contact to this account.</p>
+
+          <button
+            type="button"
+            disabled={linkContactBusy}
+            onClick={() => void onLinkContact()}
+            className={[
+              "rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
+              linkContactId
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-slate-100 text-slate-400",
+            ].join(" ")}
+          >
+            {linkContactBusy ? "Linking..." : "Link Contact"}
+          </button>
+        </div>
+      )}
+
+      {/* ── Link Existing Property form ── */}
+      {showLinkProperty && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Link Existing Property</div>
+
+          {linkPropError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{linkPropError}</div>
+          )}
+
+          <div>
+            <label className={sectionLabel}>Property</label>
+            <select
+              className={input}
+              value={linkPropId}
+              onChange={(e) => { setLinkPropId(e.target.value); setLinkPropError(null); }}
+            >
+              <option value="">Select property...</option>
+              {localAvailableProps.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.address_line1}{p.city ? `, ${p.city}` : ""}{p.state ? ` ${p.state}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            type="button"
+            disabled={linkPropBusy}
+            onClick={() => void onLinkProperty()}
+            className={[
+              "rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
+              linkPropId
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-slate-100 text-slate-400",
+            ].join(" ")}
+          >
+            {linkPropBusy ? "Linking..." : "Link Property"}
+          </button>
+        </div>
+      )}
+
       {/* ── Tabs ── */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         {/* Tab bar */}
@@ -689,8 +875,8 @@ export default function AccountDetailClient({
                     </thead>
                     <tbody>
                       {contacts.map((c) => (
-                        <tr key={c.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-900">{c.full_name ?? "—"}</td>
+                        <tr key={c.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer" onClick={() => window.location.href = `/app/contacts/${c.id}`}>
+                          <td className="px-4 py-3 font-medium text-blue-600 hover:underline">{c.full_name ?? "—"}</td>
                           <td className="px-4 py-3 text-slate-600">{c.title ?? "—"}</td>
                           <td className="px-4 py-3 text-slate-600">{c.phone ?? "—"}</td>
                           <td className="px-4 py-3 text-slate-500">{c.email ?? "—"}</td>
@@ -703,15 +889,15 @@ export default function AccountDetailClient({
                 {/* Mobile */}
                 <div className="md:hidden divide-y divide-slate-100">
                   {contacts.map((c) => (
-                    <div key={c.id} className="px-4 py-3.5 space-y-0.5">
-                      <div className="text-sm font-semibold text-slate-900">{c.full_name ?? "—"}</div>
+                    <a key={c.id} href={`/app/contacts/${c.id}`} className="block px-4 py-3.5 space-y-0.5 hover:bg-slate-50">
+                      <div className="text-sm font-semibold text-blue-600">{c.full_name ?? "—"}</div>
                       {c.title && <div className="text-xs text-slate-500">{c.title}</div>}
                       <div className="flex gap-3 text-xs text-slate-500">
                         {c.phone && <span>{c.phone}</span>}
                         {c.email && <span>{c.email}</span>}
                         <span>Last touch: {formatDate(lastTouchPerContact.get(c.id) ?? null)}</span>
                       </div>
-                    </div>
+                    </a>
                   ))}
                 </div>
               </>
@@ -741,8 +927,8 @@ export default function AccountDetailClient({
                     </thead>
                     <tbody>
                       {properties.map((p) => (
-                        <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-900">{p.address_line1}</td>
+                        <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer" onClick={() => window.location.href = `/app/properties/${p.id}`}>
+                          <td className="px-4 py-3 font-medium text-blue-600 hover:underline">{p.address_line1}</td>
                           <td className="px-4 py-3 text-slate-600">{p.city ?? "—"}</td>
                           <td className="px-4 py-3 text-slate-600">{p.state ?? "—"}</td>
                           <td className="px-4 py-3 text-slate-500">{p.postal_code ?? "—"}</td>
@@ -754,10 +940,10 @@ export default function AccountDetailClient({
                 {/* Mobile */}
                 <div className="md:hidden divide-y divide-slate-100">
                   {properties.map((p) => (
-                    <div key={p.id} className="px-4 py-3.5">
-                      <div className="text-sm font-semibold text-slate-900">{p.address_line1}</div>
+                    <a key={p.id} href={`/app/properties/${p.id}`} className="block px-4 py-3.5 hover:bg-slate-50">
+                      <div className="text-sm font-semibold text-blue-600">{p.address_line1}</div>
                       <div className="text-xs text-slate-500">{[p.city, p.state, p.postal_code].filter(Boolean).join(", ")}</div>
-                    </div>
+                    </a>
                   ))}
                 </div>
               </>

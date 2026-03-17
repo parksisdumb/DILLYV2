@@ -123,7 +123,7 @@ export default function ContactDetailClient({
   const [touchpoints, setTouchpoints] = useState(initialTouchpoints);
   const [nextActions, setNextActions] = useState(initialNextActions);
   const [tab, setTab] = useState<"timeline" | "next_actions" | "properties">("timeline");
-  const [activeAction, setActiveAction] = useState<"log" | "followup" | null>(null);
+  const [activeAction, setActiveAction] = useState<"log" | "followup" | "linkprop" | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   // Log touchpoint form
@@ -155,10 +155,11 @@ export default function ContactDetailClient({
     setTimeout(() => setToast(null), 3000);
   }
 
-  function toggleAction(action: "log" | "followup") {
+  function toggleAction(action: "log" | "followup" | "linkprop") {
     setActiveAction((prev) => (prev === action ? null : action));
     setLogError(null);
     setFuError(null);
+    setLinkError(null);
   }
 
   async function handleLinkProperty(e: React.FormEvent) {
@@ -184,6 +185,8 @@ export default function ContactDetailClient({
       setLinkPropId("");
       setLinkRoleLabel("");
       setLinkPrimary(false);
+      setActiveAction(null);
+      setTab("properties");
       showToast("success", "Property linked.");
     } finally {
       setLinkBusy(false);
@@ -348,6 +351,18 @@ export default function ContactDetailClient({
         >
           Schedule Follow-Up
         </button>
+        {localAvailableProps.length > 0 && (
+          <button
+            onClick={() => toggleAction("linkprop")}
+            className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+              activeAction === "linkprop"
+                ? "bg-blue-600 text-white"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            Link Property
+          </button>
+        )}
       </div>
 
       {/* Log Touchpoint form */}
@@ -517,6 +532,61 @@ export default function ContactDetailClient({
               </div>
             </form>
           )}
+        </div>
+      )}
+
+      {/* Link Property form (top-level action) */}
+      {activeAction === "linkprop" && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-slate-800">Link Property</h2>
+          <form onSubmit={handleLinkProperty} className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <select
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={linkPropId}
+                onChange={(e) => setLinkPropId(e.target.value)}
+              >
+                <option value="">Select property...</option>
+                {localAvailableProps.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.address_line1}{p.city ? `, ${p.city}` : ""}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={linkRoleLabel}
+                onChange={(e) => setLinkRoleLabel(e.target.value)}
+                placeholder="Role (optional)"
+              />
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={linkPrimary}
+                    onChange={(e) => setLinkPrimary(e.target.checked)}
+                    className="rounded border-slate-300"
+                  />
+                  Primary
+                </label>
+                <button
+                  type="submit"
+                  disabled={linkBusy}
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {linkBusy ? "Linking..." : "Link Property"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAction(null)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+            {linkError && <p className="text-xs text-red-600">{linkError}</p>}
+          </form>
         </div>
       )}
 

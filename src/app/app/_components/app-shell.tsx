@@ -128,6 +128,8 @@ export default function AppShell({
           { href: "/app/manager/territories", label: "Territories" },
           { href: "/app/manager/icp", label: "ICP" },
           { href: "/app/manager/prospects", label: "Prospects" },
+          { href: "/app/manager/analytics", label: "Analytics" },
+          { href: "/app/manager/agent", label: "Agent" },
           { href: "/app/admin/team", label: "Team" },
           { href: "/app/admin/kpis", label: "KPIs" },
         ]

@@ -96,6 +96,7 @@ export default function PropertyDetailClient({
   userId,
   userRole,
   availableContacts,
+  allAccounts,
 }: {
   property: Property;
   account: Account;
@@ -110,6 +111,7 @@ export default function PropertyDetailClient({
   userId: string;
   userRole: string;
   availableContacts: { id: string; full_name: string | null }[];
+  allAccounts: { id: string; name: string | null; account_type: string | null }[];
 }) {
   const supabase = createBrowserSupabase();
 
@@ -127,6 +129,13 @@ export default function PropertyDetailClient({
   const [linkError, setLinkError] = useState<string | null>(null);
   const [localPropContacts, setLocalPropContacts] = useState(propContacts);
   const [localAvailable, setLocalAvailable] = useState(availableContacts);
+
+  // Link account state
+  const [localAccount, setLocalAccount] = useState(account);
+  const [linkAccountId, setLinkAccountId] = useState("");
+  const [linkAccountBusy, setLinkAccountBusy] = useState(false);
+  const [linkAccountError, setLinkAccountError] = useState<string | null>(null);
+  const [showLinkAccount, setShowLinkAccount] = useState(false);
 
   // Log touchpoint form
   const [logTypeId, setLogTypeId] = useState("");
@@ -230,6 +239,30 @@ export default function PropertyDetailClient({
       showToast("success", "Contact linked.");
     } finally {
       setLinkBusy(false);
+    }
+  }
+
+  async function handleLinkAccount(e: React.FormEvent) {
+    e.preventDefault();
+    if (!linkAccountId) { setLinkAccountError("Select an account."); return; }
+    setLinkAccountBusy(true);
+    setLinkAccountError(null);
+    try {
+      const { error } = await supabase
+        .from("properties")
+        .update({ primary_account_id: linkAccountId })
+        .eq("id", property.id);
+      if (error) { setLinkAccountError(error.message); return; }
+
+      const linked = allAccounts.find((a) => a.id === linkAccountId);
+      if (linked) {
+        setLocalAccount({ id: linked.id, name: linked.name, account_type: linked.account_type });
+      }
+      setLinkAccountId("");
+      setShowLinkAccount(false);
+      showToast("success", "Account linked.");
+    } finally {
+      setLinkAccountBusy(false);
     }
   }
 
@@ -375,13 +408,30 @@ export default function PropertyDetailClient({
         <p className="text-sm text-slate-500">
           {property.city}, {property.state} {property.postal_code}
         </p>
-        {account && (
-          <a
-            href={`/app/accounts/${account.id}`}
+        {localAccount ? (
+          <div className="mt-1 flex items-center gap-2">
+            <a
+              href={`/app/accounts/${localAccount.id}`}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              {localAccount.name ?? "Unknown account"}
+            </a>
+            <button
+              type="button"
+              onClick={() => setShowLinkAccount(!showLinkAccount)}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              (change)
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowLinkAccount(!showLinkAccount)}
             className="mt-1 inline-block text-sm text-blue-600 hover:underline"
           >
-            {account.name ?? "Unknown account"}
-          </a>
+            + Link Account
+          </button>
         )}
         {/* Roof metadata badges */}
         {(property.roof_type || property.roof_age_years || property.sq_footage) && (
@@ -407,6 +457,44 @@ export default function PropertyDetailClient({
           <p className="mt-2 text-sm text-slate-600">{property.notes}</p>
         )}
       </div>
+
+      {/* Link Account form */}
+      {showLinkAccount && (
+        <form onSubmit={handleLinkAccount} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+          <p className="text-xs font-medium text-slate-600">Link an account to this property</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <select
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={linkAccountId}
+              onChange={(e) => setLinkAccountId(e.target.value)}
+            >
+              <option value="">Select account...</option>
+              {allAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name ?? "Unnamed"}{a.account_type ? ` (${a.account_type})` : ""}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={linkAccountBusy}
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {linkAccountBusy ? "Linking..." : "Link"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowLinkAccount(false); setLinkAccountError(null); }}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+          {linkAccountError && <p className="text-xs text-red-600">{linkAccountError}</p>}
+        </form>
+      )}
 
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2">

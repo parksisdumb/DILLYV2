@@ -20,8 +20,8 @@ export default async function AccountDetailPage({
 
   if (!accountRes.data) notFound();
 
-  // 2. Parallel: contacts, properties, touchpoints, lookup tables, user role
-  const [contactsRes, propertiesRes, tpRes, ttRes, toRes, meRes] = await Promise.all([
+  // 2. Parallel: contacts, properties, touchpoints, lookup tables, user role, all unlinked entities
+  const [contactsRes, propertiesRes, tpRes, ttRes, toRes, meRes, allPropsRes, allContactsRes] = await Promise.all([
     supabase
       .from("contacts")
       .select("id,full_name,title,phone,email,decision_role,updated_at")
@@ -43,6 +43,20 @@ export default async function AccountDetailPage({
     supabase.from("touchpoint_types").select("id,name,key,is_outreach").order("sort_order"),
     supabase.from("touchpoint_outcomes").select("id,name,touchpoint_type_id").order("sort_order"),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
+    // All properties not linked to this account (for linking)
+    supabase
+      .from("properties")
+      .select("id,address_line1,city,state,postal_code")
+      .or(`primary_account_id.is.null,primary_account_id.neq.${id}`)
+      .is("deleted_at", null)
+      .order("address_line1"),
+    // All contacts not belonging to this account (for linking)
+    supabase
+      .from("contacts")
+      .select("id,full_name,title,account_id")
+      .neq("account_id", id)
+      .is("deleted_at", null)
+      .order("full_name"),
   ]);
 
   // 3. Opportunities — needs property IDs from step 2
@@ -62,6 +76,20 @@ export default async function AccountDetailPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cast = <T,>(v: unknown) => (v ?? []) as T[];
 
+  const availableProperties = (allPropsRes.data ?? []).map((p) => ({
+    id: p.id as string,
+    address_line1: p.address_line1 as string,
+    city: p.city as string | null,
+    state: p.state as string | null,
+    postal_code: p.postal_code as string | null,
+  }));
+
+  const availableContacts = (allContactsRes.data ?? []).map((c) => ({
+    id: c.id as string,
+    full_name: c.full_name as string | null,
+    title: c.title as string | null,
+  }));
+
   return (
     <AccountDetailClient
       account={accountRes.data as any}
@@ -74,6 +102,8 @@ export default async function AccountDetailPage({
       userId={userId}
       orgId={orgId}
       userRole={meRes.data?.role ?? "rep"}
+      availableProperties={availableProperties}
+      availableContacts={availableContacts}
     />
   );
 }

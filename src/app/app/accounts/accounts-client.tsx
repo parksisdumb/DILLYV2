@@ -20,11 +20,20 @@ type AccountRow = {
   last_touch_at: string | null;
 };
 
+type PropertyOption = {
+  id: string;
+  address_line1: string;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+};
+
 type Props = {
   accounts: AccountRow[];
   orgId: string;
   userId: string;
   userRole: string;
+  allProperties: PropertyOption[];
 };
 
 type Sort = "last_touched" | "name" | "most_contacts" | "most_opportunities";
@@ -82,7 +91,7 @@ function TypeBadge({ type }: { type: string | null }) {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export default function AccountsClient({ accounts: initialAccounts, orgId, userId, userRole }: Props) {
+export default function AccountsClient({ accounts: initialAccounts, orgId, userId, userRole, allProperties }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
   // ── List state ──
@@ -98,6 +107,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
   const [formWebsite, setFormWebsite] = useState("");
   const [formPhone, setFormPhone] = useState("");
   const [formNotes, setFormNotes] = useState("");
+  const [formPropertyId, setFormPropertyId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
 
@@ -177,9 +187,17 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
       last_touch_at: null,
     };
 
+    // Link property if selected
+    if (formPropertyId) {
+      await supabase
+        .from("properties")
+        .update({ primary_account_id: newRow.id })
+        .eq("id", formPropertyId);
+    }
+
     setAccounts((prev) => [newRow, ...prev]);
     setShowCreate(false);
-    setFormName(""); setFormType(""); setFormWebsite(""); setFormPhone(""); setFormNotes("");
+    setFormName(""); setFormType(""); setFormWebsite(""); setFormPhone(""); setFormNotes(""); setFormPropertyId("");
     showToast("success", `${newRow.name ?? "Account"} created.`);
   }
 
@@ -271,7 +289,24 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
                 onChange={(e) => setFormPhone(e.target.value)}
               />
             </div>
-            <div className="md:col-span-2">
+            {allProperties.length > 0 && (
+              <div>
+                <label className={sectionLabel}>Link Property</label>
+                <select
+                  className={input}
+                  value={formPropertyId}
+                  onChange={(e) => setFormPropertyId(e.target.value)}
+                >
+                  <option value="">None</option>
+                  {allProperties.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.address_line1}{p.city ? `, ${p.city}` : ""}{p.state ? ` ${p.state}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className={allProperties.length > 0 ? "" : "md:col-span-2"}>
               <label className={sectionLabel}>Notes</label>
               <input
                 className={input}

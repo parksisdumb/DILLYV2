@@ -66,6 +66,21 @@ const toNumber = (value: unknown, fallback = 0) => {
 
 const OUTREACH_TYPE_KEYS = new Set(["call", "email", "text", "door_knock", "site_visit"]);
 
+/** Deduplicate rows by `key`, preferring org-specific (org_id != null) over global. */
+function dedupeByKey<T extends { key?: string | null; org_id?: string | null }>(
+  rows: T[],
+): T[] {
+  const map = new Map<string, T>();
+  for (const row of rows) {
+    const k = row.key ?? row.org_id ?? "";
+    const existing = map.get(k);
+    if (!existing || (row.org_id && !existing.org_id)) {
+      map.set(k, row);
+    }
+  }
+  return Array.from(map.values());
+}
+
 export default function TodayClient({ userId }: { userId: string }) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
@@ -137,21 +152,18 @@ export default function TodayClient({ userId }: { userId: string }) {
       setOrgId(me.org_id);
 
       const [a, c, p, to, na, dash] = await Promise.all([
-        supabase.from("accounts").select("id,name").eq("org_id", me.org_id).is("deleted_at", null),
+        supabase.from("accounts").select("id,name").is("deleted_at", null),
         supabase
           .from("contacts")
           .select("id,full_name,account_id")
-          .eq("org_id", me.org_id)
           .is("deleted_at", null),
         supabase
           .from("properties")
           .select("id,address_line1,city,state")
-          .eq("org_id", me.org_id)
           .is("deleted_at", null),
         supabase
           .from("touchpoint_outcomes")
-          .select("id,name,touchpoint_type_id")
-          .eq("org_id", me.org_id)
+          .select("id,name,touchpoint_type_id,org_id,key")
           .order("sort_order"),
         supabase
           .from("next_actions")
@@ -169,8 +181,7 @@ export default function TodayClient({ userId }: { userId: string }) {
 
       const ttWithOutreach = await supabase
         .from("touchpoint_types")
-        .select("id,name,key,is_outreach")
-        .eq("org_id", me.org_id)
+        .select("id,name,key,is_outreach,org_id")
         .order("sort_order");
 
       let resolvedTouchpointTypes: TouchpointType[] = [];
@@ -180,34 +191,49 @@ export default function TodayClient({ userId }: { userId: string }) {
           const ttFallback = await supabase
             .from("touchpoint_types")
             .select("id,name,key")
-            .eq("org_id", me.org_id)
             .order("sort_order");
 
           if (ttFallback.error) throw new Error(ttFallback.error.message);
 
-          resolvedTouchpointTypes = ((ttFallback.data ?? []) as TouchpointType[]).map((tt) => ({
-            id: tt.id,
-            name: tt.name,
-            key: tt.key ?? null,
-            is_outreach: OUTREACH_TYPE_KEYS.has((tt.key ?? "").toLowerCase()),
-          }));
+          resolvedTouchpointTypes = dedupeByKey(
+            ((ttFallback.data ?? []) as (TouchpointType & { org_id?: string | null })[]).map((tt) => ({
+              id: tt.id,
+              name: tt.name,
+              key: tt.key ?? null,
+              is_outreach: OUTREACH_TYPE_KEYS.has((tt.key ?? "").toLowerCase()),
+              org_id: tt.org_id ?? null,
+            })),
+          );
         } else {
           throw new Error(ttWithOutreach.error.message);
         }
       } else {
-        resolvedTouchpointTypes = ((ttWithOutreach.data ?? []) as TouchpointType[]).map((tt) => ({
-          id: tt.id,
-          name: tt.name,
-          key: tt.key ?? null,
-          is_outreach: Boolean(tt.is_outreach),
-        }));
+        resolvedTouchpointTypes = dedupeByKey(
+          ((ttWithOutreach.data ?? []) as (TouchpointType & { org_id?: string | null })[]).map((tt) => ({
+            id: tt.id,
+            name: tt.name,
+            key: tt.key ?? null,
+            is_outreach: Boolean(tt.is_outreach),
+            org_id: tt.org_id ?? null,
+          })),
+        );
       }
 
       setAccounts((a.data ?? []) as Account[]);
       setContacts((c.data ?? []) as Contact[]);
       setProperties((p.data ?? []) as Property[]);
       setTouchpointTypes(resolvedTouchpointTypes);
-      setTouchpointOutcomes((to.data ?? []) as Outcome[]);
+      setTouchpointOutcomes(
+        dedupeByKey(
+          ((to.data ?? []) as (Outcome & { org_id?: string | null; key?: string | null })[]).map((o) => ({
+            id: o.id,
+            name: o.name,
+            touchpoint_type_id: o.touchpoint_type_id ?? null,
+            key: o.key ?? null,
+            org_id: o.org_id ?? null,
+          })),
+        ) as Outcome[],
+      );
       setNextActions((na.data ?? []) as NextAction[]);
 
       // Fetch suggested outreach for this rep

@@ -43,6 +43,7 @@ export default async function PropertyDetailPage({
     stageRes,
     meRes,
     allContactsRes,
+    allAccountsRes,
   ] = await Promise.all([
     prop.primary_account_id
       ? supabase
@@ -73,6 +74,7 @@ export default async function PropertyDetailPage({
     supabase.from("opportunity_stages").select("id,name,key,is_closed_stage").order("sort_order"),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     supabase.from("contacts").select("id,full_name,account_id").is("deleted_at", null).order("full_name"),
+    supabase.from("accounts").select("id,name,account_type").is("deleted_at", null).order("name"),
   ]);
 
   // Extract typed property contacts from join
@@ -94,6 +96,12 @@ export default async function PropertyDetailPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cast = <T,>(v: unknown) => (v ?? []) as T[];
 
+  const allAccounts = (allAccountsRes.data ?? []).map((a) => ({
+    id: a.id as string,
+    name: a.name as string | null,
+    account_type: a.account_type as string | null,
+  }));
+
   return (
     <PropertyDetailClient
       property={prop as any}
@@ -109,6 +117,7 @@ export default async function PropertyDetailPage({
       userId={userId}
       userRole={meRes.data?.role ?? "rep"}
       availableContacts={availableContacts}
+      allAccounts={allAccounts}
     />
   );
 }

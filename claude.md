@@ -250,3 +250,4 @@ Current migrations (applied in order):
 41. `20260315100000_prospects_contact_fields_v1` — adds `contact_first_name`, `contact_last_name`, `contact_title` to prospects table
 42. `20260315110000_rpc_convert_prospect_fix_v1` — re-creates `rpc_convert_prospect` without `updated_at` references
 43. `20260316100000_benchmark_snapshots_v1` — `benchmark_snapshots` table + `rpc_calculate_benchmarks` RPC for anonymized benchmark data pipeline
+44. `20260317100000_agent_runs_v1` — `agent_runs` table + `agent_metadata` jsonb column on prospects + RLS for prospecting agent

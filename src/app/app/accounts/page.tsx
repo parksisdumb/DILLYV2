@@ -19,7 +19,7 @@ type AccountRow = {
 export default async function AccountsPage() {
   const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  const [acctRes, contactRes, tpRes, oppRes, meRes] = await Promise.all([
+  const [acctRes, contactRes, tpRes, oppRes, meRes, propsRes] = await Promise.all([
     supabase
       .from("accounts")
       .select("id,name,account_type,status,notes,website,phone,updated_at,created_by")
@@ -33,9 +33,10 @@ export default async function AccountsPage() {
       .not("account_id", "is", null),
     supabase.from("opportunities").select("account_id").not("account_id", "is", null),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
+    supabase.from("properties").select("id,address_line1,city,state,postal_code").is("deleted_at", null).order("address_line1"),
   ]);
 
-  const firstError = [acctRes.error, contactRes.error, tpRes.error, oppRes.error].find(Boolean);
+  const firstError = [acctRes.error, contactRes.error, tpRes.error, oppRes.error, propsRes.error].find(Boolean);
   if (firstError) throw new Error(firstError.message);
 
   // Build lookup maps
@@ -76,12 +77,21 @@ export default async function AccountsPage() {
 
   const userRole = meRes.data?.role ?? "rep";
 
+  const allProperties = (propsRes.data ?? []).map((p) => ({
+    id: p.id as string,
+    address_line1: p.address_line1 as string,
+    city: p.city as string | null,
+    state: p.state as string | null,
+    postal_code: p.postal_code as string | null,
+  }));
+
   return (
     <AccountsClient
       accounts={rows}
       orgId={orgId}
       userId={userId}
       userRole={userRole}
+      allProperties={allProperties}
     />
   );
 }

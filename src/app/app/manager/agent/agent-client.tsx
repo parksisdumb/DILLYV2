@@ -53,7 +53,7 @@ export default function AgentClient({
       const data = await res.json();
 
       if (res.ok) {
-        setTriggerResult(`Agent started (run ${data.run_id?.slice(0, 8)}). Refresh in a few minutes to see results.`);
+        setTriggerResult("Agent started. Refresh in a few minutes to see results.");
       } else {
         setTriggerResult(data.error || "Failed to trigger agent");
       }

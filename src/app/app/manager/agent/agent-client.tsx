@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import type { AgentRun } from "./page";
+import type { AgentRun, AgentInfo, ConfidenceTiers } from "./page";
 
 const STATUS_STYLES: Record<string, string> = {
   running: "bg-blue-100 text-blue-700",
@@ -11,13 +11,11 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const SOURCE_LABELS: Record<string, string> = {
+  edgar_10k: "EDGAR 10-K",
+  google_places: "Google Places",
+  web_intelligence: "Web Intelligence",
   sec_edgar: "SEC EDGAR",
   openstreetmap: "OpenStreetMap",
-  web_intelligence: "Web Intelligence",
-  // TODO: Add BatchData label when source is implemented
-  // batchdata: "BatchData",
-  // TODO: Add PropTracer label when source is implemented
-  // proptracer: "PropTracer",
 };
 
 function formatDuration(start: string, end: string | null): string {
@@ -34,15 +32,25 @@ function formatTime(iso: string): string {
 export default function AgentClient({
   runs,
   agentProspectCount,
+  intelCount,
+  tiers,
+  agents,
+  pushToDillyAction,
 }: {
   runs: AgentRun[];
   agentProspectCount: number;
+  intelCount: number;
+  tiers: ConfidenceTiers;
+  agents: AgentInfo[];
+  pushToDillyAction: () => Promise<void>;
 }) {
   const [triggering, setTriggering] = useState(false);
   const [triggerResult, setTriggerResult] = useState<string | null>(null);
+  const [isPushing, startPush] = useTransition();
 
   const lastRun = runs[0] ?? null;
   const isRunning = lastRun?.status === "running";
+  const pushableCount = tiers.tier80 + tiers.tier60 + tiers.tier40;
 
   async function handleTrigger() {
     setTriggering(true);
@@ -53,7 +61,9 @@ export default function AgentClient({
       const data = await res.json();
 
       if (res.ok) {
-        setTriggerResult("Agent started. Refresh in a few minutes to see results.");
+        setTriggerResult(
+          "Agent started via Inngest. Refresh in a few minutes to see results."
+        );
       } else {
         setTriggerResult(data.error || "Failed to trigger agent");
       }
@@ -62,6 +72,12 @@ export default function AgentClient({
     } finally {
       setTriggering(false);
     }
+  }
+
+  function handlePush() {
+    startPush(async () => {
+      await pushToDillyAction();
+    });
   }
 
   return (
@@ -76,12 +92,12 @@ export default function AgentClient({
             AI-powered lead discovery from public data sources
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link
             href="/app/manager/prospects?source=agent"
             className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            Agent Prospects ({agentProspectCount})
+            Dilly Prospects ({agentProspectCount})
           </Link>
           <button
             type="button"
@@ -97,6 +113,85 @@ export default function AgentClient({
       {triggerResult && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
           {triggerResult}
+        </div>
+      )}
+
+      {/* Intel Pipeline + Confidence Tiers */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-medium text-slate-500">
+            Intel Pipeline
+          </div>
+          <div className="mt-1 text-2xl font-bold text-slate-900">
+            {intelCount}
+          </div>
+          <div className="mt-1 text-xs text-slate-400">
+            Active intel prospects (pre-push)
+          </div>
+          {pushableCount > 0 && (
+            <button
+              type="button"
+              onClick={handlePush}
+              disabled={isPushing}
+              className="mt-3 w-full rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              {isPushing
+                ? "Pushing..."
+                : `Push to Dilly (${pushableCount} qualifying)`}
+            </button>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-medium text-slate-500">
+            Confidence Distribution
+          </div>
+          <div className="mt-3 space-y-2">
+            <TierBar label="80-100" count={tiers.tier80} color="bg-green-500" total={intelCount} />
+            <TierBar label="60-79" count={tiers.tier60} color="bg-emerald-400" total={intelCount} />
+            <TierBar label="40-59" count={tiers.tier40} color="bg-amber-400" total={intelCount} />
+            <TierBar label="20-39" count={tiers.tier20} color="bg-orange-400" total={intelCount} />
+            <TierBar label="0-19" count={tiers.tierBelow20} color="bg-red-400" total={intelCount} />
+          </div>
+        </div>
+      </div>
+
+      {/* Agent Registry */}
+      {agents.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Agent Sources
+          </h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {agents.map((a) => (
+              <div
+                key={a.agent_name}
+                className="rounded-xl border border-slate-100 bg-slate-50 p-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-900">
+                    {a.display_name}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${a.enabled ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}
+                  >
+                    {a.enabled ? "Active" : "Disabled"}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-x-3 text-xs text-slate-500">
+                  <span>Runs: {a.run_count}</span>
+                  <span>Found: {a.total_found}</span>
+                  <span>Inserted: {a.total_inserted}</span>
+                  <span>
+                    Last:{" "}
+                    {a.last_run_at
+                      ? new Date(a.last_run_at).toLocaleDateString()
+                      : "Never"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -145,7 +240,8 @@ export default function AgentClient({
             >
               {lastRun.status}
             </span>{" "}
-            — Duration: {formatDuration(lastRun.started_at, lastRun.completed_at)}
+            — Duration:{" "}
+            {formatDuration(lastRun.started_at, lastRun.completed_at)}
           </div>
           {lastRun.error_message && (
             <div className="mt-2 text-sm text-red-600">
@@ -267,16 +363,14 @@ export default function AgentClient({
                   )}
                   {Object.keys(r.source_breakdown).length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {Object.entries(r.source_breakdown).map(
-                        ([key, val]) => (
-                          <span
-                            key={key}
-                            className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
-                          >
-                            {SOURCE_LABELS[key] ?? key}: {val.added}
-                          </span>
-                        )
-                      )}
+                      {Object.entries(r.source_breakdown).map(([key, val]) => (
+                        <span
+                          key={key}
+                          className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
+                        >
+                          {SOURCE_LABELS[key] ?? key}: {val.added}
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -285,6 +379,40 @@ export default function AgentClient({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Sub-components ───────────────────────────────────────────────────────────
+
+function TierBar({
+  label,
+  count,
+  color,
+  total,
+}: {
+  label: string;
+  count: number;
+  color: string;
+  total: number;
+}) {
+  const pct = total > 0 ? (count / total) * 100 : 0;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-10 text-right text-[10px] font-medium text-slate-500">
+        {label}
+      </span>
+      <div className="relative h-4 flex-1 rounded bg-slate-100">
+        {pct > 0 && (
+          <div
+            className={`h-full rounded ${color}`}
+            style={{ width: `${Math.max(pct, 2)}%` }}
+          />
+        )}
+      </div>
+      <span className="w-8 text-right text-[10px] font-semibold text-slate-600">
+        {count}
+      </span>
     </div>
   );
 }

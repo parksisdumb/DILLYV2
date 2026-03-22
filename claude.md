@@ -113,6 +113,9 @@ Both RPCs handle score_events and streak updates atomically.
 | `import_batches` | Tracks CSV import history — filename, row_count, duplicates_skipped |
 | `suggested_outreach` | Manager-curated prospect queue for reps — status (new/accepted/dismissed/converted), reason_codes jsonb |
 | `benchmark_snapshots` | Anonymized benchmark aggregates — org_id null = platform-wide, calculated by daily cron |
+| `intel_prospects` | Global prospect staging (NO RLS, service role only via `createAdminClient()`) — not org-scoped |
+| `reit_universe` | SEC EDGAR REIT company index (NO RLS) — cik, name, ticker, sic, last_10k_date |
+| `agent_registry` | Agent source config and stats (NO RLS) — agent_name PK, schedule, run counts |
 
 ---
 
@@ -251,3 +254,4 @@ Current migrations (applied in order):
 42. `20260315110000_rpc_convert_prospect_fix_v1` — re-creates `rpc_convert_prospect` without `updated_at` references
 43. `20260316100000_benchmark_snapshots_v1` — `benchmark_snapshots` table + `rpc_calculate_benchmarks` RPC for anonymized benchmark data pipeline
 44. `20260317100000_agent_runs_v1` — `agent_runs` table + `agent_metadata` jsonb column on prospects + RLS for prospecting agent
+45. `20260322100000_intel_prospects_architecture_v1` — `intel_prospects` + `reit_universe` + `agent_registry` tables (NO RLS, service role only), dedup indexes, agent_registry seed data

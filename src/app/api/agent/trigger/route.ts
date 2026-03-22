@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { inngest } from "@/inngest/client";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,10 +14,8 @@ export async function POST(request: NextRequest) {
     if (authError) {
       console.error("[agent/trigger] Auth error:", authError);
     }
-    console.log("[agent/trigger] User:", user?.id ?? "null", "authError:", authError?.message ?? "none");
 
     if (!user) {
-      console.error("[agent/trigger] No user found, returning 401");
       return NextResponse.json(
         { error: "Unauthorized", detail: authError?.message ?? "No user session" },
         { status: 401 }
@@ -30,12 +29,7 @@ export async function POST(request: NextRequest) {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (orgUserError) {
-      console.error("[agent/trigger] org_users query error:", orgUserError);
-    }
-
     if (!orgUser || !["admin", "manager"].includes(orgUser.role)) {
-      console.error("[agent/trigger] Forbidden — orgUser:", orgUser, "error:", orgUserError);
       return NextResponse.json(
         { error: "Forbidden", detail: orgUserError?.message ?? `role=${orgUser?.role ?? "none"}` },
         { status: 403 }
@@ -43,22 +37,15 @@ export async function POST(request: NextRequest) {
     }
 
     const orgId = orgUser.org_id as string;
-    console.log("[agent/trigger] orgId:", orgId, "role:", orgUser.role);
+    console.log("[agent/trigger] Sending Inngest event for org:", orgId);
 
-    // Fire the cron endpoint in the background — it creates its own agent_runs record
-    const cronSecret = process.env.CRON_SECRET;
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-
-    console.log("[agent/trigger] Firing cron at:", `${appUrl}/api/cron/prospecting-agent`);
-
-    fetch(`${appUrl}/api/cron/prospecting-agent`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${cronSecret}`,
+    // Send Inngest event — the durable function handles everything
+    await inngest.send({
+      name: "app/prospecting-agent.run",
+      data: {
+        org_id: orgId,
+        triggered_by: user.id,
       },
-    }).catch((err) => {
-      console.error("[agent/trigger] Failed to trigger prospecting agent:", err);
     });
 
     return NextResponse.json({ ok: true, org_id: orgId });

@@ -76,17 +76,24 @@ export default function IntelClient({ data }: { data: IntelData }) {
           <div className="mt-1 text-xs text-slate-400">
             Score ≥ 40, not yet pulled
           </div>
-          {data.matchingCount > 0 && (
-            <button
-              type="button"
-              onClick={handlePull}
-              disabled={pulling}
-              className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {pulling
-                ? "Pulling..."
-                : `Pull ${data.matchingCount} Matching Prospects`}
-            </button>
+          <button
+            type="button"
+            onClick={handlePull}
+            disabled={pulling}
+            className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {pulling
+              ? "Pulling..."
+              : data.matchingCount > 0
+                ? `Pull ${data.matchingCount} Matching Prospects`
+                : "Pull Matching Prospects"}
+          </button>
+          {data.matchingCount === 0 && (
+            <p className="mt-2 text-xs text-slate-400">
+              {data.hasTerritories
+                ? "No matching records found for your territory regions."
+                : "No territories configured — set up territories first to match prospects."}
+            </p>
           )}
         </div>
 

@@ -14,6 +14,7 @@ export type IntelData = {
   matchingCount: number;
   pushedCount: number;
   lastDistributionAt: string | null;
+  hasTerritories: boolean;
 };
 
 export default async function IntelPage() {
@@ -54,8 +55,16 @@ export default async function IntelPage() {
     .map((r) => r.region_value);
   const cities = regions
     .filter((r) => r.region_type === "city")
-    .map((r) => r.region_value);
-  const states = [...new Set(regions.map((r) => r.state.toUpperCase()))];
+    .map((r) => r.region_value.toLowerCase());
+  const stateRegions = regions
+    .filter((r) => r.region_type === "state")
+    .map((r) => r.region_value.toLowerCase());
+  const allStates = [
+    ...new Set([
+      ...regions.map((r) => r.state.toLowerCase()),
+      ...stateRegions,
+    ]),
+  ];
 
   // Parallel fetches
   const [poolRes, sourceRes, pushedRes, lastDistRes] = await Promise.all([
@@ -84,24 +93,31 @@ export default async function IntelPage() {
       .maybeSingle(),
   ]);
 
-  // Count matching records (geography overlap)
+  // Count matching records (geography overlap — case-insensitive)
   let matchingCount = 0;
-  if (states.length > 0) {
-    // Query candidates by state, then filter by city/zip in JS
+  if (regions.length > 0) {
     const { data: candidates } = await admin
       .from("intel_prospects")
-      .select("city,postal_code")
+      .select("city,postal_code,state")
       .eq("status", "active")
       .gte("confidence_score", 40)
       .is("dilly_org_id", null)
-      .in("state", states)
-      .limit(1000);
+      .limit(2000);
 
     if (candidates) {
-      const citySet = new Set(cities.map((c) => c.toLowerCase()));
+      const citySet = new Set(cities);
       matchingCount = candidates.filter((p) => {
+        const pState = (p.state as string | null)?.toLowerCase();
         const pCity = (p.city as string | null)?.toLowerCase();
         const pZip = p.postal_code as string | null;
+
+        // State-type region: match any prospect in that state
+        if (pState && stateRegions.includes(pState)) return true;
+
+        // City/zip match requires state context
+        const inState = pState && allStates.includes(pState);
+        if (!inState) return false;
+
         return (pZip && postalCodes.includes(pZip)) || (pCity && citySet.has(pCity));
       }).length;
     }
@@ -123,6 +139,7 @@ export default async function IntelPage() {
     matchingCount,
     pushedCount: pushedRes.count ?? 0,
     lastDistributionAt: (lastDistRes.data?.completed_at as string) ?? null,
+    hasTerritories: regions.length > 0,
   };
 
   return <IntelClient data={data} />;

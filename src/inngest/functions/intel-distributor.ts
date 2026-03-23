@@ -68,7 +68,15 @@ export const intelDistributor = inngest.createFunction(
         const cities = regions
           .filter((r) => r.region_type === "city")
           .map((r) => r.region_value.toLowerCase());
-        const states = [...new Set(regions.map((r) => r.state.toUpperCase()))];
+        const stateRegions = regions
+          .filter((r) => r.region_type === "state")
+          .map((r) => r.region_value.toLowerCase());
+        const allStates = [
+          ...new Set([
+            ...regions.map((r) => r.state.toLowerCase()),
+            ...stateRegions,
+          ]),
+        ];
 
         // Fetch ICP criteria for this org
         const { data: icpProfiles } = await supabase
@@ -95,18 +103,14 @@ export const intelDistributor = inngest.createFunction(
           .filter((c) => c.criteria_type === "vertical")
           .map((c) => c.criteria_value.toLowerCase());
 
-        // Query intel_prospects matching geography
-        // Start with state-level, then narrow by city/zip
-        let query = supabase
+        // Query intel_prospects matching geography (no state pre-filter — match in JS)
+        const { data: candidates } = await supabase
           .from("intel_prospects")
           .select("*")
           .eq("status", "active")
           .gte("confidence_score", 40)
-          .in("state", states)
           .is("dilly_org_id", null)
-          .limit(200);
-
-        const { data: candidates } = await query;
+          .limit(500);
 
         if (!candidates || candidates.length === 0) {
           console.log(`[distributor] Org ${orgId}: no matching intel_prospects`);
@@ -114,16 +118,19 @@ export const intelDistributor = inngest.createFunction(
           continue;
         }
 
-        // Filter by city or postal code
+        // Filter by geography (case-insensitive)
         const matched = candidates.filter((p) => {
+          const pState = (p.state as string | null)?.toLowerCase();
           const pCity = (p.city as string | null)?.toLowerCase();
           const pZip = p.postal_code as string | null;
 
-          const geoMatch =
-            (pZip && postalCodes.includes(pZip)) ||
-            (pCity && cities.includes(pCity));
+          // State-type region: match any prospect in that state
+          const stateMatch = pState && stateRegions.includes(pState);
+          const inState = pState && allStates.includes(pState);
+          const cityOrZipMatch = inState &&
+            ((pZip && postalCodes.includes(pZip)) || (pCity && cities.includes(pCity)));
 
-          if (!geoMatch) return false;
+          if (!stateMatch && !cityOrZipMatch) return false;
 
           // ICP criteria matching (if criteria exist)
           if (icpAccountTypes.length > 0 || icpVerticals.length > 0) {

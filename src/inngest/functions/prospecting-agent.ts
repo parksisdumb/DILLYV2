@@ -188,7 +188,7 @@ async function sourceEdgar(
     // Step 1: Seed priority REITs + EFTS discovery
     try {
       for (const pr of PRIORITY_REITS) {
-        await supabase.from("reit_universe").upsert(
+        await supabase.from("intel_entities").upsert(
           { cik: pr.cik, name: pr.name, sic: pr.sic },
           { onConflict: "cik" }
         );
@@ -214,7 +214,7 @@ async function sourceEdgar(
         }
         let upserted = 0;
         for (const [cik, info] of cikMap) {
-          const { error } = await supabase.from("reit_universe").upsert({ cik, name: info.name, sic: info.sic }, { onConflict: "cik" });
+          const { error } = await supabase.from("intel_entities").upsert({ cik, name: info.name, sic: info.sic }, { onConflict: "cik" });
           if (!error) upserted++;
         }
         console.log(`[edgar] Step 1 success: ${cikMap.size} EFTS + ${PRIORITY_REITS.length} priority, ${upserted} upserted`);
@@ -225,7 +225,7 @@ async function sourceEdgar(
 
     // Step 2: Process REITs — priority first, limit 5
     const { data: reits } = await supabase
-      .from("reit_universe")
+      .from("intel_entities")
       .select("*")
       .order("last_10k_date", { ascending: true, nullsFirst: true })
       .limit(30);
@@ -284,7 +284,7 @@ async function sourceEdgar(
           continue;
         }
 
-        await supabase.from("reit_universe")
+        await supabase.from("intel_entities")
           .update({ last_10k_date: filingDate, last_10k_accession: accession })
           .eq("id", reit.id);
 
@@ -355,6 +355,7 @@ async function sourceEdgar(
               account_type: prospect.account_type,
               vertical: prospect.vertical,
               owner_name_legal: prospect.owner_name_legal,
+              entity_id: reit.id,
               confidence_score: score,
               score_breakdown: breakdown,
               source: "agent",
@@ -395,7 +396,7 @@ async function sourceEdgar(
 
                 if (subsidiaries.length > 0) {
                   const existing = (reit.portfolio_summary as Record<string, unknown>) ?? {};
-                  await supabase.from("reit_universe").update({
+                  await supabase.from("intel_entities").update({
                     portfolio_summary: { ...existing, subsidiary_hints: subsidiaries },
                   }).eq("id", reit.id);
                 }
@@ -406,21 +407,35 @@ async function sourceEdgar(
           console.log(`[edgar] Exhibit 21 failed for ${reit.name}: ${err instanceof Error ? err.message : err}`);
         }
 
-        // Improvement 3: Management contact extraction
+        // Improvement 3: Management contact extraction → intel_contacts
         try {
           const mgmtResult = await callClaude(
             anthropic,
             "You extract executive contacts from SEC filings. Return ONLY a valid JSON array.",
             `From this 10-K filing text, extract the names and titles of executives: CEO, CFO, VP/SVP of Asset Management, VP/SVP of Property Operations, Chief Investment Officer. Return JSON array with fields: name, title. Return [] if none found.\n\n${filingText.slice(0, 15000)}`
           );
-          const contacts = safeParseJsonArray(mgmtResult);
-          console.log(`[edgar] Management contacts: ${contacts.length} for ${reit.name}`);
+          const mgmtContacts = safeParseJsonArray(mgmtResult);
+          console.log(`[edgar] Management contacts: ${mgmtContacts.length} for ${reit.name}`);
 
-          if (contacts.length > 0) {
-            const existing = (reit.portfolio_summary as Record<string, unknown>) ?? {};
-            await supabase.from("reit_universe").update({
-              portfolio_summary: { ...existing, management_contacts: contacts },
-            }).eq("id", reit.id);
+          for (const mc of mgmtContacts) {
+            const fullName = String(mc.name ?? "");
+            const title = String(mc.title ?? "");
+            if (!fullName) continue;
+            const nameParts = fullName.split(/\s+/);
+            const contactType = /asset\s*manage|property\s*op/i.test(title)
+              ? "asset_manager"
+              : "executive";
+
+            await supabase.from("intel_contacts").insert({
+              intel_entity_id: reit.id,
+              first_name: nameParts[0] || null,
+              last_name: nameParts.length > 1 ? nameParts.slice(1).join(" ") : null,
+              full_name: fullName,
+              title,
+              contact_type: contactType,
+              source_detail: "edgar_10k",
+              agent_metadata: { cik: reit.cik, accession },
+            });
           }
         } catch (err) {
           console.log(`[edgar] Management extraction failed for ${reit.name}: ${err instanceof Error ? err.message : err}`);
@@ -468,6 +483,7 @@ async function sourceEdgar(
                 account_type: prospect.account_type,
                 vertical: prospect.vertical,
                 owner_name_legal: prospect.owner_name_legal,
+                entity_id: reit.id,
                 new_owner_signal: true,
                 confidence_score: boostedScore,
                 score_breakdown: [...breakdown, "+20 new_acquisition"],

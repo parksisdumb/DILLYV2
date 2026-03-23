@@ -114,7 +114,9 @@ Both RPCs handle score_events and streak updates atomically.
 | `suggested_outreach` | Manager-curated prospect queue for reps — status (new/accepted/dismissed/converted), reason_codes jsonb |
 | `benchmark_snapshots` | Anonymized benchmark aggregates — org_id null = platform-wide, calculated by daily cron |
 | `intel_prospects` | Global prospect staging (NO RLS, service role only via `createAdminClient()`) — not org-scoped |
-| `reit_universe` | SEC EDGAR REIT company index (NO RLS) — cik, name, ticker, sic, last_10k_date |
+| `intel_entities` | Institutional property owners — REITs, corporates, PMs (NO RLS) — renamed from reit_universe |
+| `intel_contacts` | Contacts linked to intel_prospects or intel_entities (NO RLS) — executives, PMs, asset managers |
+| `intel_tenants` | Tenant data linked to intel_prospects or intel_entities (NO RLS) — lease info, national accounts |
 | `agent_registry` | Agent source config and stats (NO RLS) — agent_name PK, schedule, run counts |
 
 ---
@@ -255,3 +257,7 @@ Current migrations (applied in order):
 43. `20260316100000_benchmark_snapshots_v1` — `benchmark_snapshots` table + `rpc_calculate_benchmarks` RPC for anonymized benchmark data pipeline
 44. `20260317100000_agent_runs_v1` — `agent_runs` table + `agent_metadata` jsonb column on prospects + RLS for prospecting agent
 45. `20260322100000_intel_prospects_architecture_v1` — `intel_prospects` + `reit_universe` + `agent_registry` tables (NO RLS, service role only), dedup indexes, agent_registry seed data
+46. `20260322110000_agent_runs_distribution_type_v1` — widens agent_runs.run_type check to include 'distribution'
+47. `20260323100000_rls_performance_audit_v1` — wraps auth.uid() in SELECT subquery across all RLS policies + missing indexes
+48. `20260323110000_reit_portfolio_summary_v1` — adds portfolio_summary jsonb to reit_universe, seeds reit_website_properties agent
+49. `20260323120000_intel_schema_expansion_v1` — renames reit_universe → intel_entities with expanded columns, adds intel_contacts + intel_tenants tables, new intel_prospects columns (entity_id, tenant, parcel, roof_age_estimate generated, verified)

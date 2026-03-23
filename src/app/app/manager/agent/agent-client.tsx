@@ -8,7 +8,25 @@ const STATUS_STYLES: Record<string, string> = {
   running: "bg-blue-100 text-blue-700",
   completed: "bg-green-100 text-green-700",
   failed: "bg-red-100 text-red-700",
+  timed_out: "bg-amber-100 text-amber-700",
 };
+
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+
+function getDisplayStatus(run: AgentRun): string {
+  if (
+    run.status === "running" &&
+    Date.now() - new Date(run.started_at).getTime() > TEN_MINUTES_MS
+  ) {
+    return "timed_out";
+  }
+  return run.status;
+}
+
+function getStatusLabel(displayStatus: string): string {
+  if (displayStatus === "timed_out") return "timed out";
+  return displayStatus;
+}
 
 const SOURCE_LABELS: Record<string, string> = {
   edgar_10k: "EDGAR 10-K",
@@ -44,9 +62,11 @@ export default function AgentClient({
 }) {
   const [triggering, setTriggering] = useState(false);
   const [triggerResult, setTriggerResult] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
 
   const lastRun = runs[0] ?? null;
-  const isRunning = lastRun?.status === "running";
+  const lastRunDisplay = lastRun ? getDisplayStatus(lastRun) : null;
+  const isRunning = lastRunDisplay === "running";
 
   async function handleTrigger() {
     setTriggering(true);
@@ -67,6 +87,22 @@ export default function AgentClient({
       setTriggerResult("Network error — could not trigger agent");
     } finally {
       setTriggering(false);
+    }
+  }
+
+  async function handleCancel(runId: string) {
+    setCancelling(runId);
+    try {
+      await fetch("/api/intel/cancel-run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id: runId }),
+      });
+      setTriggerResult("Run cancelled. Refresh to see updated status.");
+    } catch {
+      setTriggerResult("Failed to cancel run");
+    } finally {
+      setCancelling(null);
     }
   }
 
@@ -217,15 +253,29 @@ export default function AgentClient({
       {lastRun && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <div className="text-xs font-medium text-slate-500">Last Run</div>
-          <div className="mt-1 text-sm text-slate-700">
-            {formatTime(lastRun.started_at)} —{" "}
+          <div className="mt-1 flex items-center gap-2 text-sm text-slate-700">
+            <span>{formatTime(lastRun.started_at)}</span>
+            <span>—</span>
             <span
-              className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[lastRun.status] ?? "bg-slate-100 text-slate-600"}`}
+              className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[lastRunDisplay!] ?? "bg-slate-100 text-slate-600"}`}
             >
-              {lastRun.status}
-            </span>{" "}
-            — Duration:{" "}
-            {formatDuration(lastRun.started_at, lastRun.completed_at)}
+              {getStatusLabel(lastRunDisplay!)}
+            </span>
+            <span>—</span>
+            <span>
+              Duration:{" "}
+              {formatDuration(lastRun.started_at, lastRun.completed_at)}
+            </span>
+            {(lastRunDisplay === "running" || lastRunDisplay === "timed_out") && (
+              <button
+                type="button"
+                onClick={() => handleCancel(lastRun.id)}
+                disabled={cancelling === lastRun.id}
+                className="rounded-lg bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 hover:bg-red-200 disabled:opacity-50"
+              >
+                {cancelling === lastRun.id ? "Cancelling..." : "Cancel Run"}
+              </button>
+            )}
           </div>
           {lastRun.error_message && (
             <div className="mt-2 text-sm text-red-600">
@@ -263,7 +313,9 @@ export default function AgentClient({
                   </tr>
                 </thead>
                 <tbody>
-                  {runs.map((r) => (
+                  {runs.map((r) => {
+                    const ds = getDisplayStatus(r);
+                    return (
                     <tr
                       key={r.id}
                       className="border-b border-slate-50 hover:bg-slate-50"
@@ -273,9 +325,9 @@ export default function AgentClient({
                       </td>
                       <td className="px-3 py-2">
                         <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[r.status] ?? "bg-slate-100 text-slate-600"}`}
+                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[ds] ?? "bg-slate-100 text-slate-600"}`}
                         >
-                          {r.status}
+                          {getStatusLabel(ds)}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-slate-700">
@@ -306,14 +358,17 @@ export default function AgentClient({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
             {/* Mobile cards */}
             <div className="space-y-3 sm:hidden">
-              {runs.map((r) => (
+              {runs.map((r) => {
+                const ds = getDisplayStatus(r);
+                return (
                 <div
                   key={r.id}
                   className="rounded-xl border border-slate-100 bg-slate-50 p-3"
@@ -323,9 +378,9 @@ export default function AgentClient({
                       {formatTime(r.started_at)}
                     </span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[r.status] ?? "bg-slate-100 text-slate-600"}`}
+                      className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[ds] ?? "bg-slate-100 text-slate-600"}`}
                     >
-                      {r.status}
+                      {getStatusLabel(ds)}
                     </span>
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-slate-600">
@@ -358,7 +413,8 @@ export default function AgentClient({
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}

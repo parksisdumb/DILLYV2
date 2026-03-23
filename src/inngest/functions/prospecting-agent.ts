@@ -569,99 +569,115 @@ export const prospectingAgent = inngest.createFunction(
     // Reset global insert counter for this run
     globalInsertCount = 0;
 
-    // ── Step: Setup ──────────────────────────────────────────────────────
-    const runId = await step.run("setup", async () => {
-      console.log("[agent] Starting global prospecting agent");
+    let runId: string | null = null;
+    let errorMessage: string | null = null;
+    const edgarResult: SourceResult = { found: 0, added: 0, skipped: 0 };
+    const placesResult: SourceResult = { found: 0, added: 0, skipped: 0 };
+    const webResult: SourceResult = { found: 0, added: 0, skipped: 0 };
 
-      // Create agent_runs record (no org_id — global run)
-      // Use a placeholder org for the FK constraint
-      const { data: firstOrg } = await supabase
-        .from("orgs")
-        .select("id")
-        .limit(1)
-        .single();
+    try {
+      // ── Step: Setup ──────────────────────────────────────────────────────
+      runId = await step.run("setup", async () => {
+        console.log("[agent] Starting global prospecting agent");
 
-      const { data: run, error: runErr } = await supabase
-        .from("agent_runs")
-        .insert({
-          org_id: firstOrg?.id,
-          run_type: "prospecting",
-          status: "running",
-          started_at: new Date().toISOString(),
-        })
-        .select("id")
-        .single();
+        const { data: firstOrg } = await supabase
+          .from("orgs")
+          .select("id")
+          .limit(1)
+          .single();
 
-      if (runErr || !run) {
-        console.error("[agent] Failed to create agent_runs:", runErr);
-        throw new Error("Failed to create agent_runs record");
-      }
+        const { data: run, error: runErr } = await supabase
+          .from("agent_runs")
+          .insert({
+            org_id: firstOrg?.id,
+            run_type: "prospecting",
+            status: "running",
+            started_at: new Date().toISOString(),
+          })
+          .select("id")
+          .single();
 
-      return run.id as string;
-    });
-
-    // ── Step: EDGAR ──────────────────────────────────────────────────────
-    const edgarResult = await step.run("source-edgar", async () => {
-      return sourceEdgar(supabase, anthropic, runId);
-    });
-
-    // ── Step: Google Places ───────────────────────────────────────────────
-    const placesResult = await step.run("source-google-places", async () => {
-      return sourceGooglePlaces(supabase, runId);
-    });
-
-    // ── Step: Web Intelligence ───────────────────────────────────────────
-    const webResult = await step.run("source-web-intelligence", async () => {
-      return sourceWebIntelligence(supabase, anthropic, runId);
-    });
-
-    // ── Step: Finalize ───────────────────────────────────────────────────
-    await step.run("finalize", async () => {
-      const totalFound = edgarResult.found + placesResult.found + webResult.found;
-      const totalAdded = edgarResult.added + placesResult.added + webResult.added;
-      const totalSkipped = edgarResult.skipped + placesResult.skipped + webResult.skipped;
-
-      const sourceBreakdown = {
-        edgar_10k: edgarResult,
-        google_places: placesResult,
-        web_intelligence: webResult,
-      };
-
-      console.log(`[agent] Finalizing: found=${totalFound} added=${totalAdded} skipped=${totalSkipped}`);
-
-      await supabase
-        .from("agent_runs")
-        .update({
-          status: "completed",
-          prospects_found: totalFound,
-          prospects_added: totalAdded,
-          prospects_skipped_dedup: totalSkipped,
-          source_breakdown: sourceBreakdown,
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", runId);
-
-      for (const [agentName, res] of Object.entries(sourceBreakdown)) {
-        if (res.found > 0 || res.added > 0) {
-          const { data: reg } = await supabase
-            .from("agent_registry")
-            .select("run_count,total_found,total_inserted")
-            .eq("agent_name", agentName)
-            .maybeSingle();
-
-          if (reg) {
-            await supabase
-              .from("agent_registry")
-              .update({
-                run_count: (reg.run_count as number) + 1,
-                total_found: (reg.total_found as number) + res.found,
-                total_inserted: (reg.total_inserted as number) + res.added,
-                last_run_at: new Date().toISOString(),
-              })
-              .eq("agent_name", agentName);
-          }
+        if (runErr || !run) {
+          console.error("[agent] Failed to create agent_runs:", runErr);
+          throw new Error("Failed to create agent_runs record");
         }
+
+        return run.id as string;
+      });
+
+      // ── Step: EDGAR ──────────────────────────────────────────────────────
+      const er = await step.run("source-edgar", async () => {
+        return sourceEdgar(supabase, anthropic, runId!);
+      });
+      Object.assign(edgarResult, er);
+
+      // ── Step: Google Places ───────────────────────────────────────────────
+      const pr = await step.run("source-google-places", async () => {
+        return sourceGooglePlaces(supabase, runId!);
+      });
+      Object.assign(placesResult, pr);
+
+      // ── Step: Web Intelligence ───────────────────────────────────────────
+      const wr = await step.run("source-web-intelligence", async () => {
+        return sourceWebIntelligence(supabase, anthropic, runId!);
+      });
+      Object.assign(webResult, wr);
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("[agent] Agent run failed:", errorMessage);
+    } finally {
+      // Always finalize — even on timeout/cancel
+      if (runId) {
+        await step.run("finalize", async () => {
+          const totalFound = edgarResult.found + placesResult.found + webResult.found;
+          const totalAdded = edgarResult.added + placesResult.added + webResult.added;
+          const totalSkipped = edgarResult.skipped + placesResult.skipped + webResult.skipped;
+
+          const sourceBreakdown = {
+            edgar_10k: edgarResult,
+            google_places: placesResult,
+            web_intelligence: webResult,
+          };
+
+          const finalStatus = errorMessage ? "failed" : "completed";
+          console.log(`[agent] Finalizing as ${finalStatus}: found=${totalFound} added=${totalAdded} skipped=${totalSkipped}`);
+
+          await supabase
+            .from("agent_runs")
+            .update({
+              status: finalStatus,
+              prospects_found: totalFound,
+              prospects_added: totalAdded,
+              prospects_skipped_dedup: totalSkipped,
+              source_breakdown: sourceBreakdown,
+              completed_at: new Date().toISOString(),
+              error_message: errorMessage,
+            })
+            .eq("id", runId);
+
+          for (const [agentName, res] of Object.entries(sourceBreakdown)) {
+            if (res.found > 0 || res.added > 0) {
+              const { data: reg } = await supabase
+                .from("agent_registry")
+                .select("run_count,total_found,total_inserted")
+                .eq("agent_name", agentName)
+                .maybeSingle();
+
+              if (reg) {
+                await supabase
+                  .from("agent_registry")
+                  .update({
+                    run_count: (reg.run_count as number) + 1,
+                    total_found: (reg.total_found as number) + res.found,
+                    total_inserted: (reg.total_inserted as number) + res.added,
+                    last_run_at: new Date().toISOString(),
+                  })
+                  .eq("agent_name", agentName);
+              }
+            }
+          }
+        });
       }
-    });
+    }
   }
 );

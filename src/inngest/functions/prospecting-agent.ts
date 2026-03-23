@@ -78,62 +78,65 @@ async function sourceEdgar(
   const result: SourceResult = { found: 0, added: 0, skipped: 0 };
   const EDGAR_USER_AGENT = "Dilly/1.0 parks@sbdllc.co";
 
+  // Helper: all SEC fetches go through this to ensure correct User-Agent
+  async function secFetch(url: string): Promise<Response> {
+    return fetch(url, { headers: { "User-Agent": EDGAR_USER_AGENT } });
+  }
+
   try {
   console.log("[edgar] Starting EDGAR pipeline (global)");
 
-  // Step 1: Fetch REIT universe from SEC tickers file
+  // Step 1: Find REIT 10-K filers via EDGAR Full-Text Search (EFTS)
   try {
     const t0 = Date.now();
-    console.log("[edgar] Step 1: Fetching company_tickers_exchange.json...");
-    const resp = await fetch(
-      "https://www.sec.gov/files/company_tickers_exchange.json",
-      { headers: { "User-Agent": EDGAR_USER_AGENT } }
-    );
-    console.log(`[edgar] Step 1: Fetch completed in ${Date.now() - t0}ms, status=${resp.status}`);
+    const eftsUrl = "https://efts.sec.gov/LATEST/search-index?q=%22real+estate+investment+trust%22&forms=10-K&dateRange=custom&startdt=2024-01-01&enddt=2025-12-31";
+    console.log(`[edgar] Step 1: Fetching EFTS search: ${eftsUrl}`);
+    const resp = await secFetch(eftsUrl);
+    console.log(`[edgar] Step 1: EFTS fetch completed in ${Date.now() - t0}ms, status=${resp.status}`);
     if (!resp.ok) {
-      console.error(`[edgar] Failed to fetch tickers: ${resp.status} ${resp.statusText}`);
+      console.error(`[edgar] Step 1: EFTS failed: ${resp.status} ${resp.statusText}`);
       return result;
     }
+
     const data = (await resp.json()) as {
-      fields: string[];
-      data: (string | number)[][];
+      hits?: {
+        total?: { value?: number };
+        hits?: {
+          _source?: {
+            ciks?: string[];
+            display_names?: string[];
+            sics?: string[];
+          };
+        }[];
+      };
     };
 
-    console.log(`[edgar] Step 1: tickers JSON fields=${JSON.stringify(data.fields)}, total rows=${data.data?.length ?? 0}`);
+    const totalHits = data.hits?.total?.value ?? 0;
+    console.log(`[edgar] Step 1: EFTS returned ${totalHits} total hits, ${data.hits?.hits?.length ?? 0} in page`);
 
-    const sicCodes = new Set(["6798", "6552", "6512", "6726"]);
-    const cikIdx = data.fields.indexOf("cik");
-    const nameIdx = data.fields.indexOf("name");
-    const tickerIdx = data.fields.indexOf("ticker");
-    const exchangeIdx = data.fields.indexOf("exchange");
-    const sicIdx = data.fields.indexOf("sic");
+    // Extract unique CIK -> name mappings
+    const cikMap = new Map<string, { name: string; sic: string }>();
+    for (const hit of data.hits?.hits ?? []) {
+      const src = hit._source;
+      if (!src?.ciks?.[0]) continue;
+      const cik = src.ciks[0];
+      if (cikMap.has(cik)) continue;
 
-    console.log(`[edgar] Step 1: field indexes — cik=${cikIdx} name=${nameIdx} ticker=${tickerIdx} exchange=${exchangeIdx} sic=${sicIdx}`);
+      // Extract clean name (remove CIK suffix and ticker symbols)
+      let name = src.display_names?.[0] ?? "";
+      name = name.replace(/\s*\(CIK\s+\d+\)\s*$/, "").replace(/\s*\([A-Z, -]+\)\s*/g, " ").trim();
+      const sic = src.sics?.[0] ?? "";
 
-    if (sicIdx === -1) {
-      console.error("[edgar] Step 1: 'sic' field not found in tickers JSON! Fields:", data.fields);
-      return result;
+      cikMap.set(cik, { name, sic });
     }
 
+    console.log(`[edgar] Step 1: Found ${cikMap.size} unique REIT CIKs`);
+
+    // Upsert into reit_universe
     let upserted = 0;
-    let sicMatched = 0;
-    for (const row of data.data) {
-      const sic = String(row[sicIdx] ?? "");
-      if (!sicCodes.has(sic)) continue;
-      sicMatched++;
-
-      const cik = String(row[cikIdx] ?? "");
-      const name = String(row[nameIdx] ?? "");
-      if (!cik || !name) continue;
-
+    for (const [cik, info] of cikMap) {
       const { error: upsertErr } = await supabase.from("reit_universe").upsert(
-        {
-          cik,
-          name,
-          ticker: String(row[tickerIdx] ?? "") || null,
-          sic,
-          exchange: String(row[exchangeIdx] ?? "") || null,
-        },
+        { cik, name: info.name, sic: info.sic },
         { onConflict: "cik" }
       );
       if (upsertErr) {
@@ -142,19 +145,18 @@ async function sourceEdgar(
         upserted++;
       }
     }
-    console.log(`[edgar] Step 1: SIC matched=${sicMatched}, upserted=${upserted} REITs into reit_universe`);
-    console.log(`[edgar] EDGAR Step 1 success: ${sicMatched} companies found`);
+    console.log(`[edgar] EDGAR Step 1 success: ${cikMap.size} companies found, ${upserted} upserted`);
   } catch (err) {
     console.error("[edgar] Step 1 failed:", err);
     return result;
   }
 
-  // Step 2: Fetch 10-K filings for REITs (max 15 per run)
+  // Step 2: Fetch 10-K filings for REITs (limit 3 for validation)
   const { data: reits } = await supabase
     .from("reit_universe")
     .select("*")
     .order("last_10k_date", { ascending: true, nullsFirst: true })
-    .limit(5);
+    .limit(3);
 
   if (!reits || reits.length === 0) {
     console.log("[edgar] No REITs to process");
@@ -169,10 +171,9 @@ async function sourceEdgar(
     const cikPadded = String(reit.cik).padStart(10, "0");
     try {
       const t1 = Date.now();
-      const submResp = await fetch(
-        `https://data.sec.gov/submissions/CIK${cikPadded}.json`,
-        { headers: { "User-Agent": EDGAR_USER_AGENT } }
-      );
+      const submUrl = `https://data.sec.gov/submissions/CIK${cikPadded}.json`;
+      console.log(`[edgar] Step 2: Fetching submissions: ${submUrl}`);
+      const submResp = await secFetch(submUrl);
       console.log(`[edgar] Step 2: Submissions fetch for ${reit.name} (CIK ${cikPadded}): ${submResp.status} in ${Date.now() - t1}ms`);
       if (!submResp.ok) {
         continue;
@@ -226,9 +227,7 @@ async function sourceEdgar(
       const t2 = Date.now();
       console.log(`[edgar] Step 3: Fetching 10-K for ${reit.name} at ${filingUrl}`);
 
-      const filingResp = await fetch(filingUrl, {
-        headers: { "User-Agent": EDGAR_USER_AGENT },
-      });
+      const filingResp = await secFetch(filingUrl);
       console.log(`[edgar] Step 3: Filing fetch for ${reit.name}: ${filingResp.status} in ${Date.now() - t2}ms`);
       if (!filingResp.ok) {
         continue;

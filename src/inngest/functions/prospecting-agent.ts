@@ -70,6 +70,19 @@ async function insertIntelProspect(
 
 // ── EDGAR 3-Step Pipeline (global — no org/territory filtering) ──────────────
 
+// Priority REITs that reliably list hundreds of properties in Item 2
+const PRIORITY_REITS = [
+  { cik: "0001045609", name: "Prologis Inc", sic: "6798" },
+  { cik: "0001063761", name: "Simon Property Group Inc", sic: "6512" },
+  { cik: "0000726854", name: "Realty Income Corp", sic: "6798" },
+  { cik: "0001695678", name: "VICI Properties Inc", sic: "6798" },
+  { cik: "0001393311", name: "Public Storage", sic: "6798" },
+  { cik: "0000766704", name: "Welltower Inc", sic: "6798" },
+  { cik: "0000906107", name: "Equity Residential", sic: "6798" },
+  { cik: "0001035002", name: "Alexandria Real Estate Equities Inc", sic: "6798" },
+];
+const PRIORITY_CIK_SET = new Set(PRIORITY_REITS.map((r) => r.cik));
+
 async function sourceEdgar(
   supabase: ReturnType<typeof createAdminClient>,
   anthropic: Anthropic,
@@ -84,234 +97,248 @@ async function sourceEdgar(
   }
 
   try {
-  console.log("[edgar] Starting EDGAR pipeline (global)");
+    console.log("[edgar] Starting EDGAR pipeline (global)");
 
-  // Step 1: Find REIT 10-K filers via EDGAR Full-Text Search (EFTS)
-  try {
-    const t0 = Date.now();
-    const eftsUrl = "https://efts.sec.gov/LATEST/search-index?q=%22real+estate+investment+trust%22&forms=10-K&dateRange=custom&startdt=2024-01-01&enddt=2025-12-31";
-    console.log(`[edgar] Step 1: Fetching EFTS search: ${eftsUrl}`);
-    const resp = await secFetch(eftsUrl);
-    console.log(`[edgar] Step 1: EFTS fetch completed in ${Date.now() - t0}ms, status=${resp.status}`);
-    if (!resp.ok) {
-      console.error(`[edgar] Step 1: EFTS failed: ${resp.status} ${resp.statusText}`);
+    // Step 1: Find REIT 10-K filers via EDGAR Full-Text Search (EFTS)
+    // Also seed priority REITs that we know have good property data
+    try {
+      // Seed priority REITs first
+      for (const pr of PRIORITY_REITS) {
+        await supabase.from("reit_universe").upsert(
+          { cik: pr.cik, name: pr.name, sic: pr.sic },
+          { onConflict: "cik" }
+        );
+      }
+      console.log(`[edgar] Step 1: Seeded ${PRIORITY_REITS.length} priority REITs`);
+
+      const t0 = Date.now();
+      const eftsUrl = "https://efts.sec.gov/LATEST/search-index?q=%22real+estate+investment+trust%22&forms=10-K&dateRange=custom&startdt=2024-01-01&enddt=2025-12-31";
+      console.log(`[edgar] Step 1: Fetching EFTS search: ${eftsUrl}`);
+      const resp = await secFetch(eftsUrl);
+      console.log(`[edgar] Step 1: EFTS fetch completed in ${Date.now() - t0}ms, status=${resp.status}`);
+      if (!resp.ok) {
+        console.error(`[edgar] Step 1: EFTS failed: ${resp.status} ${resp.statusText}`);
+        // Continue anyway — we have priority REITs seeded
+      } else {
+        const data = (await resp.json()) as {
+          hits?: {
+            total?: { value?: number };
+            hits?: {
+              _source?: {
+                ciks?: string[];
+                display_names?: string[];
+                sics?: string[];
+              };
+            }[];
+          };
+        };
+
+        const totalHits = data.hits?.total?.value ?? 0;
+        console.log(`[edgar] Step 1: EFTS returned ${totalHits} total hits, ${data.hits?.hits?.length ?? 0} in page`);
+
+        const cikMap = new Map<string, { name: string; sic: string }>();
+        for (const hit of data.hits?.hits ?? []) {
+          const src = hit._source;
+          if (!src?.ciks?.[0]) continue;
+          const cik = src.ciks[0];
+          if (cikMap.has(cik)) continue;
+
+          let name = src.display_names?.[0] ?? "";
+          name = name.replace(/\s*\(CIK\s+\d+\)\s*$/, "").replace(/\s*\([A-Z, -]+\)\s*/g, " ").trim();
+          const sic = src.sics?.[0] ?? "";
+          cikMap.set(cik, { name, sic });
+        }
+
+        let upserted = 0;
+        for (const [cik, info] of cikMap) {
+          const { error: upsertErr } = await supabase.from("reit_universe").upsert(
+            { cik, name: info.name, sic: info.sic },
+            { onConflict: "cik" }
+          );
+          if (!upsertErr) upserted++;
+        }
+        console.log(`[edgar] EDGAR Step 1 success: ${cikMap.size} EFTS companies + ${PRIORITY_REITS.length} priority = ${upserted} upserted`);
+      }
+    } catch (err) {
+      console.error("[edgar] Step 1 failed:", err);
+      // Don't return — priority REITs are already seeded
+    }
+
+    // Step 2: Fetch 10-K filings — priority REITs first, limit 5 for validation
+    const { data: reits } = await supabase
+      .from("reit_universe")
+      .select("*")
+      .order("last_10k_date", { ascending: true, nullsFirst: true })
+      .limit(30);
+
+    if (!reits || reits.length === 0) {
+      console.log("[edgar] No REITs to process");
       return result;
     }
 
-    const data = (await resp.json()) as {
-      hits?: {
-        total?: { value?: number };
-        hits?: {
-          _source?: {
-            ciks?: string[];
-            display_names?: string[];
-            sics?: string[];
-          };
-        }[];
-      };
-    };
+    // Sort: priority CIKs first, then the rest
+    const sorted = reits.sort((a, b) => {
+      const aPri = PRIORITY_CIK_SET.has(a.cik as string) ? 0 : 1;
+      const bPri = PRIORITY_CIK_SET.has(b.cik as string) ? 0 : 1;
+      return aPri - bPri;
+    }).slice(0, 5);
 
-    const totalHits = data.hits?.total?.value ?? 0;
-    console.log(`[edgar] Step 1: EFTS returned ${totalHits} total hits, ${data.hits?.hits?.length ?? 0} in page`);
+    console.log(`[edgar] Step 2: processing ${sorted.length} REITs (priority first): ${sorted.map((r) => r.name).join(", ")}`);
 
-    // Extract unique CIK -> name mappings
-    const cikMap = new Map<string, { name: string; sic: string }>();
-    for (const hit of data.hits?.hits ?? []) {
-      const src = hit._source;
-      if (!src?.ciks?.[0]) continue;
-      const cik = src.ciks[0];
-      if (cikMap.has(cik)) continue;
-
-      // Extract clean name (remove CIK suffix and ticker symbols)
-      let name = src.display_names?.[0] ?? "";
-      name = name.replace(/\s*\(CIK\s+\d+\)\s*$/, "").replace(/\s*\([A-Z, -]+\)\s*/g, " ").trim();
-      const sic = src.sics?.[0] ?? "";
-
-      cikMap.set(cik, { name, sic });
-    }
-
-    console.log(`[edgar] Step 1: Found ${cikMap.size} unique REIT CIKs`);
-
-    // Upsert into reit_universe
-    let upserted = 0;
-    for (const [cik, info] of cikMap) {
-      const { error: upsertErr } = await supabase.from("reit_universe").upsert(
-        { cik, name: info.name, sic: info.sic },
-        { onConflict: "cik" }
-      );
-      if (upsertErr) {
-        console.error(`[edgar] Step 1: upsert error for CIK ${cik}:`, upsertErr.message);
-      } else {
-        upserted++;
-      }
-    }
-    console.log(`[edgar] EDGAR Step 1 success: ${cikMap.size} companies found, ${upserted} upserted`);
-  } catch (err) {
-    console.error("[edgar] Step 1 failed:", err);
-    return result;
-  }
-
-  // Step 2: Fetch 10-K filings for REITs (limit 3 for validation)
-  const { data: reits } = await supabase
-    .from("reit_universe")
-    .select("*")
-    .order("last_10k_date", { ascending: true, nullsFirst: true })
-    .limit(3);
-
-  if (!reits || reits.length === 0) {
-    console.log("[edgar] No REITs to process");
-    return result;
-  }
-
-  console.log(`[edgar] Step 2: processing ${reits.length} REITs`);
-
-  for (const reit of reits) {
-    await delay(200);
-
-    const cikPadded = String(reit.cik).padStart(10, "0");
-    try {
-      const t1 = Date.now();
-      const submUrl = `https://data.sec.gov/submissions/CIK${cikPadded}.json`;
-      console.log(`[edgar] Step 2: Fetching submissions: ${submUrl}`);
-      const submResp = await secFetch(submUrl);
-      console.log(`[edgar] Step 2: Submissions fetch for ${reit.name} (CIK ${cikPadded}): ${submResp.status} in ${Date.now() - t1}ms`);
-      if (!submResp.ok) {
-        continue;
-      }
-
-      const submissions = (await submResp.json()) as {
-        filings?: {
-          recent?: {
-            form?: string[];
-            accessionNumber?: string[];
-            filingDate?: string[];
-          };
-        };
-      };
-
-      const forms = submissions.filings?.recent?.form ?? [];
-      const accessions = submissions.filings?.recent?.accessionNumber ?? [];
-      const dates = submissions.filings?.recent?.filingDate ?? [];
-
-      console.log(`[edgar] Step 2: ${reit.name} (CIK ${reit.cik}) — ${forms.length} recent filings found`);
-
-      let tenKIndex = -1;
-      for (let i = 0; i < forms.length; i++) {
-        if (forms[i] === "10-K") { tenKIndex = i; break; }
-      }
-
-      if (tenKIndex === -1) {
-        console.log(`[edgar] Step 2: No 10-K in filings for ${reit.name}. Form types seen: ${[...new Set(forms.slice(0, 20))].join(", ")}`);
-        continue;
-      }
-
-      const accession = accessions[tenKIndex];
-      const filingDate = dates[tenKIndex];
-      console.log(`[edgar] Step 2: ${reit.name} — 10-K found: accession=${accession}, date=${filingDate}`);
-
-      if (reit.last_10k_accession === accession) {
-        console.log(`[edgar] Already processed ${accession} for ${reit.name}`);
-        continue;
-      }
-
-      await supabase
-        .from("reit_universe")
-        .update({ last_10k_date: filingDate, last_10k_accession: accession })
-        .eq("id", reit.id);
-
-      // Step 3: Fetch and parse the 10-K document
+    for (const reit of sorted) {
       await delay(200);
-      const accessionNoDashes = accession.replace(/-/g, "");
-      const filingUrl = `https://www.sec.gov/Archives/edgar/data/${reit.cik}/${accessionNoDashes}/${accession}.txt`;
 
-      const t2 = Date.now();
-      console.log(`[edgar] Step 3: Fetching 10-K for ${reit.name} at ${filingUrl}`);
+      const cikPadded = String(reit.cik).padStart(10, "0");
+      try {
+        // Step 2a: Fetch submissions to find latest 10-K accession
+        const t1 = Date.now();
+        const submUrl = `https://data.sec.gov/submissions/CIK${cikPadded}.json`;
+        console.log(`[edgar] Step 2: Fetching submissions: ${submUrl}`);
+        const submResp = await secFetch(submUrl);
+        console.log(`[edgar] Step 2: ${reit.name} (CIK ${cikPadded}): ${submResp.status} in ${Date.now() - t1}ms`);
+        if (!submResp.ok) continue;
 
-      const filingResp = await secFetch(filingUrl);
-      console.log(`[edgar] Step 3: Filing fetch for ${reit.name}: ${filingResp.status} in ${Date.now() - t2}ms`);
-      if (!filingResp.ok) {
-        continue;
-      }
-
-      const filingText = await filingResp.text();
-      console.log(`[edgar] Step 3: ${reit.name} — fetched filing, ${filingText.length} chars`);
-
-      const item2Match = filingText.match(
-        /Item\s*2[.\s\-—]*Properties([\s\S]{0,80000}?)(?=Item\s*3|PART\s*II)/i
-      );
-      if (!item2Match) {
-        // Log a snippet to help debug why regex didn't match
-        const snippet = filingText.slice(0, 500).replace(/\s+/g, " ");
-        console.log(`[edgar] Step 3: No Item 2 Properties match for ${reit.name}. First 500 chars: ${snippet}`);
-        continue;
-      }
-
-      const item2Text = item2Match[1].slice(0, 50000);
-      console.log(`[edgar] Step 3: ${reit.name} — extracted Item 2 section, ${item2Text.length} chars`);
-
-      const claudeResult = await callClaude(
-        anthropic,
-        "You extract property addresses from SEC EDGAR 10-K filings. Return ONLY a valid JSON array, no other text.",
-        `Extract all property addresses from this Item 2 Properties section of a REIT 10-K filing by ${reit.name}:\n\n${item2Text}\n\nReturn a JSON array of objects with fields: company_name (the REIT name), address_line1, city, state (2-letter code), postal_code, building_type (office/retail/industrial/warehouse/mixed/medical/other), sq_footage (number if mentioned, null otherwise). Return [] if no addresses found. Only include US properties.`
-      );
-
-      const properties = safeParseJsonArray(claudeResult);
-      console.log(`[edgar] Step 3: Claude returned ${claudeResult.length} chars, parsed ${properties.length} properties for ${reit.name}`);
-      if (properties.length === 0) {
-        console.log(`[edgar] Step 3: Claude raw response (first 500 chars): ${claudeResult.slice(0, 500)}`);
-      }
-      if (properties.length > 0) {
-        console.log(`[edgar] Step 3: First property sample: ${JSON.stringify(properties[0])}`);
-      }
-
-      // Insert ALL properties globally — no territory filtering
-      for (const prop of properties) {
-        const prospect: RawProspect = {
-          company_name: String(prop.company_name ?? reit.name),
-          address_line1: String(prop.address_line1 ?? ""),
-          city: String(prop.city ?? ""),
-          state: String(prop.state ?? "").toUpperCase(),
-          postal_code: String(prop.postal_code ?? ""),
-          building_type: String(prop.building_type ?? ""),
-          building_sq_footage: prop.sq_footage ? Number(prop.sq_footage) : undefined,
-          account_type: "owner",
-          vertical: "commercial_real_estate",
-          owner_name_legal: reit.name,
+        const submissions = (await submResp.json()) as {
+          filings?: {
+            recent?: {
+              form?: string[];
+              accessionNumber?: string[];
+              filingDate?: string[];
+              primaryDocument?: string[];
+            };
+          };
         };
 
-        const { score, breakdown } = scoreWithSource("edgar_10k", prospect);
-        result.found++;
+        const forms = submissions.filings?.recent?.form ?? [];
+        const accessions = submissions.filings?.recent?.accessionNumber ?? [];
+        const dates = submissions.filings?.recent?.filingDate ?? [];
+        const primaryDocs = submissions.filings?.recent?.primaryDocument ?? [];
 
-        const status = await insertIntelProspect(supabase, {
-          company_name: prospect.company_name,
-          domain_normalized: null,
-          address_line1: prospect.address_line1 || null,
-          city: prospect.city || null,
-          state: prospect.state || null,
-          postal_code: prospect.postal_code || null,
-          building_type: prospect.building_type || null,
-          building_sq_footage: prospect.building_sq_footage || null,
-          account_type: prospect.account_type,
-          vertical: prospect.vertical,
-          owner_name_legal: prospect.owner_name_legal,
-          confidence_score: score,
-          score_breakdown: breakdown,
-          source: "agent",
-          source_detail: "edgar_10k",
-          agent_run_id: agentRunId,
-          agent_metadata: { cik: reit.cik, accession, reit_name: reit.name },
-        });
+        console.log(`[edgar] Step 2: ${reit.name} — ${forms.length} recent filings`);
 
-        if (status === "added") result.added++;
-        else if (status === "skipped") result.skipped++;
+        let tenKIndex = -1;
+        for (let i = 0; i < forms.length; i++) {
+          if (forms[i] === "10-K") { tenKIndex = i; break; }
+        }
+
+        if (tenKIndex === -1) {
+          console.log(`[edgar] Step 2: No 10-K for ${reit.name}. Forms: ${[...new Set(forms.slice(0, 20))].join(", ")}`);
+          continue;
+        }
+
+        const accession = accessions[tenKIndex];
+        const filingDate = dates[tenKIndex];
+        const primaryDoc = primaryDocs[tenKIndex] || null;
+        console.log(`[edgar] Step 2: ${reit.name} — 10-K: accession=${accession}, date=${filingDate}, primaryDoc=${primaryDoc}`);
+
+        if (reit.last_10k_accession === accession) {
+          console.log(`[edgar] Already processed ${accession} for ${reit.name}`);
+          continue;
+        }
+
+        await supabase
+          .from("reit_universe")
+          .update({ last_10k_date: filingDate, last_10k_accession: accession })
+          .eq("id", reit.id);
+
+        // Step 3: Fetch the actual 10-K document
+        await delay(200);
+        const accessionNoDashes = accession.replace(/-/g, "");
+
+        // Use primaryDocument if available (the actual 10-K file), fallback to .txt
+        const docFilename = primaryDoc || `${accession}.txt`;
+        const filingUrl = `https://www.sec.gov/Archives/edgar/data/${reit.cik}/${accessionNoDashes}/${docFilename}`;
+
+        const t2 = Date.now();
+        console.log(`[edgar] Step 3: Fetching 10-K for ${reit.name} at ${filingUrl}`);
+
+        const filingResp = await secFetch(filingUrl);
+        console.log(`[edgar] Step 3: ${reit.name}: ${filingResp.status} in ${Date.now() - t2}ms`);
+        if (!filingResp.ok) continue;
+
+        const filingText = await filingResp.text();
+        console.log(`[edgar] Step 3: ${reit.name} — fetched filing, ${filingText.length} chars`);
+
+        // More permissive Item 2 regex — handles various 10-K formatting styles
+        const item2Match = filingText.match(
+          /(?:ITEM\s*2[\s.:\-—]{0,200}?PROPERTIES|PROPERTIES[\s\S]{0,50}?ITEM\s*2)([\s\S]{0,100000}?)(?=ITEM\s*3|PART\s+II\b)/i
+        );
+        if (!item2Match) {
+          const snippet = filingText.slice(0, 1000).replace(/\s+/g, " ");
+          console.log(`[edgar] Step 3: No Item 2 match for ${reit.name}. First 1000 chars: ${snippet}`);
+          continue;
+        }
+
+        const item2Text = item2Match[1].slice(0, 50000);
+        console.log(`[edgar] Step 3: ${reit.name} — extracted Item 2 section, ${item2Text.length} chars`);
+
+        // Improved Claude prompt — handles tables, lists, city-only entries
+        const claudeResult = await callClaude(
+          anthropic,
+          "You extract US property addresses from SEC 10-K filings. Return ONLY a valid JSON array, no other text.",
+          `The REIT "${reit.name}" owns commercial real estate. Extract every property address mentioned anywhere in this text including tables, lists, and narrative descriptions. Many REITs list properties in tables with columns for location, square footage, and building type.\n\n${item2Text}\n\nReturn a JSON array with fields: company_name, address_line1 (null if only city/state given), city, state (2-letter code), postal_code (null if not mentioned), building_type (office/retail/industrial/warehouse/mixed/medical/self_storage/other), sq_footage (number or null). If properties are listed by city/state only without street address, include them with address_line1 as null. Return [] only if truly no properties are mentioned.`
+        );
+
+        const properties = safeParseJsonArray(claudeResult);
+        console.log(`[edgar] Step 3 result for ${reit.name}: Claude returned ${properties.length} properties`);
+        if (properties.length === 0) {
+          console.log(`[edgar] Step 3: 0 properties. Claude response (first 500): ${claudeResult.slice(0, 500)}`);
+          console.log(`[edgar] Step 3: item2Text (first 1000): ${item2Text.slice(0, 1000).replace(/\s+/g, " ")}`);
+        }
+        if (properties.length > 0) {
+          console.log(`[edgar] Step 3: First property: ${JSON.stringify(properties[0])}`);
+        }
+
+        // Insert properties into intel_prospects
+        for (const prop of properties) {
+          if (isCapReached()) break;
+
+          const prospect: RawProspect = {
+            company_name: String(prop.company_name ?? reit.name),
+            address_line1: String(prop.address_line1 ?? ""),
+            city: String(prop.city ?? ""),
+            state: String(prop.state ?? "").toUpperCase(),
+            postal_code: String(prop.postal_code ?? ""),
+            building_type: String(prop.building_type ?? ""),
+            building_sq_footage: prop.sq_footage ? Number(prop.sq_footage) : undefined,
+            account_type: "owner",
+            vertical: "commercial_real_estate",
+            owner_name_legal: reit.name,
+          };
+
+          const { score, breakdown } = scoreWithSource("edgar_10k", prospect);
+          result.found++;
+
+          const status = await insertIntelProspect(supabase, {
+            company_name: prospect.company_name,
+            domain_normalized: null,
+            address_line1: prospect.address_line1 || null,
+            city: prospect.city || null,
+            state: prospect.state || null,
+            postal_code: prospect.postal_code || null,
+            building_type: prospect.building_type || null,
+            building_sq_footage: prospect.building_sq_footage || null,
+            account_type: prospect.account_type,
+            vertical: prospect.vertical,
+            owner_name_legal: prospect.owner_name_legal,
+            confidence_score: score,
+            score_breakdown: breakdown,
+            source: "agent",
+            source_detail: "edgar_10k",
+            agent_run_id: agentRunId,
+            agent_metadata: { cik: reit.cik, accession, reit_name: reit.name },
+          });
+
+          if (status === "added") result.added++;
+          else if (status === "skipped") result.skipped++;
+        }
+      } catch (err) {
+        console.error(`[edgar] Error processing ${reit.name}:`, err);
       }
-    } catch (err) {
-      console.error(`[edgar] Error processing ${reit.name}:`, err);
     }
-  }
 
-  console.log(`[edgar] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
-  return result;
+    console.log(`[edgar] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
+    return result;
 
   } catch (outerErr) {
     const msg = outerErr instanceof Error ? outerErr.message : String(outerErr);

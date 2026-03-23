@@ -76,8 +76,9 @@ async function sourceEdgar(
   agentRunId: string
 ): Promise<SourceResult> {
   const result: SourceResult = { found: 0, added: 0, skipped: 0 };
-  const EDGAR_USER_AGENT = "Dilly-BD-OS admin@dilly.dev";
+  const EDGAR_USER_AGENT = "Dilly/1.0 contact@dillyos.com";
 
+  try {
   console.log("[edgar] Starting EDGAR pipeline (global)");
 
   // Step 1: Fetch REIT universe from SEC tickers file
@@ -142,6 +143,7 @@ async function sourceEdgar(
       }
     }
     console.log(`[edgar] Step 1: SIC matched=${sicMatched}, upserted=${upserted} REITs into reit_universe`);
+    console.log(`[edgar] EDGAR Step 1 success: ${sicMatched} companies found`);
   } catch (err) {
     console.error("[edgar] Step 1 failed:", err);
     return result;
@@ -152,7 +154,7 @@ async function sourceEdgar(
     .from("reit_universe")
     .select("*")
     .order("last_10k_date", { ascending: true, nullsFirst: true })
-    .limit(15);
+    .limit(5);
 
   if (!reits || reits.length === 0) {
     console.log("[edgar] No REITs to process");
@@ -162,7 +164,7 @@ async function sourceEdgar(
   console.log(`[edgar] Step 2: processing ${reits.length} REITs`);
 
   for (const reit of reits) {
-    await delay(100);
+    await delay(200);
 
     const cikPadded = String(reit.cik).padStart(10, "0");
     try {
@@ -217,7 +219,7 @@ async function sourceEdgar(
         .eq("id", reit.id);
 
       // Step 3: Fetch and parse the 10-K document
-      await delay(100);
+      await delay(200);
       const accessionNoDashes = accession.replace(/-/g, "");
       const filingUrl = `https://www.sec.gov/Archives/edgar/data/${reit.cik}/${accessionNoDashes}/${accession}.txt`;
 
@@ -311,6 +313,14 @@ async function sourceEdgar(
 
   console.log(`[edgar] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
   return result;
+
+  } catch (outerErr) {
+    const msg = outerErr instanceof Error ? outerErr.message : String(outerErr);
+    const stack = outerErr instanceof Error ? outerErr.stack : "no stack";
+    console.error(`[edgar] FATAL ERROR: ${msg}`);
+    console.error(`[edgar] Stack trace: ${stack}`);
+    return result;
+  }
 }
 
 // ── Google Places Source (global — broad commercial queries) ──────────────────

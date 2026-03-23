@@ -76,7 +76,7 @@ async function sourceEdgar(
   agentRunId: string
 ): Promise<SourceResult> {
   const result: SourceResult = { found: 0, added: 0, skipped: 0 };
-  const EDGAR_USER_AGENT = "Dilly/1.0 contact@dillyos.com";
+  const EDGAR_USER_AGENT = "Dilly/1.0 parks@sbdllc.co";
 
   try {
   console.log("[edgar] Starting EDGAR pipeline (global)");

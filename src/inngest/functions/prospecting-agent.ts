@@ -40,15 +40,29 @@ type RawProspect = {
   owner_name_legal?: string;
 };
 
+// ── Global insertion cap ─────────────────────────────────────────────────────
+
+const MAX_INSERTS_PER_RUN = 50;
+let globalInsertCount = 0;
+
+function isCapReached(): boolean {
+  return globalInsertCount >= MAX_INSERTS_PER_RUN;
+}
+
 // ── Helper: insert into intel_prospects with dedup ───────────────────────────
 
 async function insertIntelProspect(
   supabase: ReturnType<typeof createAdminClient>,
   prospect: Record<string, unknown>
 ): Promise<"added" | "skipped" | "error"> {
+  if (isCapReached()) return "skipped";
+
   const { error } = await supabase.from("intel_prospects").insert(prospect);
 
-  if (!error) return "added";
+  if (!error) {
+    globalInsertCount++;
+    return "added";
+  }
   if (error.code === "23505" || error.message?.includes("unique")) return "skipped";
   console.error("[agent] insert error:", error.message);
   return "error";
@@ -68,12 +82,15 @@ async function sourceEdgar(
 
   // Step 1: Fetch REIT universe from SEC tickers file
   try {
+    const t0 = Date.now();
+    console.log("[edgar] Step 1: Fetching company_tickers_exchange.json...");
     const resp = await fetch(
       "https://www.sec.gov/files/company_tickers_exchange.json",
       { headers: { "User-Agent": EDGAR_USER_AGENT } }
     );
+    console.log(`[edgar] Step 1: Fetch completed in ${Date.now() - t0}ms, status=${resp.status}`);
     if (!resp.ok) {
-      console.error(`[edgar] Failed to fetch tickers: ${resp.status}`);
+      console.error(`[edgar] Failed to fetch tickers: ${resp.status} ${resp.statusText}`);
       return result;
     }
     const data = (await resp.json()) as {
@@ -149,12 +166,13 @@ async function sourceEdgar(
 
     const cikPadded = String(reit.cik).padStart(10, "0");
     try {
+      const t1 = Date.now();
       const submResp = await fetch(
         `https://data.sec.gov/submissions/CIK${cikPadded}.json`,
         { headers: { "User-Agent": EDGAR_USER_AGENT } }
       );
+      console.log(`[edgar] Step 2: Submissions fetch for ${reit.name} (CIK ${cikPadded}): ${submResp.status} in ${Date.now() - t1}ms`);
       if (!submResp.ok) {
-        console.log(`[edgar] Submissions ${submResp.status} for CIK ${reit.cik}`);
         continue;
       }
 
@@ -203,13 +221,14 @@ async function sourceEdgar(
       const accessionNoDashes = accession.replace(/-/g, "");
       const filingUrl = `https://www.sec.gov/Archives/edgar/data/${reit.cik}/${accessionNoDashes}/${accession}.txt`;
 
-      console.log(`[edgar] Step 3: Fetching 10-K for ${reit.name}`);
+      const t2 = Date.now();
+      console.log(`[edgar] Step 3: Fetching 10-K for ${reit.name} at ${filingUrl}`);
 
       const filingResp = await fetch(filingUrl, {
         headers: { "User-Agent": EDGAR_USER_AGENT },
       });
+      console.log(`[edgar] Step 3: Filing fetch for ${reit.name}: ${filingResp.status} in ${Date.now() - t2}ms`);
       if (!filingResp.ok) {
-        console.log(`[edgar] Filing fetch ${filingResp.status} for ${reit.name}`);
         continue;
       }
 
@@ -327,10 +346,15 @@ async function sourceGooglePlaces(
     "commercial building owner",
   ];
 
-  console.log(`[places] Processing ${markets.length} markets`);
+  console.log(`[places] Processing ${markets.length} markets (cap: ${MAX_INSERTS_PER_RUN} inserts)`);
 
   for (const { city, state } of markets) {
+    if (isCapReached()) {
+      console.log(`[places] Global insert cap reached (${globalInsertCount}/${MAX_INSERTS_PER_RUN}), stopping`);
+      break;
+    }
     for (const template of queryTemplates) {
+      if (isCapReached()) break;
       const query = `${template} ${city} ${state}`;
       try {
         const resp = await fetch(
@@ -442,9 +466,13 @@ async function sourceWebIntelligence(
     "retail strip center property managers Texas",
   ];
 
-  console.log(`[web-intel] Running ${searches.length} global searches`);
+  console.log(`[web-intel] Running ${searches.length} global searches (cap: ${MAX_INSERTS_PER_RUN}, current: ${globalInsertCount})`);
 
   for (const query of searches) {
+    if (isCapReached()) {
+      console.log(`[web-intel] Global insert cap reached (${globalInsertCount}/${MAX_INSERTS_PER_RUN}), stopping`);
+      break;
+    }
     try {
       console.log(`[web-intel] Searching: "${query}"`);
 
@@ -537,6 +565,9 @@ export const prospectingAgent = inngest.createFunction(
   async ({ step }) => {
     const supabase = createAdminClient();
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    // Reset global insert counter for this run
+    globalInsertCount = 0;
 
     // ── Step: Setup ──────────────────────────────────────────────────────
     const runId = await step.run("setup", async () => {

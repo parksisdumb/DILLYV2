@@ -1,7 +1,7 @@
 import { inngest } from "../client";
 import { createAdminClient } from "@/lib/supabase/admin";
 import Anthropic from "@anthropic-ai/sdk";
-import { scoreWithSource, type IcpCriteria } from "@/lib/intel/confidence";
+import { scoreWithSource } from "@/lib/intel/confidence";
 import {
   safeParseJsonArray,
   normalizeDomain,
@@ -11,12 +11,6 @@ import {
 } from "@/lib/intel/utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-type TerritoryRegion = {
-  region_type: string;
-  region_value: string;
-  state: string;
-};
 
 type SourceResult = {
   found: number;
@@ -46,83 +40,6 @@ type RawProspect = {
   owner_name_legal?: string;
 };
 
-// ── Helper: derive cities from territory regions ─────────────────────────────
-
-function getCities(regions: TerritoryRegion[]): { city: string; state: string }[] {
-  const cities: { city: string; state: string }[] = [];
-  const seen = new Set<string>();
-  for (const r of regions) {
-    if (r.region_type === "city") {
-      const key = `${r.region_value.toLowerCase()}|${r.state.toLowerCase()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        cities.push({ city: r.region_value, state: r.state });
-      }
-    }
-  }
-  return cities;
-}
-
-// ── Helper: build ICP-aware search queries ───────────────────────────────────
-
-function buildSearchQueries(
-  city: string,
-  state: string,
-  criteria: IcpCriteria[]
-): string[] {
-  const queries: string[] = [];
-  const accountTypes = criteria
-    .filter((c) => c.criteria_type === "account_type")
-    .map((c) => c.criteria_value.replace(/_/g, " "));
-  const verticals = criteria
-    .filter((c) => c.criteria_type === "vertical")
-    .map((c) => c.criteria_value.replace(/_/g, " "));
-
-  if (accountTypes.length > 0) {
-    queries.push(`${city} ${state} ${accountTypes[0]} commercial`);
-  }
-  if (verticals.length > 0) {
-    queries.push(`${city} ${state} ${verticals[0]} property owner`);
-  }
-  if (queries.length === 0) {
-    queries.push(`${city} ${state} commercial property management companies`);
-    queries.push(`${city} ${state} commercial building owner`);
-  }
-
-  return queries.slice(0, 3);
-}
-
-// ── Helper: build Google Places queries from ICP ─────────────────────────────
-
-function buildPlacesQueries(
-  city: string,
-  state: string,
-  criteria: IcpCriteria[]
-): string[] {
-  const queries: string[] = [];
-  const verticals = criteria
-    .filter((c) => c.criteria_type === "vertical")
-    .map((c) => c.criteria_value);
-  const accountTypes = criteria
-    .filter((c) => c.criteria_type === "account_type")
-    .map((c) => c.criteria_value);
-
-  for (const v of verticals.slice(0, 1)) {
-    const label = v.replace(/_/g, " ");
-    queries.push(`${label} property ${city} ${state}`);
-  }
-  for (const a of accountTypes.slice(0, 1)) {
-    const label = a.replace(/_/g, " ");
-    queries.push(`${label} ${city} ${state}`);
-  }
-  if (queries.length === 0) {
-    queries.push(`commercial property management ${city} ${state}`);
-    queries.push(`commercial building ${city} ${state}`);
-  }
-
-  return queries.slice(0, 2);
-}
-
 // ── Helper: insert into intel_prospects with dedup ───────────────────────────
 
 async function insertIntelProspect(
@@ -137,20 +54,17 @@ async function insertIntelProspect(
   return "error";
 }
 
-// ── EDGAR 3-Step Pipeline ────────────────────────────────────────────────────
+// ── EDGAR 3-Step Pipeline (global — no org/territory filtering) ──────────────
 
 async function sourceEdgar(
   supabase: ReturnType<typeof createAdminClient>,
   anthropic: Anthropic,
-  criteria: IcpCriteria[],
-  regions: TerritoryRegion[],
   agentRunId: string
 ): Promise<SourceResult> {
   const result: SourceResult = { found: 0, added: 0, skipped: 0 };
   const EDGAR_USER_AGENT = "Dilly-BD-OS admin@dilly.dev";
-  const targetStates = new Set(regions.map((r) => r.state.toUpperCase()));
 
-  console.log("[edgar] Starting EDGAR pipeline");
+  console.log("[edgar] Starting EDGAR pipeline (global)");
 
   // Step 1: Fetch REIT universe from SEC tickers file
   try {
@@ -216,7 +130,7 @@ async function sourceEdgar(
   console.log(`[edgar] Step 2: processing ${reits.length} REITs`);
 
   for (const reit of reits) {
-    await delay(100); // SEC rate limit
+    await delay(100);
 
     const cikPadded = String(reit.cik).padStart(10, "0");
     try {
@@ -243,13 +157,9 @@ async function sourceEdgar(
       const accessions = submissions.filings?.recent?.accessionNumber ?? [];
       const dates = submissions.filings?.recent?.filingDate ?? [];
 
-      // Find most recent 10-K
       let tenKIndex = -1;
       for (let i = 0; i < forms.length; i++) {
-        if (forms[i] === "10-K") {
-          tenKIndex = i;
-          break;
-        }
+        if (forms[i] === "10-K") { tenKIndex = i; break; }
       }
 
       if (tenKIndex === -1) {
@@ -260,28 +170,22 @@ async function sourceEdgar(
       const accession = accessions[tenKIndex];
       const filingDate = dates[tenKIndex];
 
-      // Skip if we already processed this filing
       if (reit.last_10k_accession === accession) {
         console.log(`[edgar] Already processed ${accession} for ${reit.name}`);
         continue;
       }
 
-      // Update reit_universe with latest 10-K info
       await supabase
         .from("reit_universe")
-        .update({
-          last_10k_date: filingDate,
-          last_10k_accession: accession,
-        })
+        .update({ last_10k_date: filingDate, last_10k_accession: accession })
         .eq("id", reit.id);
 
       // Step 3: Fetch and parse the 10-K document
       await delay(100);
-      const accessionDashed = accession; // already has dashes
       const accessionNoDashes = accession.replace(/-/g, "");
-      const filingUrl = `https://www.sec.gov/Archives/edgar/data/${reit.cik}/${accessionNoDashes}/${accessionDashed}.txt`;
+      const filingUrl = `https://www.sec.gov/Archives/edgar/data/${reit.cik}/${accessionNoDashes}/${accession}.txt`;
 
-      console.log(`[edgar] Step 3: Fetching 10-K for ${reit.name} at ${filingUrl}`);
+      console.log(`[edgar] Step 3: Fetching 10-K for ${reit.name}`);
 
       const filingResp = await fetch(filingUrl, {
         headers: { "User-Agent": EDGAR_USER_AGENT },
@@ -292,8 +196,6 @@ async function sourceEdgar(
       }
 
       const filingText = await filingResp.text();
-
-      // Extract Item 2 Properties section
       const item2Match = filingText.match(
         /Item\s*2[.\s\-—]*Properties([\s\S]{0,80000}?)(?=Item\s*3|PART\s*II)/i
       );
@@ -303,11 +205,7 @@ async function sourceEdgar(
       }
 
       const item2Text = item2Match[1].slice(0, 50000);
-      console.log(
-        `[edgar] Extracted Item 2 (${item2Text.length} chars) for ${reit.name}`
-      );
 
-      // Claude extracts property addresses
       const claudeResult = await callClaude(
         anthropic,
         "You extract property addresses from SEC EDGAR 10-K filings. Return ONLY a valid JSON array, no other text.",
@@ -315,35 +213,24 @@ async function sourceEdgar(
       );
 
       const properties = safeParseJsonArray(claudeResult);
-      console.log(
-        `[edgar] Claude extracted ${properties.length} properties for ${reit.name}`
-      );
+      console.log(`[edgar] Claude extracted ${properties.length} properties for ${reit.name}`);
 
+      // Insert ALL properties globally — no territory filtering
       for (const prop of properties) {
-        const propState = String(prop.state ?? "").toUpperCase();
-        // Only include properties in target territory states
-        if (targetStates.size > 0 && !targetStates.has(propState)) continue;
-
         const prospect: RawProspect = {
           company_name: String(prop.company_name ?? reit.name),
           address_line1: String(prop.address_line1 ?? ""),
           city: String(prop.city ?? ""),
-          state: propState,
+          state: String(prop.state ?? "").toUpperCase(),
           postal_code: String(prop.postal_code ?? ""),
           building_type: String(prop.building_type ?? ""),
-          building_sq_footage: prop.sq_footage
-            ? Number(prop.sq_footage)
-            : undefined,
+          building_sq_footage: prop.sq_footage ? Number(prop.sq_footage) : undefined,
           account_type: "owner",
           vertical: "commercial_real_estate",
           owner_name_legal: reit.name,
         };
 
-        const { score, breakdown } = scoreWithSource(
-          "edgar_10k",
-          prospect,
-          criteria
-        );
+        const { score, breakdown } = scoreWithSource("edgar_10k", prospect);
         result.found++;
 
         const status = await insertIntelProspect(supabase, {
@@ -363,11 +250,7 @@ async function sourceEdgar(
           source: "agent",
           source_detail: "edgar_10k",
           agent_run_id: agentRunId,
-          agent_metadata: {
-            cik: reit.cik,
-            accession,
-            reit_name: reit.name,
-          },
+          agent_metadata: { cik: reit.cik, accession, reit_name: reit.name },
         });
 
         if (status === "added") result.added++;
@@ -378,18 +261,14 @@ async function sourceEdgar(
     }
   }
 
-  console.log(
-    `[edgar] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`
-  );
+  console.log(`[edgar] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
   return result;
 }
 
-// ── Google Places Source ──────────────────────────────────────────────────────
+// ── Google Places Source (global — broad commercial queries) ──────────────────
 
 async function sourceGooglePlaces(
   supabase: ReturnType<typeof createAdminClient>,
-  criteria: IcpCriteria[],
-  regions: TerritoryRegion[],
   agentRunId: string
 ): Promise<SourceResult> {
   const result: SourceResult = { found: 0, added: 0, skipped: 0 };
@@ -400,14 +279,30 @@ async function sourceGooglePlaces(
     return result;
   }
 
-  const cities = getCities(regions);
-  console.log(`[places] Processing ${cities.length} cities`);
+  // Global search across major US commercial markets
+  const markets = [
+    { city: "Memphis", state: "TN" },
+    { city: "Nashville", state: "TN" },
+    { city: "Atlanta", state: "GA" },
+    { city: "Dallas", state: "TX" },
+    { city: "Houston", state: "TX" },
+    { city: "Phoenix", state: "AZ" },
+    { city: "Charlotte", state: "NC" },
+    { city: "Tampa", state: "FL" },
+    { city: "Denver", state: "CO" },
+    { city: "Indianapolis", state: "IN" },
+  ];
 
-  for (const { city, state } of cities) {
-    const queries = buildPlacesQueries(city, state, criteria);
-    console.log(`[places] ${city}, ${state}: ${queries.length} queries`);
+  const queryTemplates = [
+    "commercial property management",
+    "commercial building owner",
+  ];
 
-    for (const query of queries) {
+  console.log(`[places] Processing ${markets.length} markets`);
+
+  for (const { city, state } of markets) {
+    for (const template of queryTemplates) {
+      const query = `${template} ${city} ${state}`;
       try {
         const resp = await fetch(
           "https://places.googleapis.com/v1/places:searchText",
@@ -419,10 +314,7 @@ async function sourceGooglePlaces(
               "X-Goog-FieldMask":
                 "places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.location,places.types",
             },
-            body: JSON.stringify({
-              textQuery: query,
-              maxResultCount: 20,
-            }),
+            body: JSON.stringify({ textQuery: query, maxResultCount: 20 }),
           }
         );
 
@@ -443,7 +335,7 @@ async function sourceGooglePlaces(
         };
 
         const places = data.places ?? [];
-        console.log(`[places] Query "${query}": ${places.length} results`);
+        console.log(`[places] "${query}": ${places.length} results`);
 
         for (const place of places) {
           const companyName = place.displayName?.text;
@@ -465,11 +357,7 @@ async function sourceGooglePlaces(
             account_type: "commercial_property_management",
           };
 
-          const { score, breakdown } = scoreWithSource(
-            "google_places",
-            prospect,
-            criteria
-          );
+          const { score, breakdown } = scoreWithSource("google_places", prospect);
           result.found++;
 
           const status = await insertIntelProspect(supabase, {
@@ -489,153 +377,127 @@ async function sourceGooglePlaces(
             source: "agent",
             source_detail: "google_places",
             agent_run_id: agentRunId,
-            agent_metadata: {
-              place_types: place.types,
-              query,
-            },
+            agent_metadata: { place_types: place.types, query },
           });
 
           if (status === "added") result.added++;
           else if (status === "skipped") result.skipped++;
         }
       } catch (err) {
-        console.error(`[places] Error for query "${query}":`, err);
+        console.error(`[places] Error for "${query}":`, err);
       }
 
       await delay(200);
     }
   }
 
-  console.log(
-    `[places] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`
-  );
+  console.log(`[places] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
   return result;
 }
 
-// ── Web Intelligence Source ──────────────────────────────────────────────────
+// ── Web Intelligence Source (global — broad commercial queries) ───────────────
 
 async function sourceWebIntelligence(
   supabase: ReturnType<typeof createAdminClient>,
   anthropic: Anthropic,
-  criteria: IcpCriteria[],
-  regions: TerritoryRegion[],
   agentRunId: string
 ): Promise<SourceResult> {
   const result: SourceResult = { found: 0, added: 0, skipped: 0 };
-  const cities = getCities(regions);
 
-  console.log(`[web-intel] Processing ${cities.length} cities`);
+  // Broad commercial real estate searches across markets
+  const searches = [
+    "largest commercial property management companies southeast United States",
+    "top commercial REIT property portfolios Tennessee",
+    "industrial warehouse property owners Memphis Nashville",
+    "commercial building owners Atlanta Charlotte",
+    "retail strip center property managers Texas",
+  ];
 
-  for (const { city, state } of cities) {
-    const queries = buildSearchQueries(city, state, criteria);
-    console.log(`[web-intel] ${city}, ${state}: ${queries.length} queries`);
+  console.log(`[web-intel] Running ${searches.length} global searches`);
 
-    for (const query of queries) {
-      try {
-        console.log(`[web-intel] Searching: "${query}"`);
+  for (const query of searches) {
+    try {
+      console.log(`[web-intel] Searching: "${query}"`);
 
-        const claudeResult = await callClaude(
-          anthropic,
-          `You are a commercial real estate researcher. Search the web for the given query and extract business information. Return ONLY a valid JSON array of objects with fields: company_name, address_line1, city, state, postal_code, website, phone, contact_name, contact_title, contact_email, account_type, vertical. Return [] if nothing found.`,
-          `Search for: ${query}\n\nFind real commercial property companies, building owners, and property management firms. Extract their business details. Return results as a JSON array.`,
-          4096,
-          [
-            {
-              type: "web_search_20250305" as unknown as "custom",
-              name: "web_search",
-            } as unknown as Anthropic.Messages.Tool,
-          ]
-        );
+      const claudeResult = await callClaude(
+        anthropic,
+        `You are a commercial real estate researcher. Search the web for the given query and extract business information. Return ONLY a valid JSON array of objects with fields: company_name, address_line1, city, state, postal_code, website, phone, contact_name, contact_title, contact_email, account_type, vertical. Return [] if nothing found.`,
+        `Search for: ${query}\n\nFind real commercial property companies, building owners, and property management firms. Extract their business details. Return results as a JSON array.`,
+        4096,
+        [
+          {
+            type: "web_search_20250305" as unknown as "custom",
+            name: "web_search",
+          } as unknown as Anthropic.Messages.Tool,
+        ]
+      );
 
-        const prospects = safeParseJsonArray(claudeResult);
-        console.log(
-          `[web-intel] Query "${query}": ${prospects.length} results`
-        );
+      const prospects = safeParseJsonArray(claudeResult);
+      console.log(`[web-intel] "${query}": ${prospects.length} results`);
 
-        for (const p of prospects) {
-          const companyName = String(p.company_name ?? "");
-          if (!companyName) continue;
+      for (const p of prospects) {
+        const companyName = String(p.company_name ?? "");
+        if (!companyName) continue;
 
-          const domain = normalizeDomain(
-            String(p.website ?? p.company_website ?? "")
-          );
-          const contactName = String(p.contact_name ?? "");
-          const nameParts = contactName.split(/\s+/);
+        const domain = normalizeDomain(String(p.website ?? p.company_website ?? ""));
+        const contactName = String(p.contact_name ?? "");
+        const nameParts = contactName.split(/\s+/);
 
-          const prospect: RawProspect = {
-            company_name: companyName,
-            company_website: String(p.website ?? ""),
-            company_phone: String(p.phone ?? ""),
-            address_line1: String(p.address_line1 ?? ""),
-            city: String(p.city ?? city),
-            state: String(p.state ?? state),
-            postal_code: String(p.postal_code ?? ""),
-            contact_first_name:
-              nameParts.length > 0 ? nameParts[0] : undefined,
-            contact_last_name:
-              nameParts.length > 1
-                ? nameParts.slice(1).join(" ")
-                : undefined,
-            contact_title: String(p.contact_title ?? ""),
-            contact_email: String(p.contact_email ?? ""),
-            account_type: String(p.account_type ?? ""),
-            vertical: String(p.vertical ?? ""),
-          };
+        const prospect: RawProspect = {
+          company_name: companyName,
+          company_website: String(p.website ?? ""),
+          company_phone: String(p.phone ?? ""),
+          address_line1: String(p.address_line1 ?? ""),
+          city: String(p.city ?? ""),
+          state: String(p.state ?? ""),
+          postal_code: String(p.postal_code ?? ""),
+          contact_first_name: nameParts.length > 0 ? nameParts[0] : undefined,
+          contact_last_name: nameParts.length > 1 ? nameParts.slice(1).join(" ") : undefined,
+          contact_title: String(p.contact_title ?? ""),
+          contact_email: String(p.contact_email ?? ""),
+          account_type: String(p.account_type ?? ""),
+          vertical: String(p.vertical ?? ""),
+        };
 
-          const { score, breakdown } = scoreWithSource(
-            "web_intelligence",
-            prospect,
-            criteria
-          );
-          result.found++;
+        const { score, breakdown } = scoreWithSource("web_intelligence", prospect);
+        result.found++;
 
-          const status = await insertIntelProspect(supabase, {
-            company_name: prospect.company_name,
-            company_website: prospect.company_website || null,
-            company_phone: prospect.company_phone || null,
-            domain_normalized: domain,
-            address_line1: prospect.address_line1 || null,
-            city: prospect.city || null,
-            state: prospect.state || null,
-            postal_code: prospect.postal_code || null,
-            contact_first_name: prospect.contact_first_name || null,
-            contact_last_name: prospect.contact_last_name || null,
-            contact_title: prospect.contact_title || null,
-            contact_email: prospect.contact_email || null,
-            account_type: prospect.account_type || null,
-            vertical: prospect.vertical || null,
-            confidence_score: score,
-            score_breakdown: breakdown,
-            source: "agent",
-            source_detail: "web_intelligence",
-            agent_run_id: agentRunId,
-            agent_metadata: { query },
-          });
+        const status = await insertIntelProspect(supabase, {
+          company_name: prospect.company_name,
+          company_website: prospect.company_website || null,
+          company_phone: prospect.company_phone || null,
+          domain_normalized: domain,
+          address_line1: prospect.address_line1 || null,
+          city: prospect.city || null,
+          state: prospect.state || null,
+          postal_code: prospect.postal_code || null,
+          contact_first_name: prospect.contact_first_name || null,
+          contact_last_name: prospect.contact_last_name || null,
+          contact_title: prospect.contact_title || null,
+          contact_email: prospect.contact_email || null,
+          account_type: prospect.account_type || null,
+          vertical: prospect.vertical || null,
+          confidence_score: score,
+          score_breakdown: breakdown,
+          source: "agent",
+          source_detail: "web_intelligence",
+          agent_run_id: agentRunId,
+          agent_metadata: { query },
+        });
 
-          if (status === "added") result.added++;
-          else if (status === "skipped") result.skipped++;
-        }
-
-        // Stop after first query with 5+ usable results
-        if (prospects.length >= 5) {
-          console.log(
-            `[web-intel] Got ${prospects.length} results, stopping for ${city}`
-          );
-          break;
-        }
-      } catch (err) {
-        console.error(`[web-intel] Error for query "${query}":`, err);
+        if (status === "added") result.added++;
+        else if (status === "skipped") result.skipped++;
       }
+    } catch (err) {
+      console.error(`[web-intel] Error for "${query}":`, err);
     }
   }
 
-  console.log(
-    `[web-intel] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`
-  );
+  console.log(`[web-intel] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
   return result;
 }
 
-// ── Main Inngest Function ────────────────────────────────────────────────────
+// ── Main Inngest Function (global — no org context) ──────────────────────────
 
 export const prospectingAgent = inngest.createFunction(
   {
@@ -643,20 +505,26 @@ export const prospectingAgent = inngest.createFunction(
     retries: 1,
     triggers: [{ event: "app/prospecting-agent.run" }],
   },
-  async ({ event, step }) => {
-    const { org_id } = event.data;
+  async ({ step }) => {
     const supabase = createAdminClient();
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
     // ── Step: Setup ──────────────────────────────────────────────────────
-    const context = await step.run("setup", async () => {
-      console.log(`[agent] Starting prospecting agent for org ${org_id}`);
+    const runId = await step.run("setup", async () => {
+      console.log("[agent] Starting global prospecting agent");
 
-      // Create agent_runs record
+      // Create agent_runs record (no org_id — global run)
+      // Use a placeholder org for the FK constraint
+      const { data: firstOrg } = await supabase
+        .from("orgs")
+        .select("id")
+        .limit(1)
+        .single();
+
       const { data: run, error: runErr } = await supabase
         .from("agent_runs")
         .insert({
-          org_id,
+          org_id: firstOrg?.id,
           run_type: "prospecting",
           status: "running",
           started_at: new Date().toISOString(),
@@ -669,170 +537,29 @@ export const prospectingAgent = inngest.createFunction(
         throw new Error("Failed to create agent_runs record");
       }
 
-      // Fetch ICP profiles
-      const { data: icpProfiles } = await supabase
-        .from("icp_profiles")
-        .select("id,name,territory_id,active")
-        .eq("org_id", org_id)
-        .eq("active", true);
-
-      console.log(
-        `[agent] Found ${icpProfiles?.length ?? 0} active ICP profiles`
-      );
-
-      if (!icpProfiles || icpProfiles.length === 0) {
-        // No ICP profiles — still run with defaults
-        const { data: allTerritories } = await supabase
-          .from("territories")
-          .select("id")
-          .eq("org_id", org_id)
-          .eq("active", true);
-
-        const territoryIds = (allTerritories ?? []).map(
-          (t) => t.id as string
-        );
-
-        let allRegions: TerritoryRegion[] = [];
-        if (territoryIds.length > 0) {
-          const { data: regions } = await supabase
-            .from("territory_regions")
-            .select("region_type,region_value,state")
-            .in("territory_id", territoryIds);
-          allRegions = (regions ?? []) as TerritoryRegion[];
-        }
-
-        console.log(
-          `[agent] No ICP profiles, using ${allRegions.length} regions from ${territoryIds.length} territories`
-        );
-
-        return {
-          runId: run.id as string,
-          profiles: [] as {
-            id: string;
-            name: string;
-            criteria: IcpCriteria[];
-            regions: TerritoryRegion[];
-          }[],
-          fallbackRegions: allRegions,
-        };
-      }
-
-      // Fetch criteria and regions for each profile
-      const profiles = [];
-      for (const profile of icpProfiles) {
-        const { data: criteria } = await supabase
-          .from("icp_criteria")
-          .select("criteria_type,criteria_value")
-          .eq("icp_profile_id", profile.id);
-
-        let regions: TerritoryRegion[] = [];
-
-        if (profile.territory_id) {
-          // Use linked territory
-          const { data: r } = await supabase
-            .from("territory_regions")
-            .select("region_type,region_value,state")
-            .eq("territory_id", profile.territory_id);
-          regions = (r ?? []) as TerritoryRegion[];
-        } else {
-          // No territory linked — use ALL org territories
-          const { data: allTerritories } = await supabase
-            .from("territories")
-            .select("id")
-            .eq("org_id", org_id)
-            .eq("active", true);
-          const tIds = (allTerritories ?? []).map((t) => t.id as string);
-          if (tIds.length > 0) {
-            const { data: r } = await supabase
-              .from("territory_regions")
-              .select("region_type,region_value,state")
-              .in("territory_id", tIds);
-            regions = (r ?? []) as TerritoryRegion[];
-          }
-        }
-
-        console.log(
-          `[agent] Profile "${profile.name}": ${(criteria ?? []).length} criteria, ${regions.length} regions`
-        );
-
-        profiles.push({
-          id: profile.id as string,
-          name: profile.name as string,
-          criteria: (criteria ?? []) as IcpCriteria[],
-          regions,
-        });
-      }
-
-      return {
-        runId: run.id as string,
-        profiles,
-        fallbackRegions: [] as TerritoryRegion[],
-      };
+      return run.id as string;
     });
-
-    // Determine regions and criteria to use
-    const allCriteria: IcpCriteria[] =
-      context.profiles.length > 0
-        ? context.profiles.flatMap((p) => p.criteria)
-        : [];
-    const allRegions: TerritoryRegion[] =
-      context.profiles.length > 0
-        ? context.profiles.flatMap((p) => p.regions)
-        : context.fallbackRegions;
-
-    // Dedup regions
-    const regionSet = new Set<string>();
-    const uniqueRegions = allRegions.filter((r) => {
-      const key = `${r.region_type}|${r.region_value}|${r.state}`;
-      if (regionSet.has(key)) return false;
-      regionSet.add(key);
-      return true;
-    });
-
-    console.log(
-      `[agent] Total: ${allCriteria.length} criteria, ${uniqueRegions.length} unique regions`
-    );
 
     // ── Step: EDGAR ──────────────────────────────────────────────────────
     const edgarResult = await step.run("source-edgar", async () => {
-      return sourceEdgar(
-        supabase,
-        anthropic,
-        allCriteria,
-        uniqueRegions,
-        context.runId
-      );
+      return sourceEdgar(supabase, anthropic, runId);
     });
 
     // ── Step: Google Places ───────────────────────────────────────────────
     const placesResult = await step.run("source-google-places", async () => {
-      return sourceGooglePlaces(
-        supabase,
-        allCriteria,
-        uniqueRegions,
-        context.runId
-      );
+      return sourceGooglePlaces(supabase, runId);
     });
 
     // ── Step: Web Intelligence ───────────────────────────────────────────
     const webResult = await step.run("source-web-intelligence", async () => {
-      return sourceWebIntelligence(
-        supabase,
-        anthropic,
-        allCriteria,
-        uniqueRegions,
-        context.runId
-      );
+      return sourceWebIntelligence(supabase, anthropic, runId);
     });
 
     // ── Step: Finalize ───────────────────────────────────────────────────
     await step.run("finalize", async () => {
-      const totalFound =
-        edgarResult.found + placesResult.found + webResult.found;
-      const totalAdded =
-        edgarResult.added + placesResult.added + webResult.added;
-      const totalSkipped =
-        edgarResult.skipped + placesResult.skipped + webResult.skipped;
+      const totalFound = edgarResult.found + placesResult.found + webResult.found;
+      const totalAdded = edgarResult.added + placesResult.added + webResult.added;
+      const totalSkipped = edgarResult.skipped + placesResult.skipped + webResult.skipped;
 
       const sourceBreakdown = {
         edgar_10k: edgarResult,
@@ -840,11 +567,8 @@ export const prospectingAgent = inngest.createFunction(
         web_intelligence: webResult,
       };
 
-      console.log(
-        `[agent] Finalizing: found=${totalFound} added=${totalAdded} skipped=${totalSkipped}`
-      );
+      console.log(`[agent] Finalizing: found=${totalFound} added=${totalAdded} skipped=${totalSkipped}`);
 
-      // Update agent_runs
       await supabase
         .from("agent_runs")
         .update({
@@ -855,9 +579,8 @@ export const prospectingAgent = inngest.createFunction(
           source_breakdown: sourceBreakdown,
           completed_at: new Date().toISOString(),
         })
-        .eq("id", context.runId);
+        .eq("id", runId);
 
-      // Update agent_registry stats
       for (const [agentName, res] of Object.entries(sourceBreakdown)) {
         if (res.found > 0 || res.added > 0) {
           const { data: reg } = await supabase
@@ -879,8 +602,6 @@ export const prospectingAgent = inngest.createFunction(
           }
         }
       }
-
-      return { totalFound, totalAdded, totalSkipped, sourceBreakdown };
     });
   }
 );

@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AgentClient from "./agent-client";
@@ -114,64 +113,6 @@ export default async function AgentPage() {
     total_inserted: a.total_inserted as number,
   }));
 
-  // Push to Dilly server action
-  async function pushToDillyAction() {
-    "use server";
-    const { supabase: orgSupa, orgId: oId, userId: uId } =
-      await requireServerOrgContext();
-    const adminSupa = createAdminClient();
-
-    const { data: intelRows } = await adminSupa
-      .from("intel_prospects")
-      .select("*")
-      .eq("status", "active")
-      .gte("confidence_score", 40)
-      .is("dilly_org_id", null)
-      .limit(100);
-
-    if (!intelRows?.length) return;
-
-    let pushed = 0;
-    for (const row of intelRows) {
-      const { error } = await orgSupa.from("prospects").insert({
-        org_id: oId,
-        company_name: row.company_name,
-        website: row.company_website,
-        domain_normalized: row.domain_normalized,
-        email: row.contact_email,
-        phone: row.contact_phone ?? row.company_phone,
-        contact_first_name: row.contact_first_name,
-        contact_last_name: row.contact_last_name,
-        contact_title: row.contact_title,
-        address_line1: row.address_line1,
-        city: row.city,
-        state: row.state,
-        postal_code: row.postal_code,
-        account_type: row.account_type,
-        vertical: row.vertical,
-        source: "agent",
-        source_detail: row.source_detail,
-        confidence_score: row.confidence_score,
-        agent_metadata: {
-          intel_prospect_id: row.id,
-          score_breakdown: row.score_breakdown,
-        },
-        created_by: uId,
-      });
-
-      if (!error) {
-        await adminSupa
-          .from("intel_prospects")
-          .update({ status: "pushed", dilly_org_id: oId })
-          .eq("id", row.id);
-        pushed++;
-      }
-      // Skip duplicates silently
-    }
-
-    revalidatePath("/app/manager/agent");
-  }
-
   return (
     <AgentClient
       runs={agentRuns}
@@ -179,7 +120,6 @@ export default async function AgentPage() {
       intelCount={intelCountRes.count ?? 0}
       tiers={tiers}
       agents={agents}
-      pushToDillyAction={pushToDillyAction}
     />
   );
 }

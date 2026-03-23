@@ -130,6 +130,7 @@ export default function AppShell({
           { href: "/app/manager/prospects", label: "Prospects" },
           { href: "/app/manager/analytics", label: "Analytics" },
           { href: "/app/manager/agent", label: "Agent" },
+          { href: "/app/manager/intel", label: "Intel" },
           { href: "/app/admin/team", label: "Team" },
           { href: "/app/admin/kpis", label: "KPIs" },
         ]

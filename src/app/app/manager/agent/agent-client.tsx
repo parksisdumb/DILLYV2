@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import type { AgentRun, AgentInfo, ConfidenceTiers } from "./page";
 
@@ -35,22 +35,18 @@ export default function AgentClient({
   intelCount,
   tiers,
   agents,
-  pushToDillyAction,
 }: {
   runs: AgentRun[];
   agentProspectCount: number;
   intelCount: number;
   tiers: ConfidenceTiers;
   agents: AgentInfo[];
-  pushToDillyAction: () => Promise<void>;
 }) {
   const [triggering, setTriggering] = useState(false);
   const [triggerResult, setTriggerResult] = useState<string | null>(null);
-  const [isPushing, startPush] = useTransition();
 
   const lastRun = runs[0] ?? null;
   const isRunning = lastRun?.status === "running";
-  const pushableCount = tiers.tier80 + tiers.tier60 + tiers.tier40;
 
   async function handleTrigger() {
     setTriggering(true);
@@ -72,12 +68,6 @@ export default function AgentClient({
     } finally {
       setTriggering(false);
     }
-  }
-
-  function handlePush() {
-    startPush(async () => {
-      await pushToDillyAction();
-    });
   }
 
   return (
@@ -126,20 +116,14 @@ export default function AgentClient({
             {intelCount}
           </div>
           <div className="mt-1 text-xs text-slate-400">
-            Active intel prospects (pre-push)
+            Active intel prospects
           </div>
-          {pushableCount > 0 && (
-            <button
-              type="button"
-              onClick={handlePush}
-              disabled={isPushing}
-              className="mt-3 w-full rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-            >
-              {isPushing
-                ? "Pushing..."
-                : `Push to Dilly (${pushableCount} qualifying)`}
-            </button>
-          )}
+          <Link
+            href="/app/manager/intel"
+            className="mt-3 block w-full rounded-xl bg-blue-600 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            View Intel Pipeline
+          </Link>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4">

@@ -30,17 +30,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("[agent/trigger] Firing global prospecting agent");
+    const orgId = orgUser.org_id as string;
+    console.log("[intel/distribute] Running distribution for org:", orgId);
 
-    // Global agent — no org_id needed
     await inngest.send({
-      name: "app/prospecting-agent.run",
-      data: {},
+      name: "app/intel-distributor.run",
+      data: { org_id: orgId },
     });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, org_id: orgId });
   } catch (err) {
-    console.error("[agent/trigger] Uncaught exception:", err);
+    console.error("[intel/distribute] Error:", err);
     return NextResponse.json(
       { error: "Internal server error", detail: err instanceof Error ? err.message : String(err) },
       { status: 500 }

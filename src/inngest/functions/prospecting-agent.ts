@@ -70,7 +70,7 @@ async function insertIntelProspect(
 
 // ── EDGAR 3-Step Pipeline (global — no org/territory filtering) ──────────────
 
-// Priority REITs that reliably list hundreds of properties in Item 2
+// Priority REITs — always process these, never skip
 const PRIORITY_REITS = [
   { cik: "0001045609", name: "Prologis Inc", sic: "6798" },
   { cik: "0001063761", name: "Simon Property Group Inc", sic: "6512" },
@@ -78,11 +78,11 @@ const PRIORITY_REITS = [
   { cik: "0001695678", name: "VICI Properties Inc", sic: "6798" },
   { cik: "0001393311", name: "Public Storage", sic: "6798" },
   { cik: "0000766704", name: "Welltower Inc", sic: "6798" },
-  { cik: "0000906107", name: "Equity Residential", sic: "6798" },
   { cik: "0001035002", name: "Alexandria Real Estate Equities Inc", sic: "6798" },
   { cik: "0000917251", name: "Agree Realty Corp", sic: "6798" },
+  { cik: "0001040765", name: "Vornado Realty Trust", sic: "6798" },
 ];
-const PRIORITY_CIK_SET = new Set(PRIORITY_REITS.map((r) => r.cik));
+const PROLOGIS_CIK = "0001045609";
 
 async function sourceEdgar(
   supabase: ReturnType<typeof createAdminClient>,
@@ -98,13 +98,15 @@ async function sourceEdgar(
   }
 
   // Helper: extract Item 2 text from filing, trying multiple sources
+  // Returns { text, rawHtm } — rawHtm is the full .htm for Prologis special handling
   async function extractPropertyText(
     filingText: string,
     reitName: string,
     cik: string,
     accessionNoDashes: string
-  ): Promise<string | null> {
+  ): Promise<{ text: string | null; rawHtm: string | null }> {
     // Source A: Try index.json to find the clean .htm 10-K document
+    let rawHtm: string | null = null;
     try {
       const indexUrl = `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionNoDashes}/${accessionNoDashes}-index.json`;
       console.log(`[edgar] Source A: Fetching index.json: ${indexUrl}`);
@@ -114,7 +116,6 @@ async function sourceEdgar(
       if (indexResp.ok) {
         const indexData = (await indexResp.json()) as Record<string, unknown>;
 
-        // Safety check: log structure on first REIT
         if (isFirstReit) {
           console.log(`[edgar] EDGAR index.json structure: ${JSON.stringify(Object.keys(indexData))}`);
           const dir = indexData.directory as { item?: unknown[] } | undefined;
@@ -122,30 +123,25 @@ async function sourceEdgar(
         }
 
         const items = (indexData.directory as { item?: { name?: string; type?: string; description?: string }[] })?.item ?? [];
-        // Find the 10-K .htm document
         const tenKDoc = items.find(
-          (item) =>
-            item.type === "10-K" &&
-            item.name &&
-            /\.htm/i.test(item.name)
+          (item) => item.type === "10-K" && item.name && /\.htm/i.test(item.name)
         );
 
         if (tenKDoc?.name) {
           const htmUrl = `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionNoDashes}/${tenKDoc.name}`;
-          console.log(`[edgar] Source A: Found 10-K htm: ${tenKDoc.name}, fetching ${htmUrl}`);
+          console.log(`[edgar] Source A: Found 10-K htm: ${tenKDoc.name}, fetching`);
           await delay(200);
           const htmResp = await secFetch(htmUrl);
           if (htmResp.ok) {
-            const htmText = await htmResp.text();
-            console.log(`[edgar] Source A: Fetched ${htmText.length} chars for ${reitName}`);
+            rawHtm = await htmResp.text();
+            console.log(`[edgar] Source A: Fetched ${rawHtm.length} chars for ${reitName}`);
 
-            // Try Item 2 extraction from clean HTML
-            const match = htmText.match(
+            const match = rawHtm.match(
               /(?:ITEM\s*2[\s.:\-—]{0,200}?PROPERTIES|PROPERTIES[\s\S]{0,50}?ITEM\s*2)([\s\S]{0,100000}?)(?=ITEM\s*3|PART\s+II\b)/i
             );
             if (match) {
               console.log(`[edgar] Source A: Item 2 found in htm, ${match[1].length} chars`);
-              return match[1].slice(0, 50000);
+              return { text: match[1].slice(0, 50000), rawHtm };
             }
             console.log(`[edgar] Source A: Item 2 regex failed on htm for ${reitName}`);
           }
@@ -165,7 +161,7 @@ async function sourceEdgar(
     );
     if (item2Match) {
       console.log(`[edgar] Source B: Item 2 found in filing text, ${item2Match[1].length} chars`);
-      return item2Match[1].slice(0, 50000);
+      return { text: item2Match[1].slice(0, 50000), rawHtm };
     }
 
     // Source C: Try Schedule III — Real Estate
@@ -174,12 +170,12 @@ async function sourceEdgar(
     );
     if (scheduleMatch) {
       console.log(`[edgar] Source C: Schedule III found, ${scheduleMatch[1].length} chars`);
-      return scheduleMatch[1].slice(0, 50000);
+      return { text: scheduleMatch[1].slice(0, 50000), rawHtm };
     }
 
     const snippet = filingText.slice(0, 1000).replace(/\s+/g, " ");
     console.log(`[edgar] No property text found for ${reitName}. First 1000 chars: ${snippet}`);
-    return null;
+    return { text: null, rawHtm };
   }
 
   try {
@@ -223,27 +219,34 @@ async function sourceEdgar(
       console.error("[edgar] Step 1 failed:", err);
     }
 
-    // Step 2: Process REITs — priority first, limit 5
-    const { data: reits } = await supabase
+    // Step 2: Process all 9 priority REITs + up to 5 additional
+    const priorityCiks = PRIORITY_REITS.map((r) => r.cik);
+
+    // Fetch priority REITs by CIK
+    const { data: priorityReits } = await supabase
       .from("intel_entities")
       .select("*")
-      .order("last_10k_date", { ascending: true, nullsFirst: true })
-      .limit(30);
+      .in("cik", priorityCiks);
 
-    if (!reits || reits.length === 0) {
+    // Fetch additional non-priority REITs where last_10k_date is null
+    const { data: additionalReits } = await supabase
+      .from("intel_entities")
+      .select("*")
+      .not("cik", "in", `(${priorityCiks.join(",")})`)
+      .is("last_10k_date", null)
+      .order("created_at")
+      .limit(5);
+
+    const allReits = [...(priorityReits ?? []), ...(additionalReits ?? [])];
+
+    if (allReits.length === 0) {
       console.log("[edgar] No REITs to process");
       return result;
     }
 
-    const sorted = reits.sort((a, b) => {
-      const aPri = PRIORITY_CIK_SET.has(a.cik as string) ? 0 : 1;
-      const bPri = PRIORITY_CIK_SET.has(b.cik as string) ? 0 : 1;
-      return aPri - bPri;
-    }).slice(0, 5);
+    console.log(`[edgar] Step 2: processing ${allReits.length} REITs (${priorityReits?.length ?? 0} priority + ${additionalReits?.length ?? 0} additional): ${allReits.map((r) => r.name).join(", ")}`);
 
-    console.log(`[edgar] Step 2: processing ${sorted.length} REITs: ${sorted.map((r) => r.name).join(", ")}`);
-
-    for (const reit of sorted) {
+    for (const reit of allReits) {
       if (isCapReached()) break;
       await delay(200);
 
@@ -279,8 +282,9 @@ async function sourceEdgar(
         const primaryDoc = primaryDocs[tenKIndex] || null;
         console.log(`[edgar] Step 2: ${reit.name} — 10-K: ${accession}, date=${filingDate}`);
 
-        if (reit.last_10k_accession === accession) {
-          console.log(`[edgar] Already processed ${accession} for ${reit.name}`);
+        const isPriority = priorityCiks.includes(reit.cik as string);
+        if (!isPriority && reit.last_10k_accession === accession) {
+          console.log(`[edgar] Already processed ${accession} for ${reit.name}, skipping (non-priority)`);
           continue;
         }
 
@@ -303,25 +307,73 @@ async function sourceEdgar(
         console.log(`[edgar] Step 3: ${reit.name} — ${filingText.length} chars`);
 
         // Extract property text using Source A/B/C cascade
-        const propertyText = await extractPropertyText(filingText, reit.name, reit.cik as string, accessionNoDashes);
+        const extraction = await extractPropertyText(filingText, reit.name, reit.cik as string, accessionNoDashes);
         isFirstReit = false;
 
-        if (propertyText) {
-          // Claude: extract properties
-          const claudeResult = await callClaude(
-            anthropic,
-            "You extract US property addresses from SEC 10-K filings. Return ONLY a valid JSON array, no other text.",
-            `The REIT "${reit.name}" owns commercial real estate. Extract every property address mentioned anywhere in this text including tables, lists, and narrative descriptions. Many REITs list properties in tables with columns for location, square footage, and building type.\n\n${propertyText}\n\nReturn a JSON array with fields: company_name, address_line1 (null if only city/state given), city, state (2-letter code), postal_code (null if not mentioned), building_type (office/retail/industrial/warehouse/mixed/medical/self_storage/other), sq_footage (number or null). If properties are listed by city/state only without street address, include them with address_line1 as null. Return [] only if truly no properties are mentioned.`
-          );
+        // Fix 6: Prologis special handling — pass raw HTML to Claude directly
+        let claudeInput: string | null = null;
+        let claudeSystemPrompt: string;
+        let claudeUserPrompt: string;
+
+        if ((reit.cik as string) === PROLOGIS_CIK && extraction.rawHtm) {
+          console.log(`[edgar] Prologis special: passing ${extraction.rawHtm.length} chars raw HTML to Claude`);
+          claudeInput = extraction.rawHtm.slice(0, 100000);
+          claudeSystemPrompt = "You are extracting property data from a Prologis 10-K annual report HTML. Return ONLY a valid JSON array, no other text.";
+          claudeUserPrompt = `Prologis owns industrial warehouses and distribution centers. Extract every property address mentioned including those in HTML tables. Return a JSON array with fields: company_name, address_line1, city, state (2-letter), postal_code, building_type, sq_footage (number or null). Return only US properties. Return [] if none found.\n\n${claudeInput}`;
+        } else if (extraction.text) {
+          claudeInput = extraction.text;
+          claudeSystemPrompt = "You extract US property addresses from SEC 10-K filings. Return ONLY a valid JSON array, no other text.";
+          claudeUserPrompt = `The REIT "${reit.name}" owns commercial real estate. Extract every property address mentioned anywhere in this text including tables, lists, and narrative descriptions. Many REITs list properties in tables with columns for location, square footage, and building type.\n\n${claudeInput}\n\nReturn a JSON array with fields: company_name, address_line1 (null if only city/state given), city, state (2-letter code), postal_code (null if not mentioned), building_type (office/retail/industrial/warehouse/mixed/medical/self_storage/other), sq_footage (number or null). If properties are listed by city/state only without street address, include them with address_line1 as null. Return [] only if truly no properties are mentioned.`;
+        }
+
+        if (claudeInput) {
+          const claudeResult = await callClaude(anthropic, claudeSystemPrompt!, claudeUserPrompt!);
 
           const properties = safeParseJsonArray(claudeResult);
           console.log(`[edgar] Step 3 result for ${reit.name}: Claude returned ${properties.length} properties`);
           if (properties.length === 0) {
             console.log(`[edgar] 0 properties. Claude (first 500): ${claudeResult.slice(0, 500)}`);
-            console.log(`[edgar] propertyText (first 1000): ${propertyText.slice(0, 1000).replace(/\s+/g, " ")}`);
+            console.log(`[edgar] input (first 1000): ${claudeInput.slice(0, 1000).replace(/\s+/g, " ")}`);
           }
           if (properties.length > 0) {
             console.log(`[edgar] First property: ${JSON.stringify(properties[0])}`);
+          }
+
+          // Fix 5: If 0 properties from Item 2 (Type B REIT), extract tenants instead
+          if (properties.length === 0 && extraction.text) {
+            try {
+              const tenantResult = await callClaude(
+                anthropic,
+                "You extract tenant information from REIT filings. Return ONLY a valid JSON array.",
+                `This REIT "${reit.name}" may list its tenants instead of individual properties. Extract tenant information. Return JSON array with fields: tenant_name, tenant_industry, property_count (number or null), pct_of_rent (percentage number or null), lease_type (net/gross/modified_gross or null). Return [] if no tenant data found.\n\n${extraction.text.slice(0, 30000)}`
+              );
+              const tenants = safeParseJsonArray(tenantResult);
+              console.log(`[edgar] EDGAR tenants: extracted ${tenants.length} tenants for ${reit.name}`);
+
+              let tenantInserted = 0;
+              for (const t of tenants) {
+                const tenantName = String(t.tenant_name ?? "");
+                if (!tenantName) continue;
+                const propCount = t.property_count ? Number(t.property_count) : null;
+                await supabase.from("intel_tenants").insert({
+                  intel_entity_id: reit.id,
+                  tenant_name: tenantName,
+                  tenant_industry: String(t.tenant_industry ?? "") || null,
+                  property_count: propCount,
+                  pct_of_rent: t.pct_of_rent ? Number(t.pct_of_rent) : null,
+                  lease_type: String(t.lease_type ?? "") || null,
+                  national_account: propCount != null && propCount > 10,
+                  source_detail: "edgar_10k",
+                  agent_metadata: { cik: reit.cik, accession },
+                });
+                tenantInserted++;
+              }
+              if (tenantInserted > 0) {
+                console.log(`[edgar] EDGAR tenants: inserted ${tenantInserted} tenants for ${reit.name}`);
+              }
+            } catch (err) {
+              console.log(`[edgar] Tenant extraction failed for ${reit.name}: ${err instanceof Error ? err.message : err}`);
+            }
           }
 
           for (const prop of properties) {

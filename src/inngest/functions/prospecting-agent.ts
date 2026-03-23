@@ -17,6 +17,7 @@ type SourceResult = {
   found: number;
   added: number;
   skipped: number;
+  debug?: string[];
 };
 
 type RawProspect = {
@@ -89,6 +90,7 @@ async function sourceEdgar(
   agentRunId: string
 ): Promise<SourceResult> {
   const result: SourceResult = { found: 0, added: 0, skipped: 0 };
+  const log: string[] = [];
   const EDGAR_USER_AGENT = "Dilly/1.0 parks@sbdllc.co";
   let isFirstReit = true;
 
@@ -97,18 +99,16 @@ async function sourceEdgar(
   }
 
   // Helper: extract Item 2 text from filing, trying multiple sources
-  // Returns { text, rawHtm } — rawHtm is the full .htm for Prologis special handling
   async function extractPropertyText(
     filingText: string,
     reitName: string,
     cik: string,
     accessionNoDashes: string
   ): Promise<{ text: string | null; rawHtm: string | null }> {
-    // Source A: Try index.json to find the clean .htm 10-K document
     let rawHtm: string | null = null;
     try {
       const indexUrl = `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionNoDashes}/${accessionNoDashes}-index.json`;
-      console.log(`[edgar] Source A: Fetching index.json: ${indexUrl}`);
+      log.push(`Source A: Fetching index.json for ${reitName}`);
       await delay(200);
       const indexResp = await secFetch(indexUrl);
 
@@ -116,9 +116,9 @@ async function sourceEdgar(
         const indexData = (await indexResp.json()) as Record<string, unknown>;
 
         if (isFirstReit) {
-          console.log(`[edgar] EDGAR index.json structure: ${JSON.stringify(Object.keys(indexData))}`);
+          log.push(`index.json keys: ${JSON.stringify(Object.keys(indexData))}`);
           const dir = indexData.directory as { item?: unknown[] } | undefined;
-          console.log(`[edgar] EDGAR index.json documents count: ${dir?.item?.length ?? "no directory.item"}`);
+          log.push(`index.json doc count: ${dir?.item?.length ?? "no directory.item"}`);
         }
 
         const items = (indexData.directory as { item?: { name?: string; type?: string; description?: string }[] })?.item ?? [];
@@ -128,57 +128,54 @@ async function sourceEdgar(
 
         if (tenKDoc?.name) {
           const htmUrl = `https://www.sec.gov/Archives/edgar/data/${cik}/${accessionNoDashes}/${tenKDoc.name}`;
-          console.log(`[edgar] Source A: Found 10-K htm: ${tenKDoc.name}, fetching`);
+          log.push(`Source A: Found 10-K htm: ${tenKDoc.name}`);
           await delay(200);
           const htmResp = await secFetch(htmUrl);
           if (htmResp.ok) {
             rawHtm = await htmResp.text();
-            console.log(`[edgar] Source A: Fetched ${rawHtm.length} chars for ${reitName}`);
+            log.push(`Source A: ${rawHtm.length} chars for ${reitName}`);
 
             const match = rawHtm.match(
               /(?:ITEM\s*2[\s.:\-—]{0,200}?PROPERTIES|PROPERTIES[\s\S]{0,50}?ITEM\s*2)([\s\S]{0,100000}?)(?=ITEM\s*3|PART\s+II\b)/i
             );
             if (match) {
-              console.log(`[edgar] Source A: Item 2 found in htm, ${match[1].length} chars`);
+              log.push(`Source A: Item 2 found, ${match[1].length} chars`);
               return { text: match[1].slice(0, 50000), rawHtm };
             }
-            console.log(`[edgar] Source A: Item 2 regex failed on htm for ${reitName}`);
+            log.push(`Source A: Item 2 regex failed for ${reitName}`);
           }
         } else {
-          console.log(`[edgar] Source A: No 10-K .htm found in index for ${reitName}`);
+          log.push(`Source A: No 10-K .htm in index for ${reitName}`);
         }
       } else {
-        console.log(`[edgar] Source A: index.json fetch failed ${indexResp.status} for ${reitName}`);
+        log.push(`Source A: index.json ${indexResp.status} for ${reitName}`);
       }
     } catch (err) {
-      console.log(`[edgar] Source A failed, falling back to .txt for ${reitName}: ${err instanceof Error ? err.message : err}`);
+      log.push(`Source A failed for ${reitName}: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Source B: Try Item 2 from the already-fetched filing text
     const item2Match = filingText.match(
       /(?:ITEM\s*2[\s.:\-—]{0,200}?PROPERTIES|PROPERTIES[\s\S]{0,50}?ITEM\s*2)([\s\S]{0,100000}?)(?=ITEM\s*3|PART\s+II\b)/i
     );
     if (item2Match) {
-      console.log(`[edgar] Source B: Item 2 found in filing text, ${item2Match[1].length} chars`);
+      log.push(`Source B: Item 2 found, ${item2Match[1].length} chars`);
       return { text: item2Match[1].slice(0, 50000), rawHtm };
     }
 
-    // Source C: Try Schedule III — Real Estate
     const scheduleMatch = filingText.match(
       /SCHEDULE\s+III[\s\S]{0,200}?REAL ESTATE([\s\S]{0,150000}?)(?=SCHEDULE\s+IV|$)/i
     );
     if (scheduleMatch) {
-      console.log(`[edgar] Source C: Schedule III found, ${scheduleMatch[1].length} chars`);
+      log.push(`Source C: Schedule III found, ${scheduleMatch[1].length} chars`);
       return { text: scheduleMatch[1].slice(0, 50000), rawHtm };
     }
 
-    const snippet = filingText.slice(0, 1000).replace(/\s+/g, " ");
-    console.log(`[edgar] No property text found for ${reitName}. First 1000 chars: ${snippet}`);
+    log.push(`No property text for ${reitName}. First 500 chars: ${filingText.slice(0, 500).replace(/\s+/g, " ")}`);
     return { text: null, rawHtm };
   }
 
   try {
-    console.log("[edgar] Starting EDGAR pipeline (global)");
+    log.push("Starting EDGAR pipeline");
 
     // Step 1: Seed priority REITs + EFTS discovery
     try {
@@ -188,19 +185,18 @@ async function sourceEdgar(
           { onConflict: "cik" }
         );
       }
-      console.log(`[edgar] Step 1: Seeded ${PRIORITY_REITS.length} priority REITs`);
+      log.push(`Step 1: Seeded ${PRIORITY_REITS.length} priority REITs`);
 
       const t0 = Date.now();
       const eftsUrl = "https://efts.sec.gov/LATEST/search-index?q=%22real+estate+investment+trust%22&forms=10-K&dateRange=custom&startdt=2024-01-01&enddt=2025-12-31";
       const resp = await secFetch(eftsUrl);
-      console.log(`[edgar] Step 1: EFTS fetch ${resp.status} in ${Date.now() - t0}ms`);
+      log.push(`Step 1: EFTS fetch ${resp.status} in ${Date.now() - t0}ms`);
 
       if (resp.ok) {
         const data = (await resp.json()) as {
           hits?: { total?: { value?: number }; hits?: { _source?: { ciks?: string[]; display_names?: string[]; sics?: string[] } }[] };
         };
 
-        // Fix 1: Filter garbage entities — only keep real REITs by SIC and name
         const VALID_SIC = new Set(["6512", "6552", "6726", "6798"]);
         const GARBAGE_NAME_PATTERNS = /bancorp|banking|financial\s+corp|mortgage\s+trust|bancshares|savings|federal\s+savings|insurance|bancorporation/i;
 
@@ -213,36 +209,33 @@ async function sourceEdgar(
           name = name.replace(/\s*\(CIK\s+\d+\)\s*$/, "").replace(/\s*\([A-Z, -]+\)\s*/g, " ").trim();
           const sic = src.sics?.[0] ?? "";
 
-          // Filter: must have valid SIC and not match garbage name patterns
           if (sic && !VALID_SIC.has(sic)) { filteredOut++; continue; }
           if (GARBAGE_NAME_PATTERNS.test(name)) { filteredOut++; continue; }
 
           cikMap.set(src.ciks[0], { name, sic });
         }
 
-        console.log(`[edgar] Step 1: filtered ${filteredOut} non-REIT entities, kept ${cikMap.size}`);
+        log.push(`Step 1: filtered ${filteredOut} non-REIT, kept ${cikMap.size}`);
 
         let upserted = 0;
         for (const [cik, info] of cikMap) {
           const { error } = await supabase.from("intel_entities").upsert({ cik, name: info.name, sic: info.sic }, { onConflict: "cik" });
           if (!error) upserted++;
         }
-        console.log(`[edgar] Step 1 success: ${cikMap.size} EFTS + ${PRIORITY_REITS.length} priority, ${upserted} upserted`);
+        log.push(`Step 1 success: ${cikMap.size} EFTS + ${PRIORITY_REITS.length} priority, ${upserted} upserted`);
       }
     } catch (err) {
-      console.error("[edgar] Step 1 failed:", err);
+      log.push(`Step 1 FAILED: ${err instanceof Error ? err.message : err}`);
     }
 
     // Step 2: Process all 9 priority REITs + up to 5 additional
     const priorityCiks = PRIORITY_REITS.map((r) => r.cik);
 
-    // Fetch priority REITs by CIK
     const { data: priorityReits } = await supabase
       .from("intel_entities")
       .select("*")
       .in("cik", priorityCiks);
 
-    // Fetch additional non-priority REITs where last_10k_date is null
     const { data: additionalReits } = await supabase
       .from("intel_entities")
       .select("*")
@@ -254,23 +247,22 @@ async function sourceEdgar(
     const allReits = [...(priorityReits ?? []), ...(additionalReits ?? [])];
 
     if (allReits.length === 0) {
-      console.log("[edgar] No REITs to process");
-      return result;
+      log.push("No REITs to process");
+      return { ...result, debug: log };
     }
 
-    console.log(`[edgar] Step 2: processing ${allReits.length} REITs (${priorityReits?.length ?? 0} priority + ${additionalReits?.length ?? 0} additional): ${allReits.map((r) => r.name).join(", ")}`);
+    log.push(`Step 2: ${allReits.length} REITs (${priorityReits?.length ?? 0} priority + ${additionalReits?.length ?? 0} additional): ${allReits.map((r) => r.name).join(", ")}`);
 
     for (const reit of allReits) {
-      if (isCapReached()) break;
+      if (isCapReached()) { log.push("Global cap reached, stopping"); break; }
       await delay(200);
 
       const cikPadded = String(reit.cik).padStart(10, "0");
       try {
-        // Step 2a: Fetch submissions
         const submUrl = `https://data.sec.gov/submissions/CIK${cikPadded}.json`;
         const t1 = Date.now();
         const submResp = await secFetch(submUrl);
-        console.log(`[edgar] Step 2: ${reit.name} submissions: ${submResp.status} in ${Date.now() - t1}ms`);
+        log.push(`${reit.name} submissions: ${submResp.status} in ${Date.now() - t1}ms`);
         if (!submResp.ok) continue;
 
         const submissions = (await submResp.json()) as {
@@ -287,18 +279,18 @@ async function sourceEdgar(
           if (forms[i] === "10-K") { tenKIndex = i; break; }
         }
         if (tenKIndex === -1) {
-          console.log(`[edgar] Step 2: No 10-K for ${reit.name}`);
+          log.push(`${reit.name}: No 10-K found. Forms: ${[...new Set(forms.slice(0, 10))].join(",")}`);
           continue;
         }
 
         const accession = accessions[tenKIndex];
         const filingDate = dates[tenKIndex];
         const primaryDoc = primaryDocs[tenKIndex] || null;
-        console.log(`[edgar] Step 2: ${reit.name} — 10-K: ${accession}, date=${filingDate}`);
+        log.push(`${reit.name}: 10-K accession=${accession} date=${filingDate}`);
 
-        const isPriority = priorityCiks.includes(reit.cik as string);
-        if (!isPriority && reit.last_10k_accession === accession) {
-          console.log(`[edgar] Already processed ${accession} for ${reit.name}, skipping (non-priority)`);
+        // Skip if already processed — applies to ALL REITs including priority
+        if (reit.last_10k_accession === accession) {
+          log.push(`SKIPPED: ${reit.name} already processed accession ${accession}`);
           continue;
         }
 
@@ -314,11 +306,11 @@ async function sourceEdgar(
 
         const t2 = Date.now();
         const filingResp = await secFetch(filingUrl);
-        console.log(`[edgar] Step 3: ${reit.name} filing: ${filingResp.status} in ${Date.now() - t2}ms`);
+        log.push(`${reit.name} filing fetch: ${filingResp.status} in ${Date.now() - t2}ms`);
         if (!filingResp.ok) continue;
 
         const filingText = await filingResp.text();
-        console.log(`[edgar] Step 3: ${reit.name} — ${filingText.length} chars`);
+        log.push(`${reit.name}: filing ${filingText.length} chars`);
 
         // Extract property text using Source A/B/C cascade
         const extraction = await extractPropertyText(filingText, reit.name, reit.cik as string, accessionNoDashes);
@@ -351,10 +343,9 @@ ${textForClaude.slice(0, 50000)}`
           const tenants = Array.isArray(parsed?.tenants) ? (parsed.tenants as Record<string, unknown>[]) : [];
           const summary = String(parsed?.summary ?? "");
 
-          console.log(`[edgar] ${reit.name}: Type=${reitType}, properties=${properties.length}, markets=${markets.length}, tenants=${tenants.length}. ${summary}`);
+          log.push(`${reit.name}: Type=${reitType}, props=${properties.length}, markets=${markets.length}, tenants=${tenants.length}. ${summary}`);
 
           if (reitType === "A" && properties.length > 0) {
-            // Type A: insert individual property intel_prospects
             for (const prop of properties) {
               if (isCapReached()) break;
               const prospect: RawProspect = {
@@ -398,7 +389,6 @@ ${textForClaude.slice(0, 50000)}`
               else if (status === "skipped") result.skipped++;
             }
           } else if (markets.length > 0) {
-            // Type B: store markets in portfolio_summary + create market-level prospects
             const existing = (reit.portfolio_summary as Record<string, unknown>) ?? {};
             await supabase.from("intel_entities").update({
               portfolio_summary: { ...existing, property_markets: markets },
@@ -455,7 +445,7 @@ ${textForClaude.slice(0, 50000)}`
             }
           }
 
-          // Fix 3: Insert tenants into intel_tenants table
+          // Insert tenants into intel_tenants table
           if (tenants.length > 0) {
             let tenantInserted = 0;
             for (const t of tenants) {
@@ -474,11 +464,13 @@ ${textForClaude.slice(0, 50000)}`
               });
               if (!tErr) tenantInserted++;
             }
-            console.log(`[edgar] EDGAR tenants: inserted ${tenantInserted} tenants for ${reit.name}`);
+            log.push(`${reit.name}: ${tenantInserted} tenants inserted`);
           }
+        } else {
+          log.push(`${reit.name}: No text for Claude (extraction empty)`);
         }
 
-        // Improvement 2: Exhibit 21 subsidiary extraction
+        // Exhibit 21 subsidiary extraction
         try {
           const indexUrl = `https://www.sec.gov/Archives/edgar/data/${reit.cik}/${accessionNoDashes}/${accessionNoDashes}-index.json`;
           await delay(200);
@@ -491,7 +483,6 @@ ${textForClaude.slice(0, 50000)}`
             if (ex21?.name) {
               await delay(200);
               const ex21Url = `https://www.sec.gov/Archives/edgar/data/${reit.cik}/${accessionNoDashes}/${ex21.name}`;
-              console.log(`[edgar] Exhibit 21: Fetching ${ex21Url}`);
               const ex21Resp = await secFetch(ex21Url);
               if (ex21Resp.ok) {
                 const ex21Text = (await ex21Resp.text()).slice(0, 30000);
@@ -501,7 +492,7 @@ ${textForClaude.slice(0, 50000)}`
                   `Extract property hints from this subsidiary list. Many LLC names contain city and state. Return JSON array with fields: llc_name, inferred_city, inferred_state (2-letter), inferred_tenant (retailer name if present). Return [] if no location hints found.\n\n${ex21Text}`
                 );
                 const subsidiaries = safeParseJsonArray(subResult);
-                console.log(`[edgar] Exhibit 21: ${subsidiaries.length} subsidiary hints for ${reit.name}`);
+                log.push(`${reit.name}: Exhibit 21: ${subsidiaries.length} subsidiary hints`);
 
                 if (subsidiaries.length > 0) {
                   const existing = (reit.portfolio_summary as Record<string, unknown>) ?? {};
@@ -513,10 +504,10 @@ ${textForClaude.slice(0, 50000)}`
             }
           }
         } catch (err) {
-          console.log(`[edgar] Exhibit 21 failed for ${reit.name}: ${err instanceof Error ? err.message : err}`);
+          log.push(`${reit.name}: Exhibit 21 failed: ${err instanceof Error ? err.message : err}`);
         }
 
-        // Improvement 3: Management contact extraction → intel_contacts
+        // Management contact extraction → intel_contacts
         try {
           const mgmtResult = await callClaude(
             anthropic,
@@ -524,7 +515,6 @@ ${textForClaude.slice(0, 50000)}`
             `From this 10-K filing text, extract the names and titles of executives: CEO, CFO, VP/SVP of Asset Management, VP/SVP of Property Operations, Chief Investment Officer. Return JSON array with fields: name, title. Return [] if none found.\n\n${filingText.slice(0, 15000)}`
           );
           const mgmtContacts = safeParseJsonArray(mgmtResult);
-          console.log(`[edgar] Management contacts: ${mgmtContacts.length} for ${reit.name}`);
 
           let contactsInserted = 0;
           for (const mc of mgmtContacts) {
@@ -548,12 +538,12 @@ ${textForClaude.slice(0, 50000)}`
             });
             if (!cErr) contactsInserted++;
           }
-          console.log(`[edgar] EDGAR contacts: inserted ${contactsInserted} contacts for ${reit.name}`);
+          log.push(`${reit.name}: ${contactsInserted} contacts inserted`);
         } catch (err) {
-          console.log(`[edgar] Management extraction failed for ${reit.name}: ${err instanceof Error ? err.message : err}`);
+          log.push(`${reit.name}: Mgmt extraction failed: ${err instanceof Error ? err.message : err}`);
         }
 
-        // Improvement 4: Recent acquisitions extraction
+        // Recent acquisitions extraction
         try {
           const mdaMatch = filingText.match(
             /(?:ITEM\s*7[\s.:\-—]{0,200}?MANAGEMENT.S DISCUSSION|MD&A)([\s\S]{0,100000}?)(?=ITEM\s*8|PART\s+III\b)/i
@@ -565,7 +555,7 @@ ${textForClaude.slice(0, 50000)}`
               `Extract properties acquired in the most recent fiscal year from this MD&A section. Return JSON array with: property_name, address_line1, city, state (2-letter), price_millions (number or null), property_type, acquisition_date (YYYY-MM-DD or null). Return [] if no acquisitions found.\n\n${mdaMatch[1].slice(0, 30000)}`
             );
             const acquisitions = safeParseJsonArray(acqResult);
-            console.log(`[edgar] Acquisitions: ${acquisitions.length} for ${reit.name}`);
+            log.push(`${reit.name}: ${acquisitions.length} acquisitions found`);
 
             for (const acq of acquisitions) {
               if (isCapReached()) break;
@@ -581,7 +571,6 @@ ${textForClaude.slice(0, 50000)}`
               };
 
               const { score, breakdown } = scoreWithSource("edgar_10k", prospect);
-              // Boost acquisitions by +20
               const boostedScore = Math.min(100, score + 20);
               result.found++;
 
@@ -614,23 +603,21 @@ ${textForClaude.slice(0, 50000)}`
             }
           }
         } catch (err) {
-          console.log(`[edgar] Acquisitions extraction failed for ${reit.name}: ${err instanceof Error ? err.message : err}`);
+          log.push(`${reit.name}: Acquisitions failed: ${err instanceof Error ? err.message : err}`);
         }
 
       } catch (err) {
-        console.error(`[edgar] Error processing ${reit.name}:`, err);
+        log.push(`ERROR processing ${reit.name}: ${err instanceof Error ? err.message : err}`);
       }
     }
 
-    console.log(`[edgar] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
-    return result;
+    log.push(`Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
+    return { ...result, debug: log };
 
   } catch (outerErr) {
     const msg = outerErr instanceof Error ? outerErr.message : String(outerErr);
-    const stack = outerErr instanceof Error ? outerErr.stack : "no stack";
-    console.error(`[edgar] FATAL ERROR: ${msg}`);
-    console.error(`[edgar] Stack trace: ${stack}`);
-    return result;
+    log.push(`FATAL: ${msg}`);
+    return { ...result, debug: log };
   }
 }
 

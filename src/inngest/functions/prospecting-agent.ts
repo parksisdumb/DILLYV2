@@ -81,6 +81,8 @@ async function sourceEdgar(
       data: (string | number)[][];
     };
 
+    console.log(`[edgar] Step 1: tickers JSON fields=${JSON.stringify(data.fields)}, total rows=${data.data?.length ?? 0}`);
+
     const sicCodes = new Set(["6798", "6552", "6512", "6726"]);
     const cikIdx = data.fields.indexOf("cik");
     const nameIdx = data.fields.indexOf("name");
@@ -88,16 +90,25 @@ async function sourceEdgar(
     const exchangeIdx = data.fields.indexOf("exchange");
     const sicIdx = data.fields.indexOf("sic");
 
+    console.log(`[edgar] Step 1: field indexes — cik=${cikIdx} name=${nameIdx} ticker=${tickerIdx} exchange=${exchangeIdx} sic=${sicIdx}`);
+
+    if (sicIdx === -1) {
+      console.error("[edgar] Step 1: 'sic' field not found in tickers JSON! Fields:", data.fields);
+      return result;
+    }
+
     let upserted = 0;
+    let sicMatched = 0;
     for (const row of data.data) {
       const sic = String(row[sicIdx] ?? "");
       if (!sicCodes.has(sic)) continue;
+      sicMatched++;
 
       const cik = String(row[cikIdx] ?? "");
       const name = String(row[nameIdx] ?? "");
       if (!cik || !name) continue;
 
-      await supabase.from("reit_universe").upsert(
+      const { error: upsertErr } = await supabase.from("reit_universe").upsert(
         {
           cik,
           name,
@@ -107,9 +118,13 @@ async function sourceEdgar(
         },
         { onConflict: "cik" }
       );
-      upserted++;
+      if (upsertErr) {
+        console.error(`[edgar] Step 1: upsert error for CIK ${cik}:`, upsertErr.message);
+      } else {
+        upserted++;
+      }
     }
-    console.log(`[edgar] Step 1: upserted ${upserted} REITs into reit_universe`);
+    console.log(`[edgar] Step 1: SIC matched=${sicMatched}, upserted=${upserted} REITs into reit_universe`);
   } catch (err) {
     console.error("[edgar] Step 1 failed:", err);
     return result;
@@ -157,18 +172,21 @@ async function sourceEdgar(
       const accessions = submissions.filings?.recent?.accessionNumber ?? [];
       const dates = submissions.filings?.recent?.filingDate ?? [];
 
+      console.log(`[edgar] Step 2: ${reit.name} (CIK ${reit.cik}) — ${forms.length} recent filings found`);
+
       let tenKIndex = -1;
       for (let i = 0; i < forms.length; i++) {
         if (forms[i] === "10-K") { tenKIndex = i; break; }
       }
 
       if (tenKIndex === -1) {
-        console.log(`[edgar] No 10-K found for ${reit.name}`);
+        console.log(`[edgar] Step 2: No 10-K in filings for ${reit.name}. Form types seen: ${[...new Set(forms.slice(0, 20))].join(", ")}`);
         continue;
       }
 
       const accession = accessions[tenKIndex];
       const filingDate = dates[tenKIndex];
+      console.log(`[edgar] Step 2: ${reit.name} — 10-K found: accession=${accession}, date=${filingDate}`);
 
       if (reit.last_10k_accession === accession) {
         console.log(`[edgar] Already processed ${accession} for ${reit.name}`);
@@ -196,15 +214,20 @@ async function sourceEdgar(
       }
 
       const filingText = await filingResp.text();
+      console.log(`[edgar] Step 3: ${reit.name} — fetched filing, ${filingText.length} chars`);
+
       const item2Match = filingText.match(
         /Item\s*2[.\s\-—]*Properties([\s\S]{0,80000}?)(?=Item\s*3|PART\s*II)/i
       );
       if (!item2Match) {
-        console.log(`[edgar] No Item 2 Properties found for ${reit.name}`);
+        // Log a snippet to help debug why regex didn't match
+        const snippet = filingText.slice(0, 500).replace(/\s+/g, " ");
+        console.log(`[edgar] Step 3: No Item 2 Properties match for ${reit.name}. First 500 chars: ${snippet}`);
         continue;
       }
 
       const item2Text = item2Match[1].slice(0, 50000);
+      console.log(`[edgar] Step 3: ${reit.name} — extracted Item 2 section, ${item2Text.length} chars`);
 
       const claudeResult = await callClaude(
         anthropic,
@@ -213,7 +236,13 @@ async function sourceEdgar(
       );
 
       const properties = safeParseJsonArray(claudeResult);
-      console.log(`[edgar] Claude extracted ${properties.length} properties for ${reit.name}`);
+      console.log(`[edgar] Step 3: Claude returned ${claudeResult.length} chars, parsed ${properties.length} properties for ${reit.name}`);
+      if (properties.length === 0) {
+        console.log(`[edgar] Step 3: Claude raw response (first 500 chars): ${claudeResult.slice(0, 500)}`);
+      }
+      if (properties.length > 0) {
+        console.log(`[edgar] Step 3: First property sample: ${JSON.stringify(properties[0])}`);
+      }
 
       // Insert ALL properties globally — no territory filtering
       for (const prop of properties) {

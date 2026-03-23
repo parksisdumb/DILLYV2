@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { scoreWithSource } from "@/lib/intel/confidence";
 import {
   safeParseJsonArray,
+  safeParseJsonObject,
   normalizeDomain,
   callClaude,
   parseAddress,
@@ -82,8 +83,6 @@ const PRIORITY_REITS = [
   { cik: "0000917251", name: "Agree Realty Corp", sic: "6798" },
   { cik: "0001040765", name: "Vornado Realty Trust", sic: "6798" },
 ];
-const PROLOGIS_CIK = "0001045609";
-
 async function sourceEdgar(
   supabase: ReturnType<typeof createAdminClient>,
   anthropic: Anthropic,
@@ -200,14 +199,29 @@ async function sourceEdgar(
         const data = (await resp.json()) as {
           hits?: { total?: { value?: number }; hits?: { _source?: { ciks?: string[]; display_names?: string[]; sics?: string[] } }[] };
         };
+
+        // Fix 1: Filter garbage entities — only keep real REITs by SIC and name
+        const VALID_SIC = new Set(["6512", "6552", "6726", "6798"]);
+        const GARBAGE_NAME_PATTERNS = /bancorp|banking|financial\s+corp|mortgage\s+trust|bancshares|savings|federal\s+savings|insurance|bancorporation/i;
+
         const cikMap = new Map<string, { name: string; sic: string }>();
+        let filteredOut = 0;
         for (const hit of data.hits?.hits ?? []) {
           const src = hit._source;
           if (!src?.ciks?.[0] || cikMap.has(src.ciks[0])) continue;
           let name = src.display_names?.[0] ?? "";
           name = name.replace(/\s*\(CIK\s+\d+\)\s*$/, "").replace(/\s*\([A-Z, -]+\)\s*/g, " ").trim();
-          cikMap.set(src.ciks[0], { name, sic: src.sics?.[0] ?? "" });
+          const sic = src.sics?.[0] ?? "";
+
+          // Filter: must have valid SIC and not match garbage name patterns
+          if (sic && !VALID_SIC.has(sic)) { filteredOut++; continue; }
+          if (GARBAGE_NAME_PATTERNS.test(name)) { filteredOut++; continue; }
+
+          cikMap.set(src.ciks[0], { name, sic });
         }
+
+        console.log(`[edgar] Step 1: filtered ${filteredOut} non-REIT entities, kept ${cikMap.size}`);
+
         let upserted = 0;
         for (const [cik, info] of cikMap) {
           const { error } = await supabase.from("intel_entities").upsert({ cik, name: info.name, sic: info.sic }, { onConflict: "cik" });
@@ -310,114 +324,157 @@ async function sourceEdgar(
         const extraction = await extractPropertyText(filingText, reit.name, reit.cik as string, accessionNoDashes);
         isFirstReit = false;
 
-        // Fix 6: Prologis special handling — pass raw HTML to Claude directly
-        let claudeInput: string | null = null;
-        let claudeSystemPrompt: string;
-        let claudeUserPrompt: string;
+        // Two-pass extraction: one Claude call classifies Type A vs Type B
+        const textForClaude = extraction.text ?? extraction.rawHtm?.slice(0, 80000) ?? null;
+        if (textForClaude) {
+          const classifyResult = await callClaude(
+            anthropic,
+            "You analyze REIT 10-K filings. Return ONLY a valid JSON object, no other text.",
+            `Analyze this Item 2 Properties section from a REIT 10-K filing by ${reit.name}. First determine the format:
+- Type A: lists individual property addresses (street address, city, state)
+- Type B: lists properties grouped by market/city/tenant with counts but no street addresses
 
-        if ((reit.cik as string) === PROLOGIS_CIK && extraction.rawHtm) {
-          console.log(`[edgar] Prologis special: passing ${extraction.rawHtm.length} chars raw HTML to Claude`);
-          claudeInput = extraction.rawHtm.slice(0, 100000);
-          claudeSystemPrompt = "You are extracting property data from a Prologis 10-K annual report HTML. Return ONLY a valid JSON array, no other text.";
-          claudeUserPrompt = `Prologis owns industrial warehouses and distribution centers. Extract every property address mentioned including those in HTML tables. Return a JSON array with fields: company_name, address_line1, city, state (2-letter), postal_code, building_type, sq_footage (number or null). Return only US properties. Return [] if none found.\n\n${claudeInput}`;
-        } else if (extraction.text) {
-          claudeInput = extraction.text;
-          claudeSystemPrompt = "You extract US property addresses from SEC 10-K filings. Return ONLY a valid JSON array, no other text.";
-          claudeUserPrompt = `The REIT "${reit.name}" owns commercial real estate. Extract every property address mentioned anywhere in this text including tables, lists, and narrative descriptions. Many REITs list properties in tables with columns for location, square footage, and building type.\n\n${claudeInput}\n\nReturn a JSON array with fields: company_name, address_line1 (null if only city/state given), city, state (2-letter code), postal_code (null if not mentioned), building_type (office/retail/industrial/warehouse/mixed/medical/self_storage/other), sq_footage (number or null). If properties are listed by city/state only without street address, include them with address_line1 as null. Return [] only if truly no properties are mentioned.`;
-        }
+Return a JSON object with:
+- type: "A" or "B"
+- properties: array (for Type A — each item has address_line1, city, state, postal_code, building_type, sq_footage as number or null). Only US properties.
+- markets: array (for Type B — each item has market_name, building_count as number, total_sqft as number or null, state_code as 2-letter code, primary_building_type)
+- tenants: array (top tenants if mentioned — each has tenant_name, tenant_industry, property_count as number or null, pct_of_rent as number or null)
+- summary: one sentence describing what was found
 
-        if (claudeInput) {
-          const claudeResult = await callClaude(anthropic, claudeSystemPrompt!, claudeUserPrompt!);
+${textForClaude.slice(0, 50000)}`
+          );
 
-          const properties = safeParseJsonArray(claudeResult);
-          console.log(`[edgar] Step 3 result for ${reit.name}: Claude returned ${properties.length} properties`);
-          if (properties.length === 0) {
-            console.log(`[edgar] 0 properties. Claude (first 500): ${claudeResult.slice(0, 500)}`);
-            console.log(`[edgar] input (first 1000): ${claudeInput.slice(0, 1000).replace(/\s+/g, " ")}`);
-          }
-          if (properties.length > 0) {
-            console.log(`[edgar] First property: ${JSON.stringify(properties[0])}`);
-          }
+          const parsed = safeParseJsonObject(classifyResult);
+          const reitType = String(parsed?.type ?? "B");
+          const properties = Array.isArray(parsed?.properties) ? (parsed.properties as Record<string, unknown>[]) : [];
+          const markets = Array.isArray(parsed?.markets) ? (parsed.markets as Record<string, unknown>[]) : [];
+          const tenants = Array.isArray(parsed?.tenants) ? (parsed.tenants as Record<string, unknown>[]) : [];
+          const summary = String(parsed?.summary ?? "");
 
-          // Fix 5: If 0 properties from Item 2 (Type B REIT), extract tenants instead
-          if (properties.length === 0 && extraction.text) {
-            try {
-              const tenantResult = await callClaude(
-                anthropic,
-                "You extract tenant information from REIT filings. Return ONLY a valid JSON array.",
-                `This REIT "${reit.name}" may list its tenants instead of individual properties. Extract tenant information. Return JSON array with fields: tenant_name, tenant_industry, property_count (number or null), pct_of_rent (percentage number or null), lease_type (net/gross/modified_gross or null). Return [] if no tenant data found.\n\n${extraction.text.slice(0, 30000)}`
-              );
-              const tenants = safeParseJsonArray(tenantResult);
-              console.log(`[edgar] EDGAR tenants: extracted ${tenants.length} tenants for ${reit.name}`);
+          console.log(`[edgar] ${reit.name}: Type=${reitType}, properties=${properties.length}, markets=${markets.length}, tenants=${tenants.length}. ${summary}`);
 
-              let tenantInserted = 0;
-              for (const t of tenants) {
-                const tenantName = String(t.tenant_name ?? "");
-                if (!tenantName) continue;
-                const propCount = t.property_count ? Number(t.property_count) : null;
-                await supabase.from("intel_tenants").insert({
-                  intel_entity_id: reit.id,
-                  tenant_name: tenantName,
-                  tenant_industry: String(t.tenant_industry ?? "") || null,
-                  property_count: propCount,
-                  pct_of_rent: t.pct_of_rent ? Number(t.pct_of_rent) : null,
-                  lease_type: String(t.lease_type ?? "") || null,
-                  national_account: propCount != null && propCount > 10,
-                  source_detail: "edgar_10k",
-                  agent_metadata: { cik: reit.cik, accession },
-                });
-                tenantInserted++;
-              }
-              if (tenantInserted > 0) {
-                console.log(`[edgar] EDGAR tenants: inserted ${tenantInserted} tenants for ${reit.name}`);
-              }
-            } catch (err) {
-              console.log(`[edgar] Tenant extraction failed for ${reit.name}: ${err instanceof Error ? err.message : err}`);
+          if (reitType === "A" && properties.length > 0) {
+            // Type A: insert individual property intel_prospects
+            for (const prop of properties) {
+              if (isCapReached()) break;
+              const prospect: RawProspect = {
+                company_name: String(prop.company_name ?? reit.name),
+                address_line1: String(prop.address_line1 ?? ""),
+                city: String(prop.city ?? ""),
+                state: String(prop.state ?? "").toUpperCase(),
+                postal_code: String(prop.postal_code ?? ""),
+                building_type: String(prop.building_type ?? ""),
+                building_sq_footage: prop.sq_footage ? Number(prop.sq_footage) : undefined,
+                account_type: "owner",
+                vertical: "commercial_real_estate",
+                owner_name_legal: reit.name,
+              };
+
+              const { score, breakdown } = scoreWithSource("edgar_10k", prospect);
+              result.found++;
+
+              const status = await insertIntelProspect(supabase, {
+                company_name: prospect.company_name,
+                domain_normalized: null,
+                address_line1: prospect.address_line1 || null,
+                city: prospect.city || null,
+                state: prospect.state || null,
+                postal_code: prospect.postal_code || null,
+                building_type: prospect.building_type || null,
+                building_sq_footage: prospect.building_sq_footage || null,
+                account_type: prospect.account_type,
+                vertical: prospect.vertical,
+                owner_name_legal: prospect.owner_name_legal,
+                entity_id: reit.id,
+                confidence_score: score,
+                score_breakdown: breakdown,
+                source: "agent",
+                source_detail: "edgar_10k",
+                agent_run_id: agentRunId,
+                agent_metadata: { cik: reit.cik, accession, reit_name: reit.name },
+              });
+
+              if (status === "added") result.added++;
+              else if (status === "skipped") result.skipped++;
+            }
+          } else if (markets.length > 0) {
+            // Type B: store markets in portfolio_summary + create market-level prospects
+            const existing = (reit.portfolio_summary as Record<string, unknown>) ?? {};
+            await supabase.from("intel_entities").update({
+              portfolio_summary: { ...existing, property_markets: markets },
+            }).eq("id", reit.id);
+
+            for (const mkt of markets) {
+              if (isCapReached()) break;
+              const marketName = String(mkt.market_name ?? "");
+              const stateCode = String(mkt.state_code ?? "").toUpperCase();
+              const totalSqft = mkt.total_sqft ? Number(mkt.total_sqft) : undefined;
+              const buildingCount = mkt.building_count ? Number(mkt.building_count) : undefined;
+              const buildingType = String(mkt.primary_building_type ?? "");
+
+              const prospect: RawProspect = {
+                company_name: reit.name as string,
+                city: marketName,
+                state: stateCode,
+                account_type: "owner",
+                vertical: "commercial_real_estate",
+                owner_name_legal: reit.name as string,
+                building_type: buildingType,
+                building_sq_footage: totalSqft,
+              };
+
+              const { score, breakdown } = scoreWithSource("edgar_10k", prospect);
+              result.found++;
+
+              const status = await insertIntelProspect(supabase, {
+                company_name: reit.name as string,
+                domain_normalized: null,
+                address_line1: null,
+                city: marketName || null,
+                state: stateCode || null,
+                postal_code: null,
+                building_type: buildingType || null,
+                building_sq_footage: totalSqft ?? null,
+                account_type: "owner",
+                vertical: "commercial_real_estate",
+                owner_name_legal: reit.name as string,
+                entity_id: reit.id,
+                confidence_score: score,
+                score_breakdown: breakdown,
+                source: "agent",
+                source_detail: "edgar_10k",
+                agent_run_id: agentRunId,
+                agent_metadata: {
+                  cik: reit.cik, accession, reit_name: reit.name,
+                  building_count: buildingCount, market_name: marketName,
+                },
+              });
+
+              if (status === "added") result.added++;
+              else if (status === "skipped") result.skipped++;
             }
           }
 
-          for (const prop of properties) {
-            if (isCapReached()) break;
-
-            const prospect: RawProspect = {
-              company_name: String(prop.company_name ?? reit.name),
-              address_line1: String(prop.address_line1 ?? ""),
-              city: String(prop.city ?? ""),
-              state: String(prop.state ?? "").toUpperCase(),
-              postal_code: String(prop.postal_code ?? ""),
-              building_type: String(prop.building_type ?? ""),
-              building_sq_footage: prop.sq_footage ? Number(prop.sq_footage) : undefined,
-              account_type: "owner",
-              vertical: "commercial_real_estate",
-              owner_name_legal: reit.name,
-            };
-
-            const { score, breakdown } = scoreWithSource("edgar_10k", prospect);
-            result.found++;
-
-            const status = await insertIntelProspect(supabase, {
-              company_name: prospect.company_name,
-              domain_normalized: null,
-              address_line1: prospect.address_line1 || null,
-              city: prospect.city || null,
-              state: prospect.state || null,
-              postal_code: prospect.postal_code || null,
-              building_type: prospect.building_type || null,
-              building_sq_footage: prospect.building_sq_footage || null,
-              account_type: prospect.account_type,
-              vertical: prospect.vertical,
-              owner_name_legal: prospect.owner_name_legal,
-              entity_id: reit.id,
-              confidence_score: score,
-              score_breakdown: breakdown,
-              source: "agent",
-              source_detail: "edgar_10k",
-              agent_run_id: agentRunId,
-              agent_metadata: { cik: reit.cik, accession, reit_name: reit.name },
-            });
-
-            if (status === "added") result.added++;
-            else if (status === "skipped") result.skipped++;
+          // Fix 3: Insert tenants into intel_tenants table
+          if (tenants.length > 0) {
+            let tenantInserted = 0;
+            for (const t of tenants) {
+              const tenantName = String(t.tenant_name ?? "");
+              if (!tenantName) continue;
+              const propCount = t.property_count ? Number(t.property_count) : null;
+              const { error: tErr } = await supabase.from("intel_tenants").insert({
+                intel_entity_id: reit.id,
+                tenant_name: tenantName,
+                tenant_industry: String(t.tenant_industry ?? "") || null,
+                property_count: propCount,
+                pct_of_rent: t.pct_of_rent ? Number(t.pct_of_rent) : null,
+                national_account: propCount != null && propCount > 10,
+                source_detail: "edgar_10k",
+                agent_metadata: { cik: reit.cik, accession },
+              });
+              if (!tErr) tenantInserted++;
+            }
+            console.log(`[edgar] EDGAR tenants: inserted ${tenantInserted} tenants for ${reit.name}`);
           }
         }
 
@@ -469,6 +526,7 @@ async function sourceEdgar(
           const mgmtContacts = safeParseJsonArray(mgmtResult);
           console.log(`[edgar] Management contacts: ${mgmtContacts.length} for ${reit.name}`);
 
+          let contactsInserted = 0;
           for (const mc of mgmtContacts) {
             const fullName = String(mc.name ?? "");
             const title = String(mc.title ?? "");
@@ -478,7 +536,7 @@ async function sourceEdgar(
               ? "asset_manager"
               : "executive";
 
-            await supabase.from("intel_contacts").insert({
+            const { error: cErr } = await supabase.from("intel_contacts").insert({
               intel_entity_id: reit.id,
               first_name: nameParts[0] || null,
               last_name: nameParts.length > 1 ? nameParts.slice(1).join(" ") : null,
@@ -488,7 +546,9 @@ async function sourceEdgar(
               source_detail: "edgar_10k",
               agent_metadata: { cik: reit.cik, accession },
             });
+            if (!cErr) contactsInserted++;
           }
+          console.log(`[edgar] EDGAR contacts: inserted ${contactsInserted} contacts for ${reit.name}`);
         } catch (err) {
           console.log(`[edgar] Management extraction failed for ${reit.name}: ${err instanceof Error ? err.message : err}`);
         }

@@ -22,6 +22,26 @@ export function safeParseJsonArray(
 }
 
 /**
+ * Safely parse a JSON object from Claude's text response.
+ * Handles markdown code blocks and malformed output.
+ */
+export function safeParseJsonObject(
+  text: string
+): Record<string, unknown> | null {
+  const objMatch = text.match(/\{[\s\S]*\}/);
+  if (!objMatch) return null;
+  try {
+    const parsed = JSON.parse(objMatch[0]);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Normalize a URL to its bare domain (e.g., "www.example.com" → "example.com").
  */
 export function normalizeDomain(

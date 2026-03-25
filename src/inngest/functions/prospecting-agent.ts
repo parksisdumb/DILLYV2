@@ -44,7 +44,7 @@ type RawProspect = {
 
 // ── Global insertion cap ─────────────────────────────────────────────────────
 
-const MAX_INSERTS_PER_RUN = 50;
+const MAX_INSERTS_PER_RUN = 500;
 let globalInsertCount = 0;
 
 function isCapReached(): boolean {
@@ -340,8 +340,9 @@ async function sourceGooglePlaces(
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
 
   if (!apiKey) {
-    console.log("[places] GOOGLE_PLACES_API_KEY not set, skipping");
-    return result;
+    const log = ["FATAL: GOOGLE_PLACES_API_KEY not set — Google Places source disabled. Add this key to Vercel environment variables."];
+    console.log("[places] " + log[0]);
+    return { found: 0, added: 0, skipped: 0, debug: log };
   }
 
   // Global search across major US commercial markets

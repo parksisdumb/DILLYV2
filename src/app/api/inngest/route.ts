@@ -1,9 +1,10 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
-import { prospectingAgent } from "@/inngest/functions/prospecting-agent";
+import { edgarIntelligenceAgent } from "@/inngest/functions/edgar-intelligence-agent";
+import { prospectDiscoveryAgent } from "@/inngest/functions/prospect-discovery-agent";
 import { intelDistributor } from "@/inngest/functions/intel-distributor";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [prospectingAgent, intelDistributor],
+  functions: [edgarIntelligenceAgent, prospectDiscoveryAgent, intelDistributor],
 });

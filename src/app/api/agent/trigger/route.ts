@@ -30,15 +30,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("[agent/trigger] Firing global prospecting agent");
+    // Accept optional agent type — defaults to prospect-discovery
+    const body = await request.json().catch(() => ({}));
+    const agentType = (body as { agent?: string }).agent ?? "prospect-discovery";
 
-    // Global agent — no org_id needed
-    await inngest.send({
-      name: "app/prospecting-agent.run",
-      data: {},
-    });
+    let eventName: string;
+    switch (agentType) {
+      case "edgar":
+        eventName = "app/edgar-intelligence.run";
+        break;
+      case "prospect-discovery":
+        eventName = "app/prospect-discovery.run";
+        break;
+      case "distributor":
+        eventName = "app/intel-distributor.run";
+        break;
+      default:
+        eventName = "app/prospect-discovery.run";
+    }
 
-    return NextResponse.json({ ok: true });
+    console.log(`[agent/trigger] Firing ${agentType} agent (${eventName})`);
+
+    await inngest.send({ name: eventName, data: {} });
+
+    return NextResponse.json({ ok: true, agent: agentType });
   } catch (err) {
     console.error("[agent/trigger] Uncaught exception:", err);
     return NextResponse.json(

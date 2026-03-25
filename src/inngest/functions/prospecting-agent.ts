@@ -330,140 +330,165 @@ async function sourceEdgar(
   }
 }
 
-// ── Google Places Source (global — broad commercial queries) ──────────────────
+// ── Google Places Source (territory-driven) ──────────────────────────────────
+
+const DEFAULT_METROS: { city: string; state: string }[] = [
+  { city: "Memphis", state: "TN" },
+  { city: "Nashville", state: "TN" },
+  { city: "Dallas", state: "TX" },
+  { city: "Houston", state: "TX" },
+  { city: "Atlanta", state: "GA" },
+  { city: "Charlotte", state: "NC" },
+  { city: "Tampa", state: "FL" },
+];
+
+const PLACES_QUERY_TEMPLATES = [
+  "commercial property management",
+  "industrial park",
+  "commercial real estate",
+];
 
 async function sourceGooglePlaces(
   supabase: ReturnType<typeof createAdminClient>,
   agentRunId: string
 ): Promise<SourceResult> {
   const result: SourceResult = { found: 0, added: 0, skipped: 0 };
+  const log: string[] = [];
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
 
   if (!apiKey) {
-    const log = ["FATAL: GOOGLE_PLACES_API_KEY not set — Google Places source disabled. Add this key to Vercel environment variables."];
+    log.push("FATAL: GOOGLE_PLACES_API_KEY not set — Google Places source disabled. Add this key to Vercel environment variables.");
     console.log("[places] " + log[0]);
     return { found: 0, added: 0, skipped: 0, debug: log };
   }
 
-  // Global search across major US commercial markets
-  const markets = [
-    { city: "Memphis", state: "TN" },
-    { city: "Nashville", state: "TN" },
-    { city: "Atlanta", state: "GA" },
-    { city: "Dallas", state: "TX" },
-    { city: "Houston", state: "TX" },
-    { city: "Phoenix", state: "AZ" },
-    { city: "Charlotte", state: "NC" },
-    { city: "Tampa", state: "FL" },
-    { city: "Denver", state: "CO" },
-    { city: "Indianapolis", state: "IN" },
-  ];
+  // Load territory regions across all orgs
+  const { data: regions } = await supabase
+    .from("territory_regions")
+    .select("region_value,region_type,state")
+    .in("region_type", ["city", "zip", "county"])
+    .limit(50);
 
-  const queryTemplates = [
-    "commercial property management",
-    "commercial building owner",
-  ];
+  let markets: { city: string; state: string }[] = [];
 
-  console.log(`[places] Processing ${markets.length} markets (cap: ${MAX_INSERTS_PER_RUN} inserts)`);
+  if (regions && regions.length > 0) {
+    // Deduplicate city+state pairs
+    const seen = new Set<string>();
+    for (const r of regions) {
+      const city = (r.region_value as string).trim();
+      const state = (r.state as string).trim().toUpperCase();
+      const key = `${city.toLowerCase()}|${state}`;
+      if (r.region_type === "city" && !seen.has(key)) {
+        seen.add(key);
+        markets.push({ city, state });
+      }
+    }
+    log.push(`Loaded ${markets.length} cities from territory_regions`);
+  }
+
+  if (markets.length === 0) {
+    markets = DEFAULT_METROS;
+    log.push(`No territory regions found, using ${markets.length} default metros`);
+  }
+
+  log.push(`Processing ${markets.length} markets x ${PLACES_QUERY_TEMPLATES.length} queries (cap: ${MAX_INSERTS_PER_RUN})`);
 
   for (const { city, state } of markets) {
     if (isCapReached()) {
-      console.log(`[places] Global insert cap reached (${globalInsertCount}/${MAX_INSERTS_PER_RUN}), stopping`);
+      log.push(`Global insert cap reached (${globalInsertCount}/${MAX_INSERTS_PER_RUN}), stopping`);
       break;
     }
-    for (const template of queryTemplates) {
+
+    for (const template of PLACES_QUERY_TEMPLATES) {
       if (isCapReached()) break;
+
       const query = `${template} ${city} ${state}`;
       try {
+        await delay(100);
+
         const resp = await fetch(
-          "https://places.googleapis.com/v1/places:searchText",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Goog-Api-Key": apiKey,
-              "X-Goog-FieldMask":
-                "places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.location,places.types",
-            },
-            body: JSON.stringify({ textQuery: query, maxResultCount: 20 }),
-          }
+          `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${apiKey}`,
         );
 
         if (!resp.ok) {
-          console.error(`[places] API error ${resp.status}: ${await resp.text()}`);
+          log.push(`API error ${resp.status} for "${query}"`);
           continue;
         }
 
         const data = (await resp.json()) as {
-          places?: {
-            displayName?: { text: string };
-            formattedAddress?: string;
-            nationalPhoneNumber?: string;
-            websiteUri?: string;
-            location?: { latitude: number; longitude: number };
+          results?: {
+            name?: string;
+            formatted_address?: string;
+            place_id?: string;
             types?: string[];
+            rating?: number;
+            business_status?: string;
           }[];
+          status?: string;
         };
 
-        const places = data.places ?? [];
-        console.log(`[places] "${query}": ${places.length} results`);
+        if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+          log.push(`API status ${data.status} for "${query}"`);
+          continue;
+        }
+
+        const places = data.results ?? [];
+        log.push(`"${query}": ${places.length} results`);
 
         for (const place of places) {
-          const companyName = place.displayName?.text;
+          const companyName = place.name;
           if (!companyName) continue;
 
-          const addr = parseAddress(place.formattedAddress ?? "");
-          const domain = normalizeDomain(place.websiteUri);
+          // Parse formatted_address: "123 Main St, Memphis, TN 38103, USA"
+          const addr = parseAddress(place.formatted_address ?? "");
+          const hasStreetNumber = /^\d/.test(addr.address_line1 ?? "");
 
-          const prospect: RawProspect = {
-            company_name: companyName,
-            company_website: place.websiteUri ?? undefined,
-            company_phone: place.nationalPhoneNumber ?? undefined,
-            address_line1: addr.address_line1 ?? undefined,
-            city: addr.city ?? city,
-            state: addr.state ?? state,
-            postal_code: addr.postal_code ?? undefined,
-            lat: place.location?.latitude,
-            lng: place.location?.longitude,
-            account_type: "commercial_property_management",
-          };
+          // Score
+          let score = 25;
+          if (hasStreetNumber) score += 15;
+          if (place.types?.includes("establishment")) score += 10;
+          if (place.business_status === "OPERATIONAL") score += 10;
+          score = Math.min(100, score);
 
-          const { score, breakdown } = scoreWithSource("google_places", prospect);
           result.found++;
 
+          if (score < 35) {
+            result.skipped++;
+            continue;
+          }
+
           const status = await insertIntelProspect(supabase, {
-            company_name: prospect.company_name,
-            company_website: prospect.company_website || null,
-            company_phone: prospect.company_phone || null,
-            domain_normalized: domain,
-            address_line1: prospect.address_line1 || null,
-            city: prospect.city || null,
-            state: prospect.state || null,
-            postal_code: prospect.postal_code || null,
-            lat: prospect.lat ?? null,
-            lng: prospect.lng ?? null,
-            account_type: prospect.account_type,
+            company_name: companyName,
+            domain_normalized: null,
+            address_line1: addr.address_line1 || null,
+            city: addr.city || city,
+            state: addr.state || state,
+            postal_code: addr.postal_code || null,
+            account_type: "commercial_property_management",
             confidence_score: score,
-            score_breakdown: breakdown,
             source: "agent",
             source_detail: "google_places",
             agent_run_id: agentRunId,
-            agent_metadata: { place_types: place.types, query },
+            agent_metadata: {
+              place_id: place.place_id,
+              types: place.types,
+              rating: place.rating,
+              business_status: place.business_status,
+              query,
+            },
           });
 
           if (status === "added") result.added++;
           else if (status === "skipped") result.skipped++;
         }
       } catch (err) {
-        console.error(`[places] Error for "${query}":`, err);
+        log.push(`Error for "${query}": ${err instanceof Error ? err.message : err}`);
       }
-
-      await delay(200);
     }
   }
 
-  console.log(`[places] Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
-  return result;
+  log.push(`Done: found=${result.found} added=${result.added} skipped=${result.skipped}`);
+  return { ...result, debug: log };
 }
 
 // ── Web Intelligence Source (global — broad commercial queries) ───────────────

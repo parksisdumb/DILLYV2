@@ -50,53 +50,52 @@ async function main() {
     }
     log.push(`  10-K URL: ${documentUrl}`);
 
-    // Step 3: Extract Item 2 properties
-    const extraction = await extractItem2Properties(documentUrl, reit.name);
-    const { properties, type_b } = extraction;
+    // Step 3: Extract portfolio intelligence
+    const { portfolio, addresses } = await extractItem2Properties(documentUrl, reit.name);
     log.push(
-      `  Extracted: ${properties.length}${type_b ? " [TYPE B — market summaries]" : " [TYPE A — addresses]"}`
+      `  Portfolio: type=${portfolio.filing_type}, markets=${portfolio.markets.length}, ` +
+      `total_props=${portfolio.total_properties ?? "?"}, contacts=${portfolio.decision_makers.length}, ` +
+      `subs=${portfolio.subsidiaries.length}`
     );
 
-    for (const prop of properties) {
-      let score: number;
-      if (prop.is_market_summary) {
-        score = 30;
-      } else {
-        score = 20;
-        if (prop.address) score += 15;
-        if (prop.state) score += 10;
-        if (prop.property_type !== "unknown") score += 10;
-        if (prop.sq_footage) score += 10;
-        score += Math.min(30, Math.max(0, prop.confidence_boost));
+    // Show markets
+    for (const m of portfolio.markets.slice(0, 5)) {
+      const sqft = m.sq_footage_sf ? `${(m.sq_footage_sf / 1_000_000).toFixed(1)}M sqft` : "?";
+      log.push(`    Market: ${m.name}, ${m.state ?? "?"} — ${m.property_count ?? "?"} props, ${sqft}`);
+    }
+    if (portfolio.markets.length > 5) log.push(`    ... and ${portfolio.markets.length - 5} more`);
+
+    // Show decision makers
+    for (const dm of portfolio.decision_makers) {
+      log.push(`    Contact: ${dm.name} — ${dm.title} (${dm.contact_type})`);
+    }
+
+    // Type A addresses (these would go to intel_prospects)
+    if (addresses.length > 0) {
+      log.push(`  Type A Addresses (${addresses.length}):`);
+      for (const addr of addresses) {
+        let score = 20;
+        if (addr.address) score += 15;
+        if (addr.state) score += 10;
+        if (addr.property_type !== "unknown") score += 10;
+        if (addr.sq_footage) score += 10;
+        score += Math.min(30, Math.max(0, addr.confidence_boost));
         score = Math.min(100, score);
-      }
 
-      totalFound++;
+        totalFound++;
+        if (score < 25) { totalSkipped++; continue; }
 
-      if (score < 25) {
-        totalSkipped++;
-        continue;
-      }
-
-      if (prop.is_market_summary) {
-        log.push(
-          `  [TYPE B] ${prop.market_name}, ${prop.state} — ${prop.property_count ?? "?"} properties, ${prop.sq_footage ? (prop.sq_footage / 1_000_000).toFixed(1) + "M sqft" : "?"} (score=${score})`
-        );
-      } else {
         const parts = [
-          prop.address,
-          prop.city,
-          prop.state,
-          prop.zip,
-          prop.property_type,
-          prop.sq_footage
-            ? `${prop.sq_footage.toLocaleString()} sqft`
-            : null,
-          prop.tenant ? `tenant: ${prop.tenant}` : null,
+          addr.address, addr.city, addr.state, addr.zip,
+          addr.property_type,
+          addr.sq_footage ? `${addr.sq_footage.toLocaleString()} sqft` : null,
+          addr.tenant ? `tenant: ${addr.tenant}` : null,
           `score=${score}`,
         ].filter(Boolean);
-        log.push(`  [TYPE A] ${parts.join(" | ")}`);
+        log.push(`    ${parts.join(" | ")}`);
       }
+    } else {
+      log.push(`  No individual addresses (${portfolio.filing_type}) — portfolio stored on entity only`);
     }
   }
 

@@ -206,11 +206,19 @@ export async function extractItem2Properties(
     let addresses: TypeAAddress[] = [];
 
     if (isTypeA) {
-      // Extract individual addresses for intel_prospects
+      // Collect raw regex matches as hints for Claude
+      const rawMatches = [...uniqueAddresses].slice(0, 10);
+      const hintBlock = rawMatches.length > 0
+        ? `\n\nThe following raw text patterns were found that appear to be addresses — use these as anchors to find all addresses:\n${rawMatches.join("\n")}\n\nNow extract all property addresses from this Item 2 text:`
+        : "";
+
+      // Use 15000 chars for type_a — large REITs need more context
+      const typeATruncated = item2Text.slice(0, 15000);
+
       const addrResult = await callClaude(
         anthropic,
         ADDRESS_PROMPT,
-        `REIT: ${reitName}\n\n${truncated}`,
+        `REIT: ${reitName}${hintBlock}\n\n${typeATruncated}`,
         4096
       );
 
@@ -226,7 +234,42 @@ export async function extractItem2Properties(
         confidence_boost: Number(p.confidence_boost ?? 0),
       }));
 
-      console.log(`[edgar-item2] ${reitName}: extracted ${addresses.length} Type A addresses`);
+      console.log(`[edgar-item2] ${reitName}: primary extraction returned ${addresses.length} addresses`);
+
+      // Fallback: if 0 addresses but regex found them, try structured conversion
+      if (addresses.length === 0 && rawMatches.length > 0) {
+        console.log(`[edgar-item2] ${reitName}: fallback — converting ${rawMatches.length} raw regex matches`);
+
+        // Grab surrounding context (200 chars around each match) for better parsing
+        const contextSnippets = rawMatches.map((match) => {
+          const idx = item2Text.toLowerCase().indexOf(match);
+          if (idx === -1) return match;
+          const start = Math.max(0, idx - 100);
+          const end = Math.min(item2Text.length, idx + match.length + 200);
+          return item2Text.slice(start, end).replace(/\s+/g, " ").trim();
+        });
+
+        const fallbackResult = await callClaude(
+          anthropic,
+          ADDRESS_PROMPT,
+          `REIT: ${reitName}\n\nConvert these address snippets from a 10-K filing into structured JSON. Each snippet contains a property address with surrounding context:\n\n${contextSnippets.join("\n---\n")}`,
+          4096
+        );
+
+        const fallbackParsed = safeParseJsonArray(fallbackResult);
+        addresses = fallbackParsed.map((p) => ({
+          address: p.address != null ? String(p.address) : null,
+          city: p.city != null ? String(p.city) : null,
+          state: p.state != null ? String(p.state) : null,
+          zip: p.zip != null ? String(p.zip) : null,
+          property_type: String(p.property_type ?? "unknown"),
+          sq_footage: p.sq_footage != null ? Number(p.sq_footage) : null,
+          tenant: p.tenant != null ? String(p.tenant) : null,
+          confidence_boost: Number(p.confidence_boost ?? 0),
+        }));
+
+        console.log(`[edgar-item2] ${reitName}: fallback extracted ${addresses.length} addresses`);
+      }
     }
 
     return { portfolio, addresses };

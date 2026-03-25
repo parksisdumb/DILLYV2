@@ -181,19 +181,39 @@ async function sourceEdgar(
 
       log.push(`Document: ${documentUrl}`);
 
-      const properties = await extractItem2Properties(documentUrl, reit.name);
-      log.push(`Found ${properties.length} properties from ${reit.name}`);
+      const extraction = await extractItem2Properties(documentUrl, reit.name);
+      const { properties, type_b } = extraction;
+
+      if (type_b) {
+        log.push(`[TYPE B] ${reit.name} — market-level REIT, stored ${properties.length} market summaries as research targets`);
+      } else {
+        log.push(`Found ${properties.length} properties from ${reit.name}`);
+      }
 
       for (const prop of properties) {
         if (isCapReached()) break;
 
-        let score = 20;
-        if (prop.address) score += 15;
-        if (prop.state) score += 10;
-        if (prop.property_type !== "unknown") score += 10;
-        if (prop.sq_footage) score += 10;
-        score += Math.min(30, Math.max(0, prop.confidence_boost));
-        score = Math.min(100, score);
+        let score: number;
+        let sourceDetail: string;
+        const notes = prop.is_market_summary && prop.market_name
+          ? `Market-level summary: ${prop.property_count ?? "?"} properties in ${prop.market_name}`
+          : undefined;
+
+        if (prop.is_market_summary) {
+          // Type B: market summaries get a fixed lower score
+          score = 30;
+          sourceDetail = "edgar_10k_market";
+        } else {
+          // Type A: normal scoring
+          score = 20;
+          if (prop.address) score += 15;
+          if (prop.state) score += 10;
+          if (prop.property_type !== "unknown") score += 10;
+          if (prop.sq_footage) score += 10;
+          score += Math.min(30, Math.max(0, prop.confidence_boost));
+          score = Math.min(100, score);
+          sourceDetail = "edgar_10k";
+        }
 
         result.found++;
 
@@ -206,7 +226,7 @@ async function sourceEdgar(
           const status = await insertIntelProspect(supabase, {
             company_name: reit.name,
             domain_normalized: null,
-            address_line1: prop.address || null,
+            address_line1: prop.is_market_summary ? null : (prop.address || null),
             city: prop.city || null,
             state: prop.state || null,
             postal_code: prop.zip || null,
@@ -217,19 +237,27 @@ async function sourceEdgar(
             owner_name_legal: reit.name,
             confidence_score: score,
             source: "agent",
-            source_detail: "edgar_10k",
+            source_detail: sourceDetail,
             agent_run_id: agentRunId,
             agent_metadata: {
               cik: reit.cik,
               ticker: reit.ticker,
               tenant: prop.tenant,
+              ...(prop.is_market_summary && {
+                market_name: prop.market_name,
+                property_count: prop.property_count,
+                notes,
+              }),
             },
           });
 
           if (status === "added") result.added++;
           else if (status === "skipped") result.skipped++;
         } else {
-          log.push(`[DRY RUN] Would insert: ${prop.city}, ${prop.state} - ${prop.property_type} (score=${score})`);
+          const label = prop.is_market_summary
+            ? `[TYPE B MARKET] ${prop.market_name}, ${prop.state} - ${prop.property_count ?? "?"} properties (score=${score})`
+            : `${prop.city}, ${prop.state} - ${prop.property_type} (score=${score})`;
+          log.push(`[DRY RUN] Would insert: ${label}`);
           result.added++;
         }
       }

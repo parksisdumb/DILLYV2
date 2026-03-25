@@ -22,6 +22,31 @@ async function secFetch(url: string): Promise<Response> {
   return fetch(url, { headers: { "User-Agent": SEC_USER_AGENT } });
 }
 
+// Check if two company names roughly match:
+// Either one contains the other, or they share 2+ significant words
+function namesMatch(a: string, b: string): boolean {
+  const na = a.toLowerCase().trim();
+  const nb = b.toLowerCase().trim();
+
+  // Direct containment
+  if (na.includes(nb) || nb.includes(na)) return true;
+
+  // Shared significant words (skip common suffixes)
+  const SKIP = new Set([
+    "inc", "corp", "co", "llc", "lp", "ltd", "the", "of", "and", "a",
+    "group", "company", "corporation", "companies",
+  ]);
+  const wordsA = na.split(/[\s,./]+/).filter((w) => w.length > 1 && !SKIP.has(w));
+  const wordsB = new Set(nb.split(/[\s,./]+/).filter((w) => w.length > 1 && !SKIP.has(w)));
+
+  let shared = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) shared++;
+  }
+
+  return shared >= 2;
+}
+
 export async function getReitUniverse(
   forceRefresh = false
 ): Promise<ReitEntity[]> {
@@ -95,10 +120,11 @@ export async function getReitUniverse(
     `[reit-universe] ${data.data.length} total companies → ${candidates.length} name-keyword candidates`
   );
 
-  // Confirm SIC codes by fetching submissions for each candidate
+  // Confirm SIC codes + name match by fetching submissions for each candidate
   const confirmed: ReitEntity[] = [];
   let checked = 0;
   let errors = 0;
+  let rejected = 0;
 
   for (const candidate of candidates) {
     try {
@@ -111,8 +137,12 @@ export async function getReitUniverse(
         continue;
       }
 
-      const sub = (await submResp.json()) as { sic?: string };
+      const sub = (await submResp.json()) as {
+        sic?: string;
+        name?: string;
+      };
       const sic = String(sub.sic ?? "");
+      const secName = String(sub.name ?? "");
 
       checked++;
       if (checked % 50 === 0) {
@@ -121,13 +151,26 @@ export async function getReitUniverse(
         );
       }
 
+      // Verify SIC code
       if (!REIT_SIC_CODES.has(sic)) continue;
+
+      // Verify name match — SEC's official name must roughly match candidate
+      if (!namesMatch(candidate.name, secName)) {
+        console.log(
+          `[reit-universe] REJECTED: CIK ${candidate.cik} name mismatch — expected "${candidate.name}" got "${secName}" (SIC: ${sic})`
+        );
+        rejected++;
+        continue;
+      }
+
+      // Use SEC's official name
+      const verifiedName = secName || candidate.name;
 
       // Upsert into intel_entities
       await supabase.from("intel_entities").upsert(
         {
           cik: candidate.cik,
-          name: candidate.name,
+          name: verifiedName,
           ticker: candidate.ticker,
           sic,
           exchange: candidate.exchange,
@@ -140,7 +183,7 @@ export async function getReitUniverse(
       confirmed.push({
         cik: candidate.cik,
         ticker: candidate.ticker,
-        name: candidate.name,
+        name: verifiedName,
       });
     } catch {
       errors++;
@@ -148,7 +191,7 @@ export async function getReitUniverse(
   }
 
   console.log(
-    `[reit-universe] Done: ${checked} checked, ${confirmed.length} confirmed REITs, ${errors} errors`
+    `[reit-universe] Done: ${checked} checked, ${confirmed.length} confirmed, ${rejected} rejected (name mismatch), ${errors} errors`
   );
 
   return confirmed;

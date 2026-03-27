@@ -53,7 +53,8 @@ export async function sourceCmsHealthcare(
 
     const resp = await fetch(url);
     if (!resp.ok) {
-      log.push(`CMS API failed: ${resp.status} ${resp.statusText}`);
+      const body = await resp.text().catch(() => "(unreadable)");
+      log.push(`CMS API error ${resp.status}: ${body.slice(0, 200)}`);
       return { ...result, debug: log, dryRun };
     }
 

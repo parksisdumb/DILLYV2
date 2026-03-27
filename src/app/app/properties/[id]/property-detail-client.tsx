@@ -6,6 +6,7 @@ import type { PropContact } from "./page";
 
 type Property = {
   id: string;
+  name: string | null;
   address_line1: string;
   address_line2: string | null;
   city: string;
@@ -120,6 +121,83 @@ export default function PropertyDetailClient({
   const [tab, setTab] = useState<"opportunities" | "contacts" | "timeline">("opportunities");
   const [activeAction, setActiveAction] = useState<"log" | "opportunity" | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+
+  // Edit property state
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(property.name ?? "");
+  const [editAddr1, setEditAddr1] = useState(property.address_line1);
+  const [editAddr2, setEditAddr2] = useState(property.address_line2 ?? "");
+  const [editCity, setEditCity] = useState(property.city);
+  const [editState, setEditState] = useState(property.state);
+  const [editPostal, setEditPostal] = useState(property.postal_code);
+  const [editRoofType, setEditRoofType] = useState(property.roof_type ?? "");
+  const [editRoofAge, setEditRoofAge] = useState(property.roof_age_years?.toString() ?? "");
+  const [editSqFt, setEditSqFt] = useState(property.sq_footage?.toString() ?? "");
+  const [editNotes, setEditNotes] = useState(property.notes ?? "");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [localProperty, setLocalProperty] = useState(property);
+
+  function startEdit() {
+    setEditName(localProperty.name ?? "");
+    setEditAddr1(localProperty.address_line1);
+    setEditAddr2(localProperty.address_line2 ?? "");
+    setEditCity(localProperty.city);
+    setEditState(localProperty.state);
+    setEditPostal(localProperty.postal_code);
+    setEditRoofType(localProperty.roof_type ?? "");
+    setEditRoofAge(localProperty.roof_age_years?.toString() ?? "");
+    setEditSqFt(localProperty.sq_footage?.toString() ?? "");
+    setEditNotes(localProperty.notes ?? "");
+    setEditError(null);
+    setEditing(true);
+  }
+
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editAddr1.trim() || !editCity.trim() || !editState.trim() || !editPostal.trim()) {
+      setEditError("Address, city, state, and postal code are required.");
+      return;
+    }
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      const { error } = await supabase
+        .from("properties")
+        .update({
+          name: editName.trim() || null,
+          address_line1: editAddr1.trim(),
+          address_line2: editAddr2.trim() || null,
+          city: editCity.trim(),
+          state: editState.trim().toUpperCase(),
+          postal_code: editPostal.trim(),
+          roof_type: editRoofType || null,
+          roof_age_years: editRoofAge ? parseInt(editRoofAge, 10) : null,
+          sq_footage: editSqFt ? parseInt(editSqFt, 10) : null,
+          notes: editNotes.trim() || null,
+        })
+        .eq("id", localProperty.id);
+      if (error) { setEditError(error.message); return; }
+
+      setLocalProperty((prev) => ({
+        ...prev,
+        name: editName.trim() || null,
+        address_line1: editAddr1.trim(),
+        address_line2: editAddr2.trim() || null,
+        city: editCity.trim(),
+        state: editState.trim().toUpperCase(),
+        postal_code: editPostal.trim(),
+        roof_type: editRoofType || null,
+        roof_age_years: editRoofAge ? parseInt(editRoofAge, 10) : null,
+        sq_footage: editSqFt ? parseInt(editSqFt, 10) : null,
+        notes: editNotes.trim() || null,
+      }));
+      setEditing(false);
+      showToast("success", "Property updated.");
+    } finally {
+      setEditBusy(false);
+    }
+  }
 
   // Link contact state (declared early — other state depends on localPropContacts)
   const [linkContactId, setLinkContactId] = useState("");
@@ -400,63 +478,201 @@ export default function PropertyDetailClient({
       </a>
 
       {/* Header card */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-        <h1 className="text-xl font-semibold text-slate-900">{property.address_line1}</h1>
-        {property.address_line2 && (
-          <p className="text-sm text-slate-500">{property.address_line2}</p>
-        )}
-        <p className="text-sm text-slate-500">
-          {property.city}, {property.state} {property.postal_code}
-        </p>
-        {localAccount ? (
-          <div className="mt-1 flex items-center gap-2">
-            <a
-              href={`/app/accounts/${localAccount.id}`}
-              className="text-sm text-blue-600 hover:underline"
+      {editing ? (
+        <form onSubmit={handleSaveEdit} className="rounded-2xl border border-blue-200 bg-blue-50 p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-800">Edit Property</h2>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Property Name</label>
+            <input
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="e.g. Lakewood Office Park"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Address Line 1 *</label>
+            <input
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editAddr1}
+              onChange={(e) => setEditAddr1(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Address Line 2</label>
+            <input
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editAddr2}
+              onChange={(e) => setEditAddr2(e.target.value)}
+              placeholder="Suite, Floor, etc."
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">City *</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editCity}
+                onChange={(e) => setEditCity(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">State *</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm uppercase focus:border-blue-400 focus:outline-none"
+                value={editState}
+                onChange={(e) => setEditState(e.target.value.toUpperCase())}
+                maxLength={2}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Postal Code *</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editPostal}
+                onChange={(e) => setEditPostal(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Roof Type</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editRoofType}
+                onChange={(e) => setEditRoofType(e.target.value)}
+              >
+                <option value="">Unknown</option>
+                {Object.entries(ROOF_TYPE_LABELS).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Roof Age (yrs)</label>
+              <input
+                type="number"
+                min="0"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editRoofAge}
+                onChange={(e) => setEditRoofAge(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Sq Footage</label>
+              <input
+                type="number"
+                min="0"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editSqFt}
+                onChange={(e) => setEditSqFt(e.target.value)}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Notes</label>
+            <textarea
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              rows={2}
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+            />
+          </div>
+          {editError && <p className="text-xs text-red-600">{editError}</p>}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={editBusy}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {localAccount.name ?? "Unknown account"}
-            </a>
+              {editBusy ? "Saving…" : "Save Changes"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              {localProperty.name ? (
+                <>
+                  <h1 className="text-xl font-semibold text-slate-900">{localProperty.name}</h1>
+                  <p className="text-sm text-slate-500">{localProperty.address_line1}</p>
+                </>
+              ) : (
+                <h1 className="text-xl font-semibold text-slate-900">{localProperty.address_line1}</h1>
+              )}
+              {localProperty.address_line2 && (
+                <p className="text-sm text-slate-500">{localProperty.address_line2}</p>
+              )}
+              <p className="text-sm text-slate-500">
+                {localProperty.city}, {localProperty.state} {localProperty.postal_code}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={startEdit}
+              className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Edit
+            </button>
+          </div>
+          {localAccount ? (
+            <div className="mt-1 flex items-center gap-2">
+              <a
+                href={`/app/accounts/${localAccount.id}`}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                {localAccount.name ?? "Unknown account"}
+              </a>
+              <button
+                type="button"
+                onClick={() => setShowLinkAccount(!showLinkAccount)}
+                className="text-xs text-slate-400 hover:text-slate-600"
+              >
+                (change)
+              </button>
+            </div>
+          ) : (
             <button
               type="button"
               onClick={() => setShowLinkAccount(!showLinkAccount)}
-              className="text-xs text-slate-400 hover:text-slate-600"
+              className="mt-1 inline-block text-sm text-blue-600 hover:underline"
             >
-              (change)
+              + Link Account
             </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setShowLinkAccount(!showLinkAccount)}
-            className="mt-1 inline-block text-sm text-blue-600 hover:underline"
-          >
-            + Link Account
-          </button>
-        )}
-        {/* Roof metadata badges */}
-        {(property.roof_type || property.roof_age_years || property.sq_footage) && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {property.roof_type && (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                {ROOF_TYPE_LABELS[property.roof_type] ?? property.roof_type}
-              </span>
-            )}
-            {property.roof_age_years != null && (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                {property.roof_age_years} yr{property.roof_age_years !== 1 ? "s" : ""}
-              </span>
-            )}
-            {property.sq_footage != null && (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                {property.sq_footage.toLocaleString()} sqft
-              </span>
-            )}
-          </div>
-        )}
-        {property.notes && (
-          <p className="mt-2 text-sm text-slate-600">{property.notes}</p>
-        )}
-      </div>
+          )}
+          {/* Roof metadata badges */}
+          {(localProperty.roof_type || localProperty.roof_age_years || localProperty.sq_footage) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {localProperty.roof_type && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                  {ROOF_TYPE_LABELS[localProperty.roof_type] ?? localProperty.roof_type}
+                </span>
+              )}
+              {localProperty.roof_age_years != null && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                  {localProperty.roof_age_years} yr{localProperty.roof_age_years !== 1 ? "s" : ""}
+                </span>
+              )}
+              {localProperty.sq_footage != null && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                  {localProperty.sq_footage.toLocaleString()} sqft
+                </span>
+              )}
+            </div>
+          )}
+          {localProperty.notes && (
+            <p className="mt-2 text-sm text-slate-600">{localProperty.notes}</p>
+          )}
+        </div>
+      )}
 
       {/* Link Account form */}
       {showLinkAccount && (

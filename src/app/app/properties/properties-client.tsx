@@ -6,6 +6,7 @@ import type { AccountOption, ContactOption } from "./page";
 
 type PropertyRow = {
   id: string;
+  name: string | null;
   address_line1: string;
   address_line2: string | null;
   city: string;
@@ -62,6 +63,7 @@ export default function PropertiesClient({
   const [showCreate, setShowCreate] = useState(false);
 
   // Create form state
+  const [propName, setPropName] = useState("");
   const [addr1, setAddr1] = useState("");
   const [addr2, setAddr2] = useState("");
   const [city, setCity] = useState("");
@@ -94,7 +96,12 @@ export default function PropertiesClient({
 
   const filtered = useMemo(() => {
     let list = properties.filter((p) => {
-      if (search && !p.address_line1.toLowerCase().includes(search.toLowerCase())) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        const matchesName = p.name?.toLowerCase().includes(q);
+        const matchesAddr = p.address_line1.toLowerCase().includes(q);
+        if (!matchesName && !matchesAddr) return false;
+      }
       if (filterAccountId && p.primary_account_id !== filterAccountId) return false;
       if (filterCity && p.city !== filterCity) return false;
       if (filterState && p.state !== filterState) return false;
@@ -111,6 +118,7 @@ export default function PropertiesClient({
   }, [properties, search, filterAccountId, filterCity, filterState, sort]);
 
   function resetCreateForm() {
+    setPropName("");
     setAddr1("");
     setAddr2("");
     setCity("");
@@ -139,6 +147,7 @@ export default function PropertiesClient({
         .insert({
           org_id: orgId,
           created_by: userId,
+          name: propName.trim() || null,
           address_line1: addr1.trim(),
           address_line2: addr2.trim() || null,
           city: city.trim(),
@@ -166,6 +175,7 @@ export default function PropertiesClient({
 
       const newProp: PropertyRow = {
         id: (data as { id: string }).id,
+        name: propName.trim() || null,
         address_line1: addr1.trim(),
         address_line2: addr2.trim() || null,
         city: city.trim(),
@@ -224,6 +234,17 @@ export default function PropertiesClient({
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">New Property</h2>
           <form onSubmit={handleCreate} className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">
+                Property Name
+              </label>
+              <input
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={propName}
+                onChange={(e) => setPropName(e.target.value)}
+                placeholder="e.g. Lakewood Office Park"
+              />
+            </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
                 Address Line 1 *
@@ -389,7 +410,7 @@ export default function PropertiesClient({
       <div className="flex flex-wrap gap-2">
         <input
           type="text"
-          placeholder="Search by address…"
+          placeholder="Search by name or address…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
@@ -462,7 +483,7 @@ export default function PropertiesClient({
             <table className="w-full min-w-[700px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-4 py-3 font-medium">Address</th>
+                  <th className="px-4 py-3 font-medium">Property</th>
                   <th className="px-4 py-3 font-medium">Account</th>
                   <th className="px-4 py-3 font-medium">Contact</th>
                   <th className="px-4 py-3 font-medium">Open Opps</th>
@@ -478,7 +499,14 @@ export default function PropertiesClient({
                     className="cursor-pointer border-b border-slate-100 text-slate-700 last:border-0 hover:bg-slate-50"
                   >
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-900">{p.address_line1}</p>
+                      {p.name ? (
+                        <>
+                          <p className="font-medium text-slate-900">{p.name}</p>
+                          <p className="text-xs text-slate-500">{p.address_line1}</p>
+                        </>
+                      ) : (
+                        <p className="font-medium text-slate-900">{p.address_line1}</p>
+                      )}
                       <p className="text-xs text-slate-500">
                         {p.city}, {p.state} {p.postal_code}
                       </p>
@@ -512,7 +540,14 @@ export default function PropertiesClient({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">{p.address_line1}</p>
+                    {p.name ? (
+                      <>
+                        <p className="font-semibold text-slate-900">{p.name}</p>
+                        <p className="text-xs text-slate-500">{p.address_line1}</p>
+                      </>
+                    ) : (
+                      <p className="font-semibold text-slate-900">{p.address_line1}</p>
+                    )}
                     <p className="text-xs text-slate-500">
                       {p.city}, {p.state} {p.postal_code}
                     </p>

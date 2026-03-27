@@ -3,6 +3,7 @@ import PropertiesClient from "@/app/app/properties/properties-client";
 
 type PropertyRow = {
   id: string;
+  name: string | null;
   address_line1: string;
   address_line2: string | null;
   city: string;
@@ -30,7 +31,7 @@ export default async function PropertiesPage() {
     supabase
       .from("properties")
       .select(
-        "id,address_line1,address_line2,city,state,postal_code,primary_account_id,primary_contact_id,roof_type,roof_age_years,sq_footage,notes,updated_at",
+        "id,name,address_line1,address_line2,city,state,postal_code,primary_account_id,primary_contact_id,roof_type,roof_age_years,sq_footage,notes,updated_at",
       )
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
@@ -62,6 +63,7 @@ export default async function PropertiesPage() {
 
   const rows: PropertyRow[] = (propsRes.data ?? []).map((p) => ({
     id: p.id as string,
+    name: (p.name as string | null) ?? null,
     address_line1: p.address_line1 as string,
     address_line2: p.address_line2 as string | null,
     city: p.city as string,

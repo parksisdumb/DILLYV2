@@ -356,86 +356,141 @@ export const prospectDiscoveryAgent = inngest.createFunction(
 
     try {
       runId = await step.run("setup", async () => {
-        const { data: firstOrg } = await supabase
-          .from("orgs")
-          .select("id")
-          .limit(1)
-          .single();
+        try {
+          console.log("[prospect-discovery] setup: starting");
+          const { data: firstOrg, error: orgErr } = await supabase
+            .from("orgs")
+            .select("id")
+            .limit(1)
+            .single();
 
-        const { data: run, error: runErr } = await supabase
-          .from("agent_runs")
-          .insert({
-            org_id: firstOrg?.id,
-            run_type: "prospect_discovery",
-            status: "running",
-            started_at: new Date().toISOString(),
-          })
-          .select("id")
-          .single();
+          if (orgErr) {
+            console.error("[prospect-discovery] setup: org query failed:", orgErr.message);
+            throw new Error(`Org query failed: ${orgErr.message}`);
+          }
 
-        if (runErr || !run)
-          throw new Error("Failed to create agent_runs record");
-        return run.id as string;
+          console.log("[prospect-discovery] setup: org_id=" + firstOrg?.id);
+
+          const { data: run, error: runErr } = await supabase
+            .from("agent_runs")
+            .insert({
+              org_id: firstOrg?.id,
+              run_type: "prospect_discovery",
+              status: "running",
+              started_at: new Date().toISOString(),
+            })
+            .select("id")
+            .single();
+
+          if (runErr || !run) {
+            console.error("[prospect-discovery] setup: agent_runs insert failed:", runErr?.message);
+            throw new Error(`agent_runs insert failed: ${runErr?.message}`);
+          }
+
+          console.log("[prospect-discovery] setup: run_id=" + run.id);
+          return run.id as string;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[prospect-discovery] FATAL in setup:", msg);
+          throw err;
+        }
       });
 
       // ── Step: Google Places ─────────────────────────────────────────
       const pr = await step.run("source-google-places", async () => {
-        return sourceGooglePlaces(supabase, runId!);
+        try {
+          console.log("[prospect-discovery] source-google-places: starting, runId=" + runId);
+          const result = await sourceGooglePlaces(supabase, runId!);
+          console.log("[prospect-discovery] source-google-places: done, found=" + result.found + " added=" + result.added);
+          return result;
+        } catch (err) {
+          const msg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
+          console.error("[prospect-discovery] FATAL in source-google-places:", msg);
+          return { found: 0, added: 0, skipped: 0, debug: [`FATAL: ${msg}`] } as SourceResult;
+        }
       });
       placesResult = pr;
 
       // ── Step: CMS Healthcare ────────────────────────────────────────
       const cr = await step.run("source-cms-healthcare", async () => {
-        return sourceCmsHealthcare(
-          supabase,
-          runId!,
-          insertIntelProspect,
-          isCapReached
-        );
+        try {
+          console.log("[prospect-discovery] source-cms-healthcare: starting");
+          const result = await sourceCmsHealthcare(
+            supabase,
+            runId!,
+            insertIntelProspect,
+            isCapReached
+          );
+          console.log("[prospect-discovery] source-cms-healthcare: done, found=" + result.found + " added=" + result.added);
+          return result;
+        } catch (err) {
+          const msg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
+          console.error("[prospect-discovery] FATAL in source-cms-healthcare:", msg);
+          return { found: 0, added: 0, skipped: 0, debug: [`FATAL: ${msg}`] } as SourceResult;
+        }
       });
       cmsResult = cr;
 
       // ── Step: Web Intelligence ──────────────────────────────────────
       const wr = await step.run("source-web-intelligence", async () => {
-        return sourceWebIntelligence(supabase, anthropic, runId!);
+        try {
+          console.log("[prospect-discovery] source-web-intelligence: starting");
+          const result = await sourceWebIntelligence(supabase, anthropic, runId!);
+          console.log("[prospect-discovery] source-web-intelligence: done, found=" + result.found + " added=" + result.added);
+          return result;
+        } catch (err) {
+          const msg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
+          console.error("[prospect-discovery] FATAL in source-web-intelligence:", msg);
+          return { found: 0, added: 0, skipped: 0, debug: [`FATAL: ${msg}`] } as SourceResult;
+        }
       });
       webResult = wr;
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("[prospect-discovery] Top-level error:", errorMessage);
     } finally {
       if (runId) {
         await step.run("finalize", async () => {
-          const totalFound =
-            placesResult.found + cmsResult.found + webResult.found;
-          const totalAdded =
-            placesResult.added + cmsResult.added + webResult.added;
-          const totalSkipped =
-            placesResult.skipped + cmsResult.skipped + webResult.skipped;
+          try {
+            const totalFound =
+              placesResult.found + cmsResult.found + webResult.found;
+            const totalAdded =
+              placesResult.added + cmsResult.added + webResult.added;
+            const totalSkipped =
+              placesResult.skipped + cmsResult.skipped + webResult.skipped;
 
-          const sourceBreakdown = {
-            google_places: placesResult,
-            cms_healthcare: cmsResult,
-            web_intelligence: webResult,
-          };
+            const sourceBreakdown = {
+              google_places: placesResult,
+              cms_healthcare: cmsResult,
+              web_intelligence: webResult,
+            };
 
-          await supabase
-            .from("agent_runs")
-            .update({
-              status: errorMessage ? "failed" : "completed",
-              prospects_found: totalFound,
-              prospects_added: totalAdded,
-              prospects_skipped_dedup: totalSkipped,
-              source_breakdown: sourceBreakdown,
-              completed_at: new Date().toISOString(),
-              error_message: errorMessage,
-            })
-            .eq("id", runId);
+            console.log("[prospect-discovery] finalize: found=" + totalFound + " added=" + totalAdded + " error=" + (errorMessage ?? "none"));
 
-          // Trigger distributor after successful prospect discovery
-          if (!errorMessage) {
-            await inngest.send({ name: "app/intel-distributor.run", data: {} });
+            await supabase
+              .from("agent_runs")
+              .update({
+                status: errorMessage ? "failed" : "completed",
+                prospects_found: totalFound,
+                prospects_added: totalAdded,
+                prospects_skipped_dedup: totalSkipped,
+                source_breakdown: sourceBreakdown,
+                completed_at: new Date().toISOString(),
+                error_message: errorMessage,
+              })
+              .eq("id", runId);
+
+            // Trigger distributor after successful prospect discovery
+            if (!errorMessage) {
+              await inngest.send({ name: "app/intel-distributor.run", data: {} });
+              console.log("[prospect-discovery] finalize: distributor triggered");
+            }
+          } catch (err) {
+            console.error("[prospect-discovery] FATAL in finalize:", err instanceof Error ? err.message : err);
           }
         });
+      } else {
+        console.error("[prospect-discovery] No runId — setup step failed, cannot finalize");
       }
     }
   }

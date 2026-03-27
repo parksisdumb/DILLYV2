@@ -183,23 +183,51 @@ export async function extractItem2Properties(
     );
 
     // ── Step 2: Type detection + address extraction (type_a only) ────
-    // Cross-check Claude's filing_type against actual street address count
+    // Strict classification: a real property list has 20+ addresses across
+    // many states/cities AND a substantial Item 2 section.
     const addressMatches = item2Text.match(STREET_ADDRESS_RE) ?? [];
     const uniqueAddresses = new Set(
       addressMatches.map((a) => a.toLowerCase().trim())
     );
 
-    const isTypeA = uniqueAddresses.size >= 3 || portfolio.filing_type === "type_a";
+    // Extract distinct states (2-letter codes following city names near addresses)
+    const stateRe = /,\s*([A-Z]{2})\s+\d{5}/g;
+    const statesFound = new Set<string>();
+    let sm;
+    while ((sm = stateRe.exec(item2Text)) !== null) {
+      statesFound.add(sm[1]);
+    }
+
+    // Extract distinct cities (word before state code)
+    const cityRe = /([A-Z][a-zA-Z\s]{2,30}),\s*[A-Z]{2}\s+\d{5}/g;
+    const citiesFound = new Set<string>();
+    let cm;
+    while ((cm = cityRe.exec(item2Text)) !== null) {
+      citiesFound.add(cm[1].trim().toLowerCase());
+    }
+
+    const matchCount = uniqueAddresses.size;
+    const stateCount = statesFound.size;
+    const cityCount = citiesFound.size;
+    const textLength = item2Text.length;
+
+    // All three conditions must be true for type_a
+    const isTypeA =
+      matchCount >= 20 &&
+      (stateCount >= 5 || cityCount >= 10) &&
+      textLength > 5000;
 
     console.log(
-      `[edgar-item2] ${reitName}: ${uniqueAddresses.size} street addresses detected, ` +
-      `Claude says ${portfolio.filing_type}, final=${isTypeA ? "type_a" : portfolio.filing_type}`
+      `[CLASSIFICATION] ${reitName}: ${matchCount} address patterns, ` +
+      `${stateCount} states, ${cityCount} cities, ${textLength} chars → ` +
+      `type_${isTypeA ? "a" : portfolio.filing_type === "type_c" ? "c" : "b"}`
     );
 
-    // Override filing_type if regex disagrees with Claude
-    if (isTypeA && portfolio.filing_type !== "type_a") {
+    // Override filing_type based on strict classification
+    if (isTypeA) {
       portfolio.filing_type = "type_a";
-    } else if (!isTypeA && portfolio.filing_type === "type_a") {
+    } else if (portfolio.filing_type === "type_a") {
+      // Claude said type_a but regex disagrees — downgrade
       portfolio.filing_type = "type_b";
     }
 

@@ -1,6 +1,28 @@
 import { inngest } from "../client";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+// Metro area expansions — territory city "memphis" matches suburbs too
+const METRO_AREAS: Record<string, string[]> = {
+  memphis: ["memphis", "germantown", "bartlett", "collierville", "southaven", "olive branch", "horn lake", "cordova", "eads", "lakeland", "arlington", "millington"],
+  nashville: ["nashville", "brentwood", "franklin", "murfreesboro", "hendersonville", "smyrna", "antioch", "nolensville", "gallatin", "mt. juliet", "spring hill"],
+  dallas: ["dallas", "fort worth", "arlington", "plano", "frisco", "mckinney", "garland", "irving", "carrollton", "denton", "richardson", "farmers branch", "mesquite"],
+  houston: ["houston", "sugar land", "pearland", "pasadena", "katy", "the woodlands", "conroe", "league city", "spring", "humble", "baytown", "cypress"],
+  atlanta: ["atlanta", "sandy springs", "roswell", "alpharetta", "marietta", "smyrna", "peachtree city", "duluth", "kennesaw", "lawrenceville", "decatur", "norcross"],
+  charlotte: ["charlotte", "concord", "gastonia", "rock hill", "huntersville", "matthews", "mooresville", "cornelius", "indian trail", "mint hill"],
+  tampa: ["tampa", "st. petersburg", "clearwater", "brandon", "riverview", "wesley chapel", "lakeland", "plant city", "temple terrace", "palm harbor"],
+  denver: ["denver", "aurora", "lakewood", "thornton", "arvada", "westminster", "pueblo", "centennial", "highlands ranch", "broomfield", "littleton", "parker"],
+  phoenix: ["phoenix", "scottsdale", "mesa", "chandler", "gilbert", "tempe", "glendale", "peoria", "surprise", "goodyear", "buckeye", "avondale"],
+  indianapolis: ["indianapolis", "carmel", "fishers", "noblesville", "greenwood", "lawrence", "brownsburg", "westfield", "avon", "plainfield"],
+};
+
+// Build reverse lookup: suburb → metro city
+const SUBURB_TO_METRO = new Map<string, string>();
+for (const [metro, suburbs] of Object.entries(METRO_AREAS)) {
+  for (const suburb of suburbs) {
+    SUBURB_TO_METRO.set(suburb, metro);
+  }
+}
+
 // ── Intel Distributor ────────────────────────────────────────────────────────
 // Reads intel_prospects and distributes matching records to orgs based on
 // their territory geography and ICP criteria. Runs nightly or on-demand.
@@ -118,7 +140,18 @@ export const intelDistributor = inngest.createFunction(
           continue;
         }
 
-        // Filter by geography (case-insensitive)
+        // Build expanded city set: territory cities + their metro suburbs
+        const expandedCities = new Set<string>();
+        for (const city of cities) {
+          expandedCities.add(city);
+          const metros = METRO_AREAS[city];
+          if (metros) {
+            for (const suburb of metros) expandedCities.add(suburb);
+          }
+        }
+
+        // Filter by geography (case-insensitive) with metro expansion
+        let metroExpansionCount = 0;
         const matched = candidates.filter((p) => {
           const pState = (p.state as string | null)?.toLowerCase();
           const pCity = (p.city as string | null)?.toLowerCase();
@@ -127,10 +160,19 @@ export const intelDistributor = inngest.createFunction(
           // State-type region: match any prospect in that state
           const stateMatch = pState && stateRegions.includes(pState);
           const inState = pState && allStates.includes(pState);
-          const cityOrZipMatch = inState &&
-            ((pZip && postalCodes.includes(pZip)) || (pCity && cities.includes(pCity)));
 
-          if (!stateMatch && !cityOrZipMatch) return false;
+          // City match: exact OR metro area expansion
+          let cityMatch = false;
+          if (pCity && expandedCities.has(pCity)) {
+            cityMatch = true;
+            // Log metro expansion (not exact territory city)
+            if (!cities.includes(pCity)) metroExpansionCount++;
+          }
+
+          const zipMatch = pZip && postalCodes.includes(pZip);
+          const geoMatch = stateMatch || (inState && (cityMatch || zipMatch));
+
+          if (!geoMatch) return false;
 
           // ICP criteria matching (if criteria exist)
           if (icpAccountTypes.length > 0 || icpVerticals.length > 0) {
@@ -149,6 +191,12 @@ export const intelDistributor = inngest.createFunction(
 
           return true;
         });
+
+        if (metroExpansionCount > 0) {
+          console.log(
+            `[distributor] Org ${orgId}: ${metroExpansionCount} prospects matched via metro area expansion`
+          );
+        }
 
         console.log(
           `[distributor] Org ${orgId}: ${candidates.length} candidates → ${matched.length} matched`

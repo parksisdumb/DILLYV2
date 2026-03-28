@@ -273,7 +273,7 @@ export default async function ManagerPage() {
   // ── Build queue counts per rep ──────────────────────────────────────────
   const { data: queueData } = await supabase
     .from("suggested_outreach")
-    .select("user_id")
+    .select("user_id,prospect_id")
     .eq("status", "new");
   const queueCounts = new Map<string, number>();
   for (const row of queueData ?? []) {
@@ -282,12 +282,35 @@ export default async function ManagerPage() {
   }
   const queueCountsObj: Record<string, number> = Object.fromEntries(queueCounts);
 
+  // ── Count unassigned agent prospects (no suggested_outreach record) ────
+  const { data: allAgentProspects } = await supabase
+    .from("prospects")
+    .select("id")
+    .eq("source", "agent")
+    .neq("status", "dismissed");
+
+  const assignedProspectIds = new Set(
+    (queueData ?? []).map((r) => r.prospect_id as string)
+  );
+  // Also fetch all suggested_outreach prospect_ids (not just 'new')
+  const { data: allSoData } = await supabase
+    .from("suggested_outreach")
+    .select("prospect_id");
+  const allAssignedIds = new Set(
+    (allSoData ?? []).map((r) => r.prospect_id as string)
+  );
+
+  const unassignedCount = (allAgentProspects ?? []).filter(
+    (p) => !allAssignedIds.has(p.id as string)
+  ).length;
+
   return (
     <ManagerClient
       repStats={repStats}
       stageSummaries={stageSummaries}
       topAccounts={topAccounts}
       queueCounts={queueCountsObj}
+      unassignedProspectCount={unassignedCount}
       generatedAt={now.toISOString()}
     />
   );

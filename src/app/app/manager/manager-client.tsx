@@ -9,6 +9,7 @@ type Props = {
   stageSummaries: StageSummary[];
   topAccounts: TopAccount[];
   queueCounts: Record<string, number>;
+  unassignedProspectCount: number;
   generatedAt: string;
 };
 
@@ -52,7 +53,7 @@ function ComplianceBadge({ rate }: { rate: number }) {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function ManagerClient({ repStats, stageSummaries, topAccounts, queueCounts, generatedAt }: Props) {
+export default function ManagerClient({ repStats, stageSummaries, topAccounts, queueCounts, unassignedProspectCount, generatedAt }: Props) {
   const [tab, setTab] = useState<Tab>("today");
 
   const generatedDate = new Date(generatedAt);
@@ -78,6 +79,31 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, q
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Manager Dashboard</h1>
         <span className="text-xs text-slate-400">as of {generatedLabel}</span>
       </div>
+
+      {/* New Prospects card */}
+      {unassignedProspectCount > 0 && (
+        <Link
+          href="/app/manager/prospect-review"
+          className="flex items-center justify-between rounded-2xl border border-blue-200 bg-blue-50 p-4 hover:bg-blue-100"
+        >
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold text-blue-700">
+                {unassignedProspectCount}
+              </span>
+              <span className="text-sm font-semibold text-blue-700">
+                New Prospects
+              </span>
+            </div>
+            <span className="text-xs text-blue-500">
+              from intel pipeline — ready to assign
+            </span>
+          </div>
+          <span className="text-sm font-medium text-blue-600">
+            Review & Assign &rarr;
+          </span>
+        </Link>
+      )}
 
       {/* Tab bar */}
       <div className="flex overflow-x-auto rounded-xl border border-slate-200 bg-white">

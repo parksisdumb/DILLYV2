@@ -19,6 +19,8 @@ export type SuggestionRow = {
   city: string | null;
   state: string | null;
   account_type: string | null;
+  source_detail: string | null;
+  confidence_score: number | null;
   notes: string | null;
 };
 
@@ -74,12 +76,17 @@ function parseReasonCodes(raw: unknown): string[] {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
+const SOURCE_BADGES: Record<string, { label: string; cls: string }> = {
+  edgar_10k_address: { label: "REIT", cls: "bg-purple-100 text-purple-700" },
+  google_places: { label: "Google Places", cls: "bg-blue-100 text-blue-700" },
+  cms_healthcare: { label: "CMS", cls: "bg-teal-100 text-teal-700" },
+  web_intelligence: { label: "Web Intel", cls: "bg-amber-100 text-amber-700" },
+};
+
 export default function SuggestedOutreach({ suggestions, onAccept, onDismiss }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
   const [dismissBusy, setDismissBusy] = useState(false);
-
-  if (suggestions.length === 0) return null;
 
   async function handleDismiss(id: string, reason: string) {
     setDismissBusy(true);
@@ -94,20 +101,40 @@ export default function SuggestedOutreach({ suggestions, onAccept, onDismiss }: 
 
   return (
     <div className="space-y-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Suggested Outreach
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          New Prospects
+        </span>
+        {suggestions.length > 0 && (
+          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+            {suggestions.length}
+          </span>
+        )}
       </div>
+
+      {suggestions.length === 0 && (
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-center text-sm text-slate-400">
+          You&apos;re all caught up — your manager will assign new prospects as they&apos;re identified.
+        </div>
+      )}
 
       {suggestions.map((s) => (
         <div
           key={s.id}
           className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
-          {/* Header: company + type badge */}
+          {/* Header: company + source badge + type badge */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-slate-900">
               {s.company_name}
             </span>
+            {s.source_detail && SOURCE_BADGES[s.source_detail] && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${SOURCE_BADGES[s.source_detail].cls}`}
+              >
+                {SOURCE_BADGES[s.source_detail].label}
+              </span>
+            )}
             {s.account_type && (
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -129,14 +156,23 @@ export default function SuggestedOutreach({ suggestions, onAccept, onDismiss }: 
           {/* Reason tags */}
           {parseReasonCodes(s.reason_codes).length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {parseReasonCodes(s.reason_codes).map((code) => (
-                <span
-                  key={code}
-                  className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
-                >
-                  {REASON_CODE_LABELS[code] ?? code}
-                </span>
-              ))}
+              {parseReasonCodes(s.reason_codes).map((code, i) => {
+                const label = typeof code === "string"
+                  ? REASON_CODE_LABELS[code] ?? code
+                  : typeof code === "object" && code !== null
+                    ? (code as Record<string, unknown>).source === "manager_assigned"
+                      ? "Manager Assigned"
+                      : JSON.stringify(code)
+                    : String(code);
+                return (
+                  <span
+                    key={i}
+                    className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
+                  >
+                    {label}
+                  </span>
+                );
+              })}
             </div>
           )}
 
@@ -172,14 +208,8 @@ export default function SuggestedOutreach({ suggestions, onAccept, onDismiss }: 
                 onClick={() => onAccept(s)}
                 className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
               >
-                Start Outreach
+                First Touch
               </button>
-              <Link
-                href={`/app/manager/prospects/convert/${s.prospect_id}`}
-                className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
-              >
-                Convert
-              </Link>
               <button
                 type="button"
                 onClick={() => setDismissingId(s.id)}

@@ -239,11 +239,11 @@ export default function TodayClient({ userId }: { userId: string }) {
       // Fetch suggested outreach for this rep
       const { data: sugData } = await supabase
         .from("suggested_outreach")
-        .select("id,prospect_id,rank_score,reason_codes,prospects(company_name,email,phone,website,city,state,account_type,notes)")
+        .select("id,prospect_id,rank_score,reason_codes,prospects(company_name,email,phone,website,city,state,account_type,source_detail,confidence_score,notes)")
         .eq("user_id", userId)
         .eq("status", "new")
         .order("rank_score", { ascending: false })
-        .limit(5);
+        .limit(10);
       const mapped: SuggestionRow[] = ((sugData ?? []) as Record<string, unknown>[]).map((s) => {
         const pr = (s.prospects ?? {}) as Record<string, unknown>;
         return {
@@ -258,6 +258,8 @@ export default function TodayClient({ userId }: { userId: string }) {
           city: (pr.city as string | null) ?? null,
           state: (pr.state as string | null) ?? null,
           account_type: (pr.account_type as string | null) ?? null,
+          source_detail: (pr.source_detail as string | null) ?? null,
+          confidence_score: (pr.confidence_score as number | null) ?? null,
           notes: (pr.notes as string | null) ?? null,
         };
       });
@@ -393,6 +395,13 @@ export default function TodayClient({ userId }: { userId: string }) {
         />
       )}
 
+      {/* New Prospects — always visible between Grow and Advance */}
+      <SuggestedOutreach
+        suggestions={suggestions}
+        onAccept={(s) => void handleAcceptSuggestion(s)}
+        onDismiss={handleDismissSuggestion}
+      />
+
       {tab === "advance" && (
         <AdvanceList
           userId={userId}
@@ -402,14 +411,6 @@ export default function TodayClient({ userId }: { userId: string }) {
           outreachTypes={outreachTypes}
           outcomes={touchpointOutcomes}
           onActionCompleted={handleActionCompleted}
-        />
-      )}
-
-      {suggestions.length > 0 && (
-        <SuggestedOutreach
-          suggestions={suggestions}
-          onAccept={(s) => void handleAcceptSuggestion(s)}
-          onDismiss={handleDismissSuggestion}
         />
       )}
 

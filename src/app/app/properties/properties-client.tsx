@@ -100,7 +100,9 @@ export default function PropertiesClient({
         const q = search.toLowerCase();
         const matchesName = p.name?.toLowerCase().includes(q);
         const matchesAddr = p.address_line1.toLowerCase().includes(q);
-        if (!matchesName && !matchesAddr) return false;
+        const matchesCity = p.city.toLowerCase().includes(q);
+        const matchesAccount = p.primary_account_name?.toLowerCase().includes(q);
+        if (!matchesName && !matchesAddr && !matchesCity && !matchesAccount) return false;
       }
       if (filterAccountId && p.primary_account_id !== filterAccountId) return false;
       if (filterCity && p.city !== filterCity) return false;
@@ -410,7 +412,7 @@ export default function PropertiesClient({
       <div className="flex flex-wrap gap-2">
         <input
           type="text"
-          placeholder="Search by name or address…"
+          placeholder="Search name, address, city, or account…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="min-w-[180px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
@@ -485,8 +487,8 @@ export default function PropertiesClient({
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3 font-medium">Property</th>
                   <th className="px-4 py-3 font-medium">Account</th>
-                  <th className="px-4 py-3 font-medium">Contact</th>
-                  <th className="px-4 py-3 font-medium">Open Opps</th>
+                  <th className="px-4 py-3 font-medium">Roof</th>
+                  <th className="px-4 py-3 font-medium">Opps</th>
                 </tr>
               </thead>
               <tbody>
@@ -512,7 +514,28 @@ export default function PropertiesClient({
                       </p>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{p.primary_account_name ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{p.primary_contact_name ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {p.roof_type && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                            {p.roof_type.toUpperCase()}
+                          </span>
+                        )}
+                        {p.roof_age_years != null && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                            {p.roof_age_years}yr
+                          </span>
+                        )}
+                        {p.sq_footage != null && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                            {p.sq_footage >= 1000 ? `${Math.round(p.sq_footage / 1000)}K` : p.sq_footage} sqft
+                          </span>
+                        )}
+                        {!p.roof_type && p.roof_age_years == null && p.sq_footage == null && (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       {p.open_opportunity_count > 0 ? (
                         <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
@@ -558,10 +581,27 @@ export default function PropertiesClient({
                     </span>
                   )}
                 </div>
-                {(p.primary_account_name || p.primary_contact_name) && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    {[p.primary_account_name, p.primary_contact_name].filter(Boolean).join(" · ")}
-                  </p>
+                {p.primary_account_name && (
+                  <p className="mt-1 text-xs text-slate-500">{p.primary_account_name}</p>
+                )}
+                {(p.roof_type || p.roof_age_years != null || p.sq_footage != null) && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {p.roof_type && (
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                        {p.roof_type.toUpperCase()}
+                      </span>
+                    )}
+                    {p.roof_age_years != null && (
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                        {p.roof_age_years}yr
+                      </span>
+                    )}
+                    {p.sq_footage != null && (
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                        {p.sq_footage >= 1000 ? `${Math.round(p.sq_footage / 1000)}K` : p.sq_footage} sqft
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             ))}

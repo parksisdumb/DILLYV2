@@ -712,6 +712,54 @@ export default function PropertyDetailClient({
         </form>
       )}
 
+      {/* ── Roof Intelligence ───────────────────────────────────────── */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Roof Intelligence
+        </h2>
+        <div className="space-y-3">
+          {/* Last inspection */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-600">Last Inspection</span>
+            <span className="text-sm font-medium text-slate-900">
+              {(() => {
+                const inspectionType = touchpointTypes.find(t => t.key === "inspection");
+                if (!inspectionType) return "Never inspected";
+                const lastInsp = touchpoints.find(t => t.touchpoint_type_id === inspectionType.id);
+                return lastInsp ? formatDate(lastInsp.happened_at) : "Never inspected";
+              })()}
+            </span>
+          </div>
+
+          {/* Open opportunity */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-600">Open Opportunity</span>
+            {opportunities.some(o => o.status === "open") ? (
+              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                {formatCurrency(opportunities.find(o => o.status === "open")?.estimated_value ?? null) ?? "Active"}
+              </span>
+            ) : (
+              <span className="text-sm text-slate-400">None</span>
+            )}
+          </div>
+
+          {/* Roof condition notes */}
+          {localProperty.notes && (
+            <div>
+              <span className="text-xs font-medium text-slate-500">Notes</span>
+              <p className="mt-0.5 text-sm text-slate-700">{localProperty.notes}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Nearby Properties placeholder ─────────────────────────── */}
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
+        <p className="text-sm text-slate-400">
+          Nearby properties coming soon — see other buildings in this portfolio or within 1 mile.
+        </p>
+      </div>
+
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2">
         <button

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { REASON_CODE_LABELS, DISMISS_REASONS } from "@/lib/constants/outreach-reasons";
+import { formatPhone } from "@/lib/utils/format";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -149,8 +150,16 @@ export default function SuggestedOutreach({ suggestions, onAccept, onDismiss }: 
           {/* Location + contact info */}
           <div className="mt-1 text-xs text-slate-500">
             {location(s) && <span>{location(s)}</span>}
-            {s.email && <span>{location(s) ? " · " : ""}{s.email}</span>}
-            {s.phone && <span> · {s.phone}</span>}
+            {s.email && (
+              <a href={`mailto:${s.email}`} className="text-blue-600 hover:underline">
+                {location(s) ? " · " : ""}{s.email}
+              </a>
+            )}
+            {s.phone && (
+              <a href={`tel:${s.phone}`} className="text-blue-600 font-medium hover:underline">
+                {" · "}{formatPhone(s.phone)}
+              </a>
+            )}
           </div>
 
           {/* Reason tags */}

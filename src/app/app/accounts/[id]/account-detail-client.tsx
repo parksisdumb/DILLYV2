@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import { formatPhone } from "@/lib/utils/format";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -491,7 +492,11 @@ export default function AccountDetailClient({
                 {account.website.replace(/^https?:\/\//, "")}
               </a>
             )}
-            {account.phone && <span>{account.phone}</span>}
+            {account.phone && (
+              <a href={`tel:${account.phone}`} className="text-blue-600 font-medium hover:underline">
+                {formatPhone(account.phone)}
+              </a>
+            )}
             {lastTouchAt && <span>Last touch: {formatDate(lastTouchAt)}</span>}
           </div>
 
@@ -878,7 +883,13 @@ export default function AccountDetailClient({
                         <tr key={c.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer" onClick={() => window.location.href = `/app/contacts/${c.id}`}>
                           <td className="px-4 py-3 font-medium text-blue-600 hover:underline">{c.full_name ?? "—"}</td>
                           <td className="px-4 py-3 text-slate-600">{c.title ?? "—"}</td>
-                          <td className="px-4 py-3 text-slate-600">{c.phone ?? "—"}</td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {c.phone ? (
+                              <a href={`tel:${c.phone}`} className="text-blue-600 font-medium hover:underline">
+                                {formatPhone(c.phone)}
+                              </a>
+                            ) : "—"}
+                          </td>
                           <td className="px-4 py-3 text-slate-500">{c.email ?? "—"}</td>
                           <td className="px-4 py-3 text-slate-500">{formatDate(lastTouchPerContact.get(c.id) ?? null)}</td>
                         </tr>
@@ -893,7 +904,11 @@ export default function AccountDetailClient({
                       <div className="text-sm font-semibold text-blue-600">{c.full_name ?? "—"}</div>
                       {c.title && <div className="text-xs text-slate-500">{c.title}</div>}
                       <div className="flex gap-3 text-xs text-slate-500">
-                        {c.phone && <span>{c.phone}</span>}
+                        {c.phone && (
+                          <a href={`tel:${c.phone}`} className="text-blue-600 font-medium hover:underline">
+                            {formatPhone(c.phone)}
+                          </a>
+                        )}
                         {c.email && <span>{c.email}</span>}
                         <span>Last touch: {formatDate(lastTouchPerContact.get(c.id) ?? null)}</span>
                       </div>

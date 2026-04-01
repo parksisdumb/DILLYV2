@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import { formatPhone } from "@/lib/utils/format";
 
 type Contact = {
   id: string;
@@ -313,8 +314,16 @@ export default function ContactDetailClient({
               {account.name ?? "Unknown account"}
             </a>
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-slate-600">
-              {contact.phone && <span>{contact.phone}</span>}
-              {contact.email && <span>{contact.email}</span>}
+              {contact.phone && (
+                <a href={`tel:${contact.phone}`} className="text-blue-600 font-medium hover:underline">
+                  {formatPhone(contact.phone)}
+                </a>
+              )}
+              {contact.email && (
+                <a href={`mailto:${contact.email}`} className="text-blue-600 hover:underline">
+                  {contact.email}
+                </a>
+              )}
             </div>
           </div>
           {contact.decision_role && (

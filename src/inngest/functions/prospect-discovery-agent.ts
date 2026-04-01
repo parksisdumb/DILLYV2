@@ -10,6 +10,7 @@ import {
   delay,
 } from "@/lib/intel/utils";
 import { sourceCmsHealthcare } from "@/lib/intel/source-cms-healthcare";
+import { upsertIntelProperty } from "@/lib/intel/intel-property-upsert";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -188,12 +189,15 @@ async function sourceGooglePlaces(
             continue;
           }
 
+          const resolvedCity = addr.city || city;
+          const resolvedState = addr.state || state;
+
           const status = await insertIntelProspect(supabase, {
             company_name: companyName,
             domain_normalized: null,
             address_line1: addr.address_line1 || null,
-            city: addr.city || city,
-            state: addr.state || state,
+            city: resolvedCity,
+            state: resolvedState,
             postal_code: addr.postal_code || null,
             account_type: "commercial_property_management",
             confidence_score: score,
@@ -209,8 +213,21 @@ async function sourceGooglePlaces(
             },
           });
 
-          if (status === "added") result.added++;
-          else if (status === "skipped") result.skipped++;
+          if (status === "added") {
+            result.added++;
+            // Also upsert to intel_properties
+            await upsertIntelProperty(supabase, {
+              street_address: addr.address_line1 || null,
+              city: resolvedCity,
+              state: resolvedState,
+              postal_code: addr.postal_code || null,
+              property_name: companyName,
+              property_type: "commercial",
+              owner_name: companyName,
+              source_detail: "google_places",
+              confidence_score: score,
+            });
+          } else if (status === "skipped") result.skipped++;
         }
       } catch (err) {
         log.push(`Error for "${query}": ${err instanceof Error ? err.message : err}`);

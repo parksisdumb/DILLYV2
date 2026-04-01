@@ -4,6 +4,7 @@
 // ~5,400 facilities with verified addresses, ownership, and type.
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { upsertIntelProperty } from "@/lib/intel/intel-property-upsert";
 
 type SourceResult = {
   found: number;
@@ -130,8 +131,22 @@ export async function sourceCmsHealthcare(
           },
         });
 
-        if (status === "added") result.added++;
-        else if (status === "skipped") result.skipped++;
+        if (status === "added") {
+          result.added++;
+          // Also upsert to intel_properties
+          await upsertIntelProperty(supabase, {
+            street_address: address || null,
+            city: city || null,
+            state: state || null,
+            postal_code: zip || null,
+            property_name: name,
+            property_type: "healthcare",
+            owner_name: ownership || null,
+            owner_type: "healthcare_system",
+            source_detail: "cms_healthcare",
+            confidence_score: score,
+          });
+        } else if (status === "skipped") result.skipped++;
       } else {
         log.push(
           `[DRY RUN] Would insert: ${name} | ${city}, ${state} ${zip} | ${hospitalType} (score=${score})`

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getReitUniverse } from "@/lib/intel/edgar-reit-universe";
 import { get10KDocumentUrl } from "@/lib/intel/edgar-filing-fetcher";
 import { extractItem2Properties } from "@/lib/intel/edgar-item2-extractor";
+import { upsertIntelProperty } from "@/lib/intel/intel-property-upsert";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -216,8 +217,22 @@ async function sourceEdgar(
             },
           });
 
-          if (status === "added") result.added++;
-          else if (status === "skipped") result.skipped++;
+          if (status === "added") {
+            result.added++;
+            await upsertIntelProperty(supabase, {
+              street_address: addr.address || null,
+              city: addr.city || null,
+              state: addr.state || null,
+              postal_code: addr.zip || null,
+              property_type: addr.property_type || null,
+              sq_footage: addr.sq_footage || null,
+              owner_name: reit.name,
+              owner_type: "reit",
+              entity_id: entityId,
+              source_detail: "edgar_10k_address",
+              confidence_score: score,
+            });
+          } else if (status === "skipped") result.skipped++;
         }
       } else if (portfolio.filing_type !== "type_a") {
         log.push(

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
+import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -222,15 +223,23 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Accounts</h1>
-        <button
-          type="button"
-          onClick={() => { setShowCreate(!showCreate); setFormError(null); }}
-          className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-        >
-          {showCreate ? "Cancel" : "+ New Account"}
-        </button>
+        <div className="flex gap-2">
+          <Link
+            href="/app/accounts/discover"
+            className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+          >
+            Find in Territory
+          </Link>
+          <button
+            type="button"
+            onClick={() => { setShowCreate(!showCreate); setFormError(null); }}
+            className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            {showCreate ? "Cancel" : "+ New Account"}
+          </button>
+        </div>
       </div>
 
       {/* ── Create form ── */}

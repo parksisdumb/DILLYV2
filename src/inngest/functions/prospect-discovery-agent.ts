@@ -497,10 +497,11 @@ export const prospectDiscoveryAgent = inngest.createFunction(
               })
               .eq("id", runId);
 
-            // Trigger distributor after successful prospect discovery
+            // Trigger distributor + enrichment after successful prospect discovery
             if (!errorMessage) {
               await inngest.send({ name: "app/intel-distributor.run", data: {} });
-              console.log("[prospect-discovery] finalize: distributor triggered");
+              await inngest.send({ name: "app/enrichment-agent.run", data: {} });
+              console.log("[prospect-discovery] finalize: distributor + enrichment triggered");
             }
           } catch (err) {
             console.error("[prospect-discovery] FATAL in finalize:", err instanceof Error ? err.message : err);

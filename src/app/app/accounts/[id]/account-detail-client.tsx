@@ -253,6 +253,26 @@ export default function AccountDetailClient({
   const [linkContactError, setLinkContactError] = useState<string | null>(null);
   const [localAvailableContacts, setLocalAvailableContacts] = useState(availableContacts);
 
+  // ── Enrichment state ──
+  type EnrichHit = {
+    id: string;
+    source: string;
+    company_name: string | null;
+    street_address: string | null;
+    city: string | null;
+    state: string | null;
+    postal_code: string | null;
+    property_type: string | null;
+    sq_footage: number | null;
+    owner_name: string | null;
+    external_id: string | null;
+    confidence_score: number;
+  };
+  const [enriching, setEnriching] = useState(false);
+  const [enrichResults, setEnrichResults] = useState<EnrichHit[] | null>(null);
+  const [enrichSelected, setEnrichSelected] = useState<Set<string>>(new Set());
+  const [enrichAdding, setEnrichAdding] = useState(false);
+
   // ── Toast ──
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
@@ -455,6 +475,99 @@ export default function AccountDetailClient({
     showToast("success", "Contact linked.");
   }
 
+  // ── Enrichment functions ──
+
+  async function handleEnrich() {
+    setEnriching(true);
+    setEnrichResults(null);
+    setEnrichSelected(new Set());
+    try {
+      const resp = await fetch("/api/accounts/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_name: account.name,
+          account_state: properties[0]?.state ?? null,
+        }),
+      });
+      if (!resp.ok) {
+        showToast("error", "Enrichment search failed");
+        return;
+      }
+      const data = await resp.json();
+      setEnrichResults(data.results ?? []);
+    } catch {
+      showToast("error", "Network error during enrichment");
+    } finally {
+      setEnriching(false);
+    }
+  }
+
+  function toggleEnrichSelect(id: string) {
+    setEnrichSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleEnrichAll() {
+    if (!enrichResults) return;
+    if (enrichSelected.size === enrichResults.length) {
+      setEnrichSelected(new Set());
+    } else {
+      setEnrichSelected(new Set(enrichResults.map((r) => r.id)));
+    }
+  }
+
+  async function handleAddEnriched() {
+    if (!enrichResults || enrichSelected.size === 0) return;
+    setEnrichAdding(true);
+    let added = 0;
+
+    for (const result of enrichResults.filter((r) => enrichSelected.has(r.id))) {
+      if (!result.street_address || !result.city || !result.state) continue;
+
+      const { data: newProp, error: propErr } = await supabase
+        .from("properties")
+        .insert({
+          org_id: orgId,
+          created_by: userId,
+          name: result.company_name || null,
+          address_line1: result.street_address,
+          city: result.city,
+          state: result.state.toUpperCase(),
+          postal_code: result.postal_code || "00000",
+          primary_account_id: account.id,
+          notes: `Source: ${result.source}`,
+        })
+        .select("id,name,address_line1,city,state,postal_code")
+        .single();
+
+      if (propErr) continue; // duplicate or constraint — skip
+
+      setProperties((prev) => [
+        ...prev,
+        {
+          id: newProp.id as string,
+          address_line1: newProp.address_line1 as string,
+          city: newProp.city as string,
+          state: newProp.state as string,
+          postal_code: newProp.postal_code as string,
+          name: (newProp.name as string | null) ?? null,
+        },
+      ]);
+      added++;
+    }
+
+    setEnrichAdding(false);
+    setEnrichResults(null);
+    setEnrichSelected(new Set());
+    showToast("success", `${added} propert${added !== 1 ? "ies" : "y"} added to ${account.name}.`);
+    setTab("properties");
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
@@ -516,6 +629,116 @@ export default function AccountDetailClient({
           <span className="text-xs text-slate-400">Scoring · Coming in Phase 2</span>
         </div>
       </div>
+
+      {/* ── Find Associated Properties ── */}
+      {properties.length < 5 && !enrichResults && (
+        <button
+          type="button"
+          disabled={enriching}
+          onClick={handleEnrich}
+          className="w-full rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+        >
+          {enriching ? "Searching..." : "Find Associated Properties"}
+        </button>
+      )}
+
+      {/* ── Enrichment results ── */}
+      {enrichResults && enrichResults.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900">
+              Found {enrichResults.length} potential propert{enrichResults.length !== 1 ? "ies" : "y"} for {account.name}
+            </h3>
+            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+              <input
+                type="checkbox"
+                checked={enrichSelected.size === enrichResults.length}
+                onChange={toggleEnrichAll}
+                className="rounded"
+              />
+              Select All
+            </label>
+          </div>
+
+          <div className="space-y-1.5">
+            {enrichResults.map((r) => (
+              <label
+                key={r.id}
+                className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-colors ${
+                  enrichSelected.has(r.id)
+                    ? "border-blue-300 bg-blue-50"
+                    : "border-slate-100 hover:bg-slate-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={enrichSelected.has(r.id)}
+                  onChange={() => toggleEnrichSelect(r.id)}
+                  className="rounded"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-slate-900">
+                    {r.street_address
+                      ? `${r.street_address}, ${r.city ?? ""} ${r.state ?? ""}`
+                      : r.company_name ?? "Unknown"}
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                    {r.property_type && <span>{r.property_type}</span>}
+                    {r.sq_footage && (
+                      <span>
+                        {r.sq_footage >= 1000
+                          ? `${Math.round(r.sq_footage / 1000)}K`
+                          : r.sq_footage}{" "}
+                        sqft
+                      </span>
+                    )}
+                    <span className="rounded bg-slate-100 px-1 py-0.5 text-xs text-slate-500">
+                      {r.source === "intel_properties"
+                        ? "Intel DB"
+                        : r.source === "intel_prospects"
+                          ? "Prospect"
+                          : "Google Places"}
+                    </span>
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              disabled={enrichSelected.size === 0 || enrichAdding}
+              onClick={handleAddEnriched}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {enrichAdding
+                ? "Adding..."
+                : `Add Selected to Pipeline (${enrichSelected.size})`}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEnrichResults(null); setEnrichSelected(new Set()); }}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {enrichResults && enrichResults.length === 0 && (
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-center text-sm text-slate-400">
+          No additional properties found for {account.name}.
+          <button
+            type="button"
+            onClick={() => setEnrichResults(null)}
+            className="ml-2 text-blue-600 hover:underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* ── Action buttons ── */}
       <div className="flex flex-wrap gap-2">

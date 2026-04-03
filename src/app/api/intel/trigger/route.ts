@@ -15,6 +15,11 @@ export async function POST(req: NextRequest) {
       "app/prospect-discovery.run",
       "app/enrichment-agent.run",
       "app/intel-distributor.run",
+      "app/car-dealership-agent.run",
+      "app/self-storage-agent.run",
+      "app/public-bid-agent.run",
+      "app/corporate-campus-agent.run",
+      "app/private-reit-agent.run",
     ];
 
     if (!allowed.includes(event)) {

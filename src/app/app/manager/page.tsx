@@ -304,6 +304,12 @@ export default async function ManagerPage() {
     (p) => !allAssignedIds.has(p.id as string)
   ).length;
 
+  // Check if ICP is configured
+  const { count: icpCount } = await supabase
+    .from("icp_profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("active", true);
+
   return (
     <ManagerClient
       repStats={repStats}
@@ -311,6 +317,7 @@ export default async function ManagerPage() {
       topAccounts={topAccounts}
       queueCounts={queueCountsObj}
       unassignedProspectCount={unassignedCount}
+      hasIcp={(icpCount ?? 0) > 0}
       generatedAt={now.toISOString()}
     />
   );

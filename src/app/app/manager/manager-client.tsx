@@ -10,6 +10,7 @@ type Props = {
   topAccounts: TopAccount[];
   queueCounts: Record<string, number>;
   unassignedProspectCount: number;
+  hasIcp: boolean;
   generatedAt: string;
 };
 
@@ -53,7 +54,7 @@ function ComplianceBadge({ rate }: { rate: number }) {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function ManagerClient({ repStats, stageSummaries, topAccounts, queueCounts, unassignedProspectCount, generatedAt }: Props) {
+export default function ManagerClient({ repStats, stageSummaries, topAccounts, queueCounts, unassignedProspectCount, hasIcp, generatedAt }: Props) {
   const [tab, setTab] = useState<Tab>("today");
 
   const generatedDate = new Date(generatedAt);
@@ -79,6 +80,24 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, q
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Manager Dashboard</h1>
         <span className="text-xs text-slate-400">as of {generatedLabel}</span>
       </div>
+
+      {/* ICP setup banner */}
+      {!hasIcp && (
+        <Link
+          href="/app/setup/icp"
+          className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 p-4 hover:bg-amber-100"
+        >
+          <div>
+            <span className="text-sm font-semibold text-amber-800">
+              Set up your targeting priorities
+            </span>
+            <p className="text-xs text-amber-600">
+              Unlock ICP scoring across all accounts and prospects
+            </p>
+          </div>
+          <span className="text-sm font-medium text-amber-700">Set Up &rarr;</span>
+        </Link>
+      )}
 
       {/* New Prospects card */}
       {unassignedProspectCount > 0 && (

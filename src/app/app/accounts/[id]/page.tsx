@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import AccountDetailClient from "@/app/app/accounts/[id]/account-detail-client";
+import { scoreAccount, type IcpScoreResult, type IcpCriteria } from "@/lib/scoring/icp-score";
 
 export default async function AccountDetailPage({
   params,
@@ -73,6 +74,46 @@ export default async function AccountDetailPage({
         ).data ?? []
       : [];
 
+  // ICP scoring
+  const { data: icpProfiles } = await supabase
+    .from("icp_profiles")
+    .select("id")
+    .eq("active", true);
+  const profileIds = (icpProfiles ?? []).map((p) => p.id as string);
+
+  let icpScore: IcpScoreResult = { score: 50, priority: 3, label: "Worth a conversation", matches: [], misses: ["No ICP configured"] };
+
+  if (profileIds.length > 0) {
+    const { data: criteriaRows } = await supabase
+      .from("icp_criteria")
+      .select("criteria_type,criteria_value")
+      .in("icp_profile_id", profileIds);
+
+    const criteria: IcpCriteria[] = (criteriaRows ?? []).map((c) => ({
+      criteria_type: c.criteria_type as string,
+      criteria_value: c.criteria_value as string,
+    }));
+
+    const props = propertiesRes.data ?? [];
+    const contacts = contactsRes.data ?? [];
+    const primaryContact = contacts[0];
+    const largestProperty = props.reduce<{ sq_footage?: number | null; state?: string | null; roof_type?: string | null }>(
+      (best, p) => best,
+      {}
+    );
+
+    icpScore = scoreAccount(
+      {
+        account_type: accountRes.data.account_type as string | null,
+        state: (props[0] as Record<string, unknown>)?.state as string | null,
+        sq_footage: null, // no sq_footage on org properties yet
+        roof_type: null,
+        contact_title: primaryContact?.title as string | null,
+      },
+      criteria
+    );
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cast = <T,>(v: unknown) => (v ?? []) as T[];
 
@@ -104,6 +145,7 @@ export default async function AccountDetailPage({
       userRole={meRes.data?.role ?? "rep"}
       availableProperties={availableProperties}
       availableContacts={availableContacts}
+      icpScore={icpScore}
     />
   );
 }

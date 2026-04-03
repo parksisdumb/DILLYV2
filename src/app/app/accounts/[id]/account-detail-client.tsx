@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
+import { PRIORITY_COLORS, type IcpScoreResult } from "@/lib/scoring/icp-score";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ type Props = {
   userRole: string;
   availableProperties: AvailableProperty[];
   availableContacts: AvailableContact[];
+  icpScore: IcpScoreResult;
 };
 
 type Tab = "contacts" | "properties" | "opportunities" | "timeline";
@@ -198,6 +200,7 @@ export default function AccountDetailClient({
   userRole,
   availableProperties,
   availableContacts,
+  icpScore,
 }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
@@ -618,15 +621,18 @@ export default function AccountDetailClient({
           )}
         </div>
 
-        {/* ICP Fit placeholder */}
+        {/* ICP Priority */}
         <div className="border-t border-slate-100 px-4 py-2.5 flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">ICP Fit</span>
-          <div className="flex gap-1">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-2 w-5 rounded-sm bg-slate-100" />
-            ))}
-          </div>
-          <span className="text-xs text-slate-400">Scoring · Coming in Phase 2</span>
+          <span className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${PRIORITY_COLORS[icpScore.priority]}`}>
+            P{icpScore.priority}
+          </span>
+          <span className="text-xs font-medium text-slate-700">{icpScore.label}</span>
+          <span className="text-xs text-slate-400">Score: {icpScore.score}/100</span>
+          {icpScore.matches.length > 0 && (
+            <span className="hidden sm:inline text-xs text-green-600">
+              {icpScore.matches[0]}
+            </span>
+          )}
         </div>
       </div>
 

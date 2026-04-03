@@ -26,6 +26,16 @@ export type ProspectRow = {
   assigned_to: string | null;
 };
 
+export type SuggestedRow = {
+  id: string;
+  prospect_id: string;
+  rep_name: string;
+  status: string;
+  company_name: string;
+  city: string | null;
+  state: string | null;
+};
+
 type TerritoryOption = { id: string; name: string };
 
 type OrgUserOption = { id: string; full_name: string | null; email: string | null };
@@ -95,6 +105,11 @@ export default async function ProspectsPage() {
     name: u.full_name ?? u.email ?? u.id.slice(0, 8),
     count: queueCountsByUser.get(u.id) ?? 0,
   }));
+
+  // Build suggested_outreach rows for Tab 2 (Assigned)
+  const allAssignedIds = new Set(
+    (suggestedRes.data ?? []).map((s) => s.prospect_id as string)
+  );
 
   const rows: ProspectRow[] = (prospectRes.data ?? []).map((p) => ({
     id: p.id as string,
@@ -184,12 +199,31 @@ export default async function ProspectsPage() {
     redirect(`/app/manager/prospects?assigned=${rows.length}`);
   }
 
+  // Compute tab counts
+  const unassignedRows = rows.filter(
+    (r) => r.source === "agent" && r.status !== "dismissed" && !allAssignedIds.has(r.id)
+  );
+  const assignedRows: SuggestedRow[] = (suggestedRes.data ?? []).map((s) => {
+    const prospect = rows.find((r) => r.id === (s.prospect_id as string));
+    return {
+      id: s.prospect_id as string,
+      prospect_id: s.prospect_id as string,
+      rep_name: userNameMap.get(s.user_id as string) ?? (s.user_id as string).slice(0, 8),
+      status: s.status as string,
+      company_name: prospect?.company_name ?? "Unknown",
+      city: prospect?.city ?? null,
+      state: prospect?.state ?? null,
+    };
+  });
+
   return (
     <ProspectsClient
       prospects={rows}
       territories={territories}
       orgUsers={orgUsers}
       repQueueCounts={repQueueCounts}
+      unassignedCount={unassignedRows.length}
+      assignedRows={assignedRows}
       bulkUpdateStatusAction={bulkUpdateStatusAction}
       assignToRepAction={assignToRepAction}
     />

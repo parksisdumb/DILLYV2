@@ -37,11 +37,23 @@ type OrgUserOption = { id: string; full_name: string | null; email: string | nul
 
 type RepQueueCount = { name: string; count: number };
 
+type SuggestedRow = {
+  id: string;
+  prospect_id: string;
+  rep_name: string;
+  status: string;
+  company_name: string;
+  city: string | null;
+  state: string | null;
+};
+
 type Props = {
   prospects: ProspectRow[];
   territories: TerritoryOption[];
   orgUsers: OrgUserOption[];
   repQueueCounts: RepQueueCount[];
+  unassignedCount: number;
+  assignedRows: SuggestedRow[];
   bulkUpdateStatusAction: (formData: FormData) => Promise<void>;
   assignToRepAction: (formData: FormData) => Promise<void>;
 };
@@ -88,7 +100,8 @@ function location(p: ProspectRow): string {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function ProspectsClient({ prospects, territories, orgUsers, repQueueCounts, bulkUpdateStatusAction, assignToRepAction }: Props) {
+export default function ProspectsClient({ prospects, territories, orgUsers, repQueueCounts, unassignedCount, assignedRows, bulkUpdateStatusAction, assignToRepAction }: Props) {
+  const [activeTab, setActiveTab] = useState<"assign" | "assigned" | "all">("assign");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [territoryFilter, setTerritoryFilter] = useState("");
@@ -181,6 +194,13 @@ export default function ProspectsClient({ prospects, territories, orgUsers, repQ
 
   const STATUSES = ["unworked", "queued", "converted", "dismissed"];
 
+  const STATUS_BADGE: Record<string, string> = {
+    new: "bg-blue-100 text-blue-700",
+    accepted: "bg-green-100 text-green-700",
+    dismissed: "bg-slate-100 text-slate-500",
+    converted: "bg-purple-100 text-purple-700",
+  };
+
   return (
     <div className="space-y-4">
       {/* ── Header ── */}
@@ -193,6 +213,73 @@ export default function ProspectsClient({ prospects, territories, orgUsers, repQ
           Import CSV
         </Link>
       </div>
+
+      {/* ── Tabs ── */}
+      <div className="flex overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        {([
+          { key: "assign" as const, label: "To Assign", count: unassignedCount },
+          { key: "assigned" as const, label: "Assigned", count: assignedRows.length },
+          { key: "all" as const, label: "All Prospects", count: prospects.length },
+        ]).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setActiveTab(t.key)}
+            className={`shrink-0 px-4 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === t.key
+                ? "border-b-2 border-blue-600 text-blue-600"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {t.label}
+            <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+              {t.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab: Assigned ── */}
+      {activeTab === "assigned" && (
+        <div className="space-y-2">
+          {assignedRows.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+              No prospects have been assigned yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-xs font-semibold uppercase text-slate-400">
+                    <th className="px-3 py-2">Company</th>
+                    <th className="px-3 py-2">Location</th>
+                    <th className="px-3 py-2">Rep</th>
+                    <th className="px-3 py-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assignedRows.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50">
+                      <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">{r.company_name}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                        {[r.city, r.state].filter(Boolean).join(", ") || "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-600">{r.rep_name}</td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[r.status] ?? "bg-slate-100 text-slate-500"}`}>
+                          {r.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: All Prospects (existing content) ── */}
+      {activeTab !== "assigned" && <>
 
       {/* ── Rep queue summary ── */}
       {repQueueCounts.some((r) => r.count > 0) && (
@@ -521,6 +608,8 @@ export default function ProspectsClient({ prospects, territories, orgUsers, repQ
           {toast.text}
         </div>
       )}
+
+      </>}
     </div>
   );
 }

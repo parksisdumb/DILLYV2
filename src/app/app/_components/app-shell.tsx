@@ -54,6 +54,13 @@ function IconChevronLeft() {
   );
 }
 
+function IconProspects() {
+  return (
+    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+    </svg>
+  );
+}
 function IconManager() {
   return (
     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -113,32 +120,43 @@ export default function AppShell({
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const canSeeAdmin = orgRole === "admin" || orgRole === "manager";
 
-  const sidebarItems = [
-    { href: "/app/today", label: "Today" },
-    { href: "/app/accounts", label: "Accounts" },
-    { href: "/app/properties", label: "Properties" },
-    { href: "/app/contacts", label: "Contacts" },
-    { href: "/app/opportunities", label: "Opportunities" },
-    ...(canSeeAdmin
-      ? [
-          { href: "/app/manager", label: "Manager" },
-          { href: "/app/manager/territories", label: "Territories" },
-          { href: "/app/manager/icp", label: "ICP" },
-          { href: "/app/manager/prospects", label: "Prospects" },
-          { href: "/app/manager/prospect-review", label: "Review" },
-          { href: "/app/manager/analytics", label: "Analytics" },
-          { href: "/app/manager/agent", label: "Agent" },
-          { href: "/app/intel/entities", label: "Entities" },
-          { href: "/app/intel/prospects", label: "Intel Pool" },
-          { href: "/app/admin/team", label: "Team" },
-          { href: "/app/admin/kpis", label: "KPIs" },
-        ]
-      : []),
-    ...(!hasOrg ? [{ href: "/app/setup", label: "Setup" }] : []),
-  ];
+  // Primary nav items
+  const sidebarItems = canSeeAdmin
+    ? [
+        { href: "/app/today", label: "Today" },
+        { href: "/app/manager", label: "Team" },
+        { href: "/app/accounts", label: "Accounts" },
+        { href: "/app/properties", label: "Properties" },
+        { href: "/app/opportunities", label: "Pipeline" },
+        { href: "/app/manager/prospects", label: "Prospects" },
+        { href: "/app/manager/analytics", label: "Reports" },
+      ]
+    : [
+        { href: "/app/today", label: "Today" },
+        { href: "/app/accounts", label: "Accounts" },
+        { href: "/app/properties", label: "Properties" },
+        { href: "/app/contacts", label: "Contacts" },
+        { href: "/app/opportunities", label: "Pipeline" },
+      ];
+
+  // Settings items (manager only, collapsible)
+  const settingsItems = canSeeAdmin
+    ? [
+        { href: "/app/manager/territories", label: "Territories" },
+        { href: "/app/manager/icp", label: "ICP Profile" },
+        { href: "/app/admin/team", label: "Team Members" },
+        { href: "/app/admin/kpis", label: "KPI Targets" },
+        { href: "/app/manager/agent", label: "Agents" },
+      ]
+    : [];
+
+  if (!hasOrg) {
+    sidebarItems.push({ href: "/app/setup", label: "Setup" });
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -166,24 +184,61 @@ export default function AppShell({
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
-          {sidebarItems.map((item) => {
-            const active = isActive(pathname, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={[
-                  "block rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                  active
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white",
-                ].join(" ")}
+        <nav className="flex-1 overflow-y-auto px-3 py-4">
+          <div className="space-y-0.5">
+            {sidebarItems.map((item) => {
+              const active = isActive(pathname, item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={[
+                    "block rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-blue-600 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white",
+                  ].join(" ")}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+
+          {/* Settings section (manager only) */}
+          {settingsItems.length > 0 && (
+            <div className="mt-4 border-t border-slate-800 pt-3">
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(!settingsOpen)}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-300"
               >
-                {item.label}
-              </Link>
-            );
-          })}
+                Settings
+                <span className="text-[10px]">{settingsOpen ? "▼" : "▶"}</span>
+              </button>
+              {settingsOpen && (
+                <div className="mt-1 space-y-0.5">
+                  {settingsItems.map((item) => {
+                    const active = isActive(pathname, item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={[
+                          "block rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                          active
+                            ? "bg-blue-600 text-white"
+                            : "text-slate-400 hover:bg-slate-800 hover:text-white",
+                        ].join(" ")}
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
 
         {/* Profile */}
@@ -282,7 +337,10 @@ export default function AppShell({
       {/* ── Mobile bottom nav ── */}
       <nav className="fixed inset-x-0 bottom-0 z-20 h-16 border-t border-slate-200 bg-white md:hidden">
         <div className="flex h-full">
-          {[...BASE_BOTTOM_NAV, ...(canSeeAdmin ? [{ href: "/app/manager", label: "Manager", icon: <IconManager /> }] : [])].map((item) => {
+          {[...BASE_BOTTOM_NAV, ...(canSeeAdmin ? [
+            { href: "/app/manager", label: "Team", icon: <IconManager /> },
+            { href: "/app/manager/prospects", label: "Prospects", icon: <IconProspects /> },
+          ] : [])].map((item) => {
             const active = isActive(pathname, item.href);
             return (
               <Link

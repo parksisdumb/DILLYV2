@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import { getOutcomesForType, getNextActionLabel } from "@/lib/constants/outcome-config";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -129,11 +130,46 @@ export default function GrowForm({
       .slice(0, 6);
   }, [contacts, contactQuery]);
 
+  // Get the selected type's key for outcome lookup
+  const selectedTypeKey = useMemo(() => {
+    if (!typeId) return null;
+    const t = outreachTypes.find((t) => t.id === typeId);
+    return t?.key ?? null;
+  }, [typeId, outreachTypes]);
+
+  // Type-specific outcomes from config
+  const configOutcomes = useMemo(() => {
+    if (!selectedTypeKey) return [];
+    return getOutcomesForType(selectedTypeKey);
+  }, [selectedTypeKey]);
+
+  // Map config outcomes to DB outcome IDs
   const filteredOutcomes = useMemo(() => {
-    if (!typeId) return [];
-    const typeSpecific = outcomes.filter((o) => o.touchpoint_type_id === typeId);
-    return typeSpecific.length > 0 ? typeSpecific : outcomes;
-  }, [outcomes, typeId]);
+    if (!typeId || configOutcomes.length === 0) return outcomes;
+    // Try to match by key
+    const matched = configOutcomes
+      .map((cfg) => {
+        const dbOutcome = outcomes.find((o) => {
+          // Match by key if available, or by name similarity
+          const oKey = (o as Record<string, unknown>).key as string | undefined;
+          return oKey === cfg.key;
+        });
+        return dbOutcome ? { ...dbOutcome, shortLabel: cfg.shortLabel, configKey: cfg.key } : null;
+      })
+      .filter(Boolean) as (Outcome & { shortLabel: string; configKey: string })[];
+
+    // If we found matches, use them; otherwise fall back to all outcomes
+    return matched.length > 0 ? matched : outcomes;
+  }, [typeId, configOutcomes, outcomes]);
+
+  // Auto next-action label for selected outcome
+  const autoNextLabel = useMemo(() => {
+    if (!outcomeId || !selectedTypeKey) return null;
+    const selectedOutcome = filteredOutcomes.find((o) => o.id === outcomeId);
+    const configKey = (selectedOutcome as Record<string, unknown>)?.configKey as string | undefined;
+    if (!configKey) return null;
+    return getNextActionLabel(configKey, selectedTypeKey);
+  }, [outcomeId, selectedTypeKey, filteredOutcomes]);
 
   const filteredProperties = useMemo(() => {
     const q = propertyQuery.trim().toLowerCase();
@@ -653,28 +689,38 @@ export default function GrowForm({
           {/* 3. Outcome chips */}
           {typeId && filteredOutcomes.length > 0 && (
             <div>
-              <label className={sectionLabel}>Outcome</label>
+              <label className={sectionLabel}>What happened?</label>
               <div className="flex flex-wrap gap-2">
-                {filteredOutcomes.map((o) => (
-                  <button
-                    key={o.id}
-                    type="button"
-                    onClick={() => setOutcomeId(outcomeId === o.id ? "" : o.id)}
-                    className={chipBtn(outcomeId === o.id)}
-                  >
-                    {o.name}
-                  </button>
-                ))}
+                {filteredOutcomes.map((o) => {
+                  const label = (o as Record<string, unknown>).shortLabel as string | undefined;
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => setOutcomeId(outcomeId === o.id ? "" : o.id)}
+                      className={chipBtn(outcomeId === o.id)}
+                    >
+                      {label ?? o.name}
+                    </button>
+                  );
+                })}
               </div>
+            </div>
+          )}
+
+          {/* Auto next-action preview */}
+          {autoNextLabel && (
+            <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-medium text-green-700">
+              {autoNextLabel}
             </div>
           )}
 
           {/* 4. Notes */}
           <div>
-            <label className={sectionLabel}>Notes</label>
+            <label className={sectionLabel}>Notes (optional)</label>
             <input
               className={input}
-              placeholder="What happened? (required)"
+              placeholder="Quick note..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />

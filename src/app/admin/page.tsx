@@ -28,12 +28,20 @@ export default async function AdminDashboard() {
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">Organizations</h1>
-        <Link
-          href="/admin/orgs/new"
-          className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-        >
-          Create New Org
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/admin/intel-database"
+            className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700"
+          >
+            Intel Database
+          </Link>
+          <Link
+            href="/admin/orgs/new"
+            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            Create New Org
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6 space-y-3">

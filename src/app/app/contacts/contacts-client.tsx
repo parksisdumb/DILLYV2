@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
-import type { AccountOption } from "./page";
+import type { AccountOption, PropertyOption } from "./page";
 
 type ContactRow = {
   id: string;
@@ -63,11 +63,13 @@ function RoleBadge({ role }: { role: string | null }) {
 export default function ContactsClient({
   contacts: initialContacts,
   accounts,
+  properties,
   userId,
   userRole,
 }: {
   contacts: ContactRow[];
   accounts: AccountOption[];
+  properties: PropertyOption[];
   userId: string;
   userRole: string;
 }) {
@@ -88,6 +90,9 @@ export default function ContactsClient({
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [decisionRole, setDecisionRole] = useState("");
+  const [newPropertyId, setNewPropertyId] = useState("");
+  const [isPrimaryAccountContact, setIsPrimaryAccountContact] = useState(false);
+  const [isPrimaryPropertyContact, setIsPrimaryPropertyContact] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
@@ -119,6 +124,14 @@ export default function ContactsClient({
     return list;
   }, [contacts, search, filterAccountId, filterRole, sort]);
 
+  // Properties filtered by selected account (show all if no account yet)
+  const filteredProperties = useMemo(() => {
+    if (!newAccountId) return [];
+    return properties.filter(
+      (p) => p.primary_account_id === newAccountId || !p.primary_account_id,
+    );
+  }, [properties, newAccountId]);
+
   function resetCreateForm() {
     setFirstName("");
     setLastName("");
@@ -127,6 +140,9 @@ export default function ContactsClient({
     setPhone("");
     setEmail("");
     setDecisionRole("");
+    setNewPropertyId("");
+    setIsPrimaryAccountContact(false);
+    setIsPrimaryPropertyContact(false);
     setError(null);
   }
 
@@ -163,6 +179,29 @@ export default function ContactsClient({
         setError("Contact creation failed.");
         return;
       }
+      // Fire off property link + primary updates
+      if (newPropertyId) {
+        await supabase.rpc("rpc_upsert_property_contact", {
+          p_property_id: newPropertyId,
+          p_contact_id: row.id,
+          p_role_category: "other",
+          p_is_primary: isPrimaryPropertyContact,
+        });
+        if (isPrimaryPropertyContact) {
+          await supabase
+            .from("properties")
+            .update({ primary_contact_id: row.id })
+            .eq("id", newPropertyId);
+        }
+      }
+
+      if (isPrimaryAccountContact) {
+        await supabase
+          .from("accounts")
+          .update({ primary_contact_id: row.id })
+          .eq("id", newAccountId);
+      }
+
       const accountName = accounts.find((a) => a.id === newAccountId)?.name ?? null;
       const newContact: ContactRow = {
         id: row.id,
@@ -298,6 +337,48 @@ export default function ContactsClient({
                   placeholder="555-1234"
                 />
               </div>
+            </div>
+            {newAccountId && filteredProperties.length > 0 && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Link Property</label>
+                <select
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                  value={newPropertyId}
+                  onChange={(e) => {
+                    setNewPropertyId(e.target.value);
+                    if (!e.target.value) setIsPrimaryPropertyContact(false);
+                  }}
+                >
+                  <option value="">None</option>
+                  {filteredProperties.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.address_line1}{p.city ? `, ${p.city}` : ""}{p.state ? ` ${p.state}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isPrimaryAccountContact}
+                  onChange={(e) => setIsPrimaryAccountContact(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                Primary account contact
+              </label>
+              {newPropertyId && (
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={isPrimaryPropertyContact}
+                    onChange={(e) => setIsPrimaryPropertyContact(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Primary property contact
+                </label>
+              )}
             </div>
             {error && <p className="text-xs text-red-600">{error}</p>}
             <div className="flex gap-2">

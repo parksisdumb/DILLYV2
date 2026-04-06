@@ -12,6 +12,7 @@ type AccountRow = {
   updated_at: string;
   created_by: string | null;
   contact_count: number;
+  property_count: number;
   opportunity_count: number;
   last_touch_at: string | null;
 };
@@ -19,7 +20,7 @@ type AccountRow = {
 export default async function AccountsPage() {
   const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  const [acctRes, contactRes, tpRes, oppRes, meRes, propsRes] = await Promise.all([
+  const [acctRes, contactRes, tpRes, oppRes, meRes, propsRes, propCountRes] = await Promise.all([
     supabase
       .from("accounts")
       .select("id,name,account_type,status,notes,website,phone,updated_at,created_by")
@@ -34,9 +35,10 @@ export default async function AccountsPage() {
     supabase.from("opportunities").select("account_id").not("account_id", "is", null),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     supabase.from("properties").select("id,address_line1,city,state,postal_code").is("deleted_at", null).order("address_line1"),
+    supabase.from("properties").select("primary_account_id").is("deleted_at", null).not("primary_account_id", "is", null),
   ]);
 
-  const firstError = [acctRes.error, contactRes.error, tpRes.error, oppRes.error, propsRes.error].find(Boolean);
+  const firstError = [acctRes.error, contactRes.error, tpRes.error, oppRes.error, propsRes.error, propCountRes.error].find(Boolean);
   if (firstError) throw new Error(firstError.message);
 
   // Build lookup maps
@@ -60,6 +62,12 @@ export default async function AccountsPage() {
     if (id) oppsByAccount.set(id, (oppsByAccount.get(id) ?? 0) + 1);
   }
 
+  const propsByAccount = new Map<string, number>();
+  for (const p of propCountRes.data ?? []) {
+    const id = p.primary_account_id as string;
+    if (id) propsByAccount.set(id, (propsByAccount.get(id) ?? 0) + 1);
+  }
+
   const rows: AccountRow[] = (acctRes.data ?? []).map((a) => ({
     id: a.id as string,
     name: a.name as string | null,
@@ -71,6 +79,7 @@ export default async function AccountsPage() {
     updated_at: a.updated_at as string,
     created_by: a.created_by as string | null,
     contact_count: contactsByAccount.get(a.id as string) ?? 0,
+    property_count: propsByAccount.get(a.id as string) ?? 0,
     opportunity_count: oppsByAccount.get(a.id as string) ?? 0,
     last_touch_at: lastTouchByAccount.get(a.id as string) ?? null,
   }));

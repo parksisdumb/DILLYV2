@@ -17,6 +17,7 @@ type AccountRow = {
   updated_at: string;
   created_by: string | null;
   contact_count: number;
+  property_count: number;
   opportunity_count: number;
   last_touch_at: string | null;
 };
@@ -37,7 +38,7 @@ type Props = {
   allProperties: PropertyOption[];
 };
 
-type Sort = "last_touched" | "name" | "most_contacts" | "most_opportunities";
+type Sort = "last_touched" | "name" | "most_contacts" | "most_properties" | "most_opportunities";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
     return [...rows].sort((a, b) => {
       if (sort === "name") return (a.name ?? "").localeCompare(b.name ?? "");
       if (sort === "most_contacts") return b.contact_count - a.contact_count;
+      if (sort === "most_properties") return b.property_count - a.property_count;
       if (sort === "most_opportunities") return b.opportunity_count - a.opportunity_count;
       // last_touched: nulls last, then descending
       if (!a.last_touch_at && !b.last_touch_at) return 0;
@@ -184,6 +186,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
       updated_at: (data as Record<string, unknown>).updated_at as string,
       created_by: (data as Record<string, unknown>).created_by as string | null,
       contact_count: 0,
+      property_count: 0,
       opportunity_count: 0,
       last_touch_at: null,
     };
@@ -358,6 +361,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
           <option value="last_touched">Last Touched</option>
           <option value="name">Name A–Z</option>
           <option value="most_contacts">Most Contacts</option>
+          <option value="most_properties">Most Properties</option>
           <option value="most_opportunities">Most Opps</option>
         </select>
       </div>
@@ -403,6 +407,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Type</th>
                   <th className="px-4 py-3 font-medium">Contacts</th>
+                  <th className="px-4 py-3 font-medium">Properties</th>
                   <th className="px-4 py-3 font-medium">Opps</th>
                   <th className="px-4 py-3 font-medium">Last Touch</th>
                   <th className="px-4 py-3 font-medium w-10" />
@@ -420,6 +425,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
                         <TypeBadge type={row.account_type} />
                       </td>
                       <td className="px-4 py-3 text-slate-600">{row.contact_count}</td>
+                      <td className="px-4 py-3 text-slate-600">{row.property_count}</td>
                       <td className="px-4 py-3 text-slate-600">{row.opportunity_count}</td>
                       <td className="px-4 py-3 text-slate-500">{formatDate(row.last_touch_at)}</td>
                       <td className="px-4 py-3">
@@ -439,7 +445,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
                     </tr>
                     {deleteConfirmId === row.id && (
                       <tr className="bg-red-50">
-                        <td colSpan={6} className="px-4 py-3">
+                        <td colSpan={7} className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <span className="text-sm text-slate-700">
                               Delete <strong>{row.name}</strong>?
@@ -485,6 +491,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
                       {row.contact_count} contact{row.contact_count !== 1 ? "s" : ""}
+                      {` · ${row.property_count} propert${row.property_count !== 1 ? "ies" : "y"}`}
                       {row.opportunity_count > 0 && ` · ${row.opportunity_count} opp${row.opportunity_count !== 1 ? "s" : ""}`}
                       {row.last_touch_at && ` · Last touch: ${formatDate(row.last_touch_at)}`}
                     </div>

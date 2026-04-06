@@ -17,6 +17,7 @@ type Property = {
   roof_type: string | null;
   roof_age_years: number | null;
   sq_footage: number | null;
+  website: string | null;
 };
 type Account = { id: string; name: string | null; account_type: string | null } | null;
 type Opportunity = {
@@ -132,6 +133,7 @@ export default function PropertyDetailClient({
   const [editCity, setEditCity] = useState(property.city);
   const [editState, setEditState] = useState(property.state);
   const [editPostal, setEditPostal] = useState(property.postal_code);
+  const [editWebsite, setEditWebsite] = useState(property.website ?? "");
   const [editRoofType, setEditRoofType] = useState(property.roof_type ?? "");
   const [editRoofAge, setEditRoofAge] = useState(property.roof_age_years?.toString() ?? "");
   const [editSqFt, setEditSqFt] = useState(property.sq_footage?.toString() ?? "");
@@ -147,6 +149,7 @@ export default function PropertyDetailClient({
     setEditCity(localProperty.city);
     setEditState(localProperty.state);
     setEditPostal(localProperty.postal_code);
+    setEditWebsite(localProperty.website ?? "");
     setEditRoofType(localProperty.roof_type ?? "");
     setEditRoofAge(localProperty.roof_age_years?.toString() ?? "");
     setEditSqFt(localProperty.sq_footage?.toString() ?? "");
@@ -173,6 +176,7 @@ export default function PropertyDetailClient({
           city: editCity.trim(),
           state: editState.trim().toUpperCase(),
           postal_code: editPostal.trim(),
+          website: editWebsite.trim() || null,
           roof_type: editRoofType || null,
           roof_age_years: editRoofAge ? parseInt(editRoofAge, 10) : null,
           sq_footage: editSqFt ? parseInt(editSqFt, 10) : null,
@@ -189,6 +193,7 @@ export default function PropertyDetailClient({
         city: editCity.trim(),
         state: editState.trim().toUpperCase(),
         postal_code: editPostal.trim(),
+        website: editWebsite.trim() || null,
         roof_type: editRoofType || null,
         roof_age_years: editRoofAge ? parseInt(editRoofAge, 10) : null,
         sq_footage: editSqFt ? parseInt(editSqFt, 10) : null,
@@ -536,6 +541,16 @@ export default function PropertyDetailClient({
               />
             </div>
           </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Website</label>
+            <input
+              type="url"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editWebsite}
+              onChange={(e) => setEditWebsite(e.target.value)}
+              placeholder="https://example.com"
+            />
+          </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">Roof Type</label>
@@ -649,6 +664,11 @@ export default function PropertyDetailClient({
             >
               + Link Account
             </button>
+          )}
+          {localProperty.website && (
+            <p className="mt-1 truncate text-sm text-blue-600 hover:underline">
+              <a href={localProperty.website} target="_blank" rel="noopener noreferrer">{localProperty.website.replace(/^https?:\/\//, "")}</a>
+            </p>
           )}
           {/* Roof metadata badges */}
           {(localProperty.roof_type || localProperty.roof_age_years || localProperty.sq_footage) && (

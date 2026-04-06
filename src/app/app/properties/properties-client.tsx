@@ -20,6 +20,7 @@ type PropertyRow = {
   roof_type: string | null;
   roof_age_years: number | null;
   sq_footage: number | null;
+  website: string | null;
   notes: string | null;
   updated_at: string;
 };
@@ -74,6 +75,7 @@ export default function PropertiesClient({
   const [accountId, setAccountId] = useState("");
   const [contactId, setContactId] = useState("");
   const [notes, setNotes] = useState("");
+  const [website, setWebsite] = useState("");
   const [roofType, setRoofType] = useState("");
   const [roofAgeYears, setRoofAgeYears] = useState("");
   const [sqFootage, setSqFootage] = useState("");
@@ -131,6 +133,7 @@ export default function PropertiesClient({
     setAccountId("");
     setContactId("");
     setNotes("");
+    setWebsite("");
     setRoofType("");
     setRoofAgeYears("");
     setSqFootage("");
@@ -160,6 +163,7 @@ export default function PropertiesClient({
           primary_account_id: accountId || null,
           primary_contact_id: contactId || null,
           notes: notes.trim() || null,
+          website: website.trim() || null,
           roof_type: roofType || null,
           roof_age_years: roofAgeYears ? parseInt(roofAgeYears, 10) : null,
           sq_footage: sqFootage ? parseInt(sqFootage, 10) : null,
@@ -193,6 +197,7 @@ export default function PropertiesClient({
         roof_type: roofType || null,
         roof_age_years: roofAgeYears ? parseInt(roofAgeYears, 10) : null,
         sq_footage: sqFootage ? parseInt(sqFootage, 10) : null,
+        website: website.trim() || null,
         notes: notes.trim() || null,
         updated_at: new Date().toISOString(),
       };
@@ -336,6 +341,16 @@ export default function PropertiesClient({
                   ))}
                 </select>
               </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Website</label>
+              <input
+                type="url"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://example.com"
+              />
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
@@ -514,6 +529,11 @@ export default function PropertiesClient({
                       <p className="text-xs text-slate-500">
                         {p.city}, {p.state} {p.postal_code}
                       </p>
+                      {p.website && (
+                        <p className="mt-0.5 truncate text-xs text-blue-600 hover:underline" onClick={(e) => e.stopPropagation()}>
+                          <a href={p.website} target="_blank" rel="noopener noreferrer">{p.website.replace(/^https?:\/\//, "")}</a>
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{p.primary_account_name ?? "—"}</td>
                     <td className="px-4 py-3">
@@ -585,6 +605,11 @@ export default function PropertiesClient({
                 </div>
                 {p.primary_account_name && (
                   <p className="mt-1 text-xs text-slate-500">{p.primary_account_name}</p>
+                )}
+                {p.website && (
+                  <p className="mt-1 truncate text-xs text-blue-600 hover:underline" onClick={(e) => e.stopPropagation()}>
+                    <a href={p.website} target="_blank" rel="noopener noreferrer">{p.website.replace(/^https?:\/\//, "")}</a>
+                  </p>
                 )}
                 {(p.roof_type || p.roof_age_years != null || p.sq_footage != null) && (
                   <div className="mt-1 flex flex-wrap gap-1">

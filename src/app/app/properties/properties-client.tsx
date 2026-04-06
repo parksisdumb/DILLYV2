@@ -62,7 +62,7 @@ export default function PropertiesClient({
   const [filterAccountId, setFilterAccountId] = useState("");
   const [filterCity, setFilterCity] = useState("");
   const [filterState, setFilterState] = useState("");
-  const [sort, setSort] = useState<"updated" | "address" | "opportunities">("updated");
+  const [sort, setSort] = useState<"updated" | "name" | "address" | "opportunities">("updated");
   const [showCreate, setShowCreate] = useState(false);
 
   // Create form state
@@ -115,6 +115,7 @@ export default function PropertiesClient({
     });
 
     list = [...list].sort((a, b) => {
+      if (sort === "name") return (a.name ?? a.address_line1).localeCompare(b.name ?? b.address_line1);
       if (sort === "address") return a.address_line1.localeCompare(b.address_line1);
       if (sort === "opportunities") return b.open_opportunity_count - a.open_opportunity_count;
       return b.updated_at.localeCompare(a.updated_at);
@@ -245,13 +246,13 @@ export default function PropertiesClient({
           <form onSubmit={handleCreate} className="space-y-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
-                Property Name
+                Property Name <span className="font-normal text-slate-400">(recommended)</span>
               </label>
               <input
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
                 value={propName}
                 onChange={(e) => setPropName(e.target.value)}
-                placeholder="e.g. Lakewood Office Park"
+                placeholder="e.g. Lakewood Office Park, Riverstone Plaza"
               />
             </div>
             <div>
@@ -480,6 +481,7 @@ export default function PropertiesClient({
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
         >
           <option value="updated">Sort: Recently Updated</option>
+          <option value="name">Sort: Name</option>
           <option value="address">Sort: Address</option>
           <option value="opportunities">Sort: Most Opportunities</option>
         </select>

@@ -30,6 +30,8 @@ const ROOF_TYPE_OPTIONS = [
   { value: "epdm", label: "EPDM" },
   { value: "metal", label: "Metal" },
   { value: "built_up", label: "Built-Up" },
+  { value: "3_tab", label: "3-Tab Shingle" },
+  { value: "architectural", label: "Architectural Shingle" },
   { value: "other", label: "Other" },
 ];
 

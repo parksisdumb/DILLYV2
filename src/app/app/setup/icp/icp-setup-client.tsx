@@ -41,6 +41,8 @@ const ROOF_TYPES = [
   { value: "bur", label: "BUR (Built-Up)" },
   { value: "mod_bit", label: "Modified Bitumen" },
   { value: "spf", label: "SPF (Spray Foam)" },
+  { value: "3_tab", label: "3-Tab Shingle" },
+  { value: "architectural", label: "Architectural Shingle" },
   { value: "all", label: "All Types" },
 ];
 

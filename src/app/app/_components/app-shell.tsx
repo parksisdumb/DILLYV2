@@ -130,6 +130,7 @@ export default function AppShell({
         { href: "/app/today", label: "Today" },
         { href: "/app/manager", label: "Team" },
         { href: "/app/accounts", label: "Accounts" },
+        { href: "/app/contacts", label: "Contacts" },
         { href: "/app/properties", label: "Properties" },
         { href: "/app/opportunities", label: "Pipeline" },
         { href: "/app/manager/prospects", label: "Prospects" },

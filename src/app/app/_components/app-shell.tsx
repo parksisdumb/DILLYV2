@@ -347,10 +347,13 @@ export default function AppShell({
       {/* ── Mobile bottom nav ── */}
       <nav className="fixed inset-x-0 bottom-0 z-20 h-16 border-t border-slate-200 bg-white md:hidden">
         <div className="flex h-full">
-          {[...BASE_BOTTOM_NAV, ...(canSeeAdmin ? [
+          {(canSeeAdmin ? [
+            { href: "/app/today", label: "Today", icon: <IconToday /> },
+            { href: "/app/accounts", label: "Accounts", icon: <IconAccounts /> },
+            { href: "/app/properties", label: "Properties", icon: <IconProperties /> },
+            { href: "/app/opportunities", label: "Pipeline", icon: <IconOpportunities /> },
             { href: "/app/manager", label: "Team", icon: <IconManager /> },
-            { href: "/app/manager/prospects", label: "Prospects", icon: <IconProspects /> },
-          ] : [])].map((item) => {
+          ] : BASE_BOTTOM_NAV).map((item) => {
             const active = isActive(pathname, item.href);
             return (
               <Link

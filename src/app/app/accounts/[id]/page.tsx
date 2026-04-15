@@ -31,7 +31,7 @@ export default async function AccountDetailPage({
       .order("full_name"),
     supabase
       .from("properties")
-      .select("id,address_line1,city,state,postal_code")
+      .select("id,name,address_line1,city,state,postal_code")
       .eq("primary_account_id", id)
       .is("deleted_at", null)
       .order("address_line1"),
@@ -47,7 +47,7 @@ export default async function AccountDetailPage({
     // All properties not linked to this account (for linking)
     supabase
       .from("properties")
-      .select("id,address_line1,city,state,postal_code")
+      .select("id,name,address_line1,city,state,postal_code")
       .or(`primary_account_id.is.null,primary_account_id.neq.${id}`)
       .is("deleted_at", null)
       .order("address_line1"),
@@ -119,6 +119,7 @@ export default async function AccountDetailPage({
 
   const availableProperties = (allPropsRes.data ?? []).map((p) => ({
     id: p.id as string,
+    name: (p as Record<string, unknown>).name as string | null ?? null,
     address_line1: p.address_line1 as string,
     city: p.city as string | null,
     state: p.state as string | null,

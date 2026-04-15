@@ -31,6 +31,7 @@ type Contact = {
 
 type Property = {
   id: string;
+  name: string | null;
   address_line1: string;
   city: string | null;
   state: string | null;
@@ -72,6 +73,7 @@ type Outcome = {
 
 type AvailableProperty = {
   id: string;
+  name: string | null;
   address_line1: string;
   city: string | null;
   state: string | null;
@@ -181,7 +183,8 @@ function formatCurrency(value: number | null): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
 }
 
-function propertyLabel(p: { address_line1: string; city: string | null; state: string | null }): string {
+function propertyLabel(p: { name?: string | null; address_line1: string; city: string | null; state: string | null }): string {
+  if (p.name) return p.name;
   return [p.address_line1, p.city, p.state].filter(Boolean).join(", ");
 }
 
@@ -235,6 +238,7 @@ export default function AccountDetailClient({
 
   // ── Add Property form ──
   const [showAddProperty, setShowAddProperty] = useState(false);
+  const [pName, setPName] = useState("");
   const [pAddr, setPAddr] = useState("");
   const [pCity, setPCity] = useState("");
   const [pState, setPState] = useState("");
@@ -406,13 +410,22 @@ export default function AccountDetailClient({
       p_postal_code: pPostal.trim() || null,
     });
 
-    setPBusy(false);
-
-    if (error) { setPError(error.message); return; }
+    if (error) { setPBusy(false); setPError(error.message); return; }
 
     const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown>;
+    const propId = row?.id as string;
+    const trimmedName = pName.trim() || null;
+
+    // Set the property name if provided (RPC doesn't accept name)
+    if (trimmedName && propId) {
+      await supabase.from("properties").update({ name: trimmedName }).eq("id", propId);
+    }
+
+    setPBusy(false);
+
     const newProp: Property = {
-      id: row?.id as string,
+      id: propId,
+      name: trimmedName,
       address_line1: pAddr.trim(),
       city: pCity.trim() || null,
       state: pState.trim() || null,
@@ -421,7 +434,7 @@ export default function AccountDetailClient({
 
     setProperties((prev) => [...prev, newProp].sort((a, b) => a.address_line1.localeCompare(b.address_line1)));
     setShowAddProperty(false);
-    setPAddr(""); setPCity(""); setPState(""); setPPostal("");
+    setPName(""); setPAddr(""); setPCity(""); setPState(""); setPPostal("");
     setTab("properties");
     showToast("success", "Property added.");
   }
@@ -443,7 +456,7 @@ export default function AccountDetailClient({
 
     const linked = localAvailableProps.find((p) => p.id === linkPropId);
     if (linked) {
-      setProperties((prev) => [...prev, { id: linked.id, address_line1: linked.address_line1, city: linked.city, state: linked.state, postal_code: linked.postal_code }].sort((a, b) => a.address_line1.localeCompare(b.address_line1)));
+      setProperties((prev) => [...prev, { id: linked.id, name: linked.name ?? null, address_line1: linked.address_line1, city: linked.city, state: linked.state, postal_code: linked.postal_code }].sort((a, b) => a.address_line1.localeCompare(b.address_line1)));
       setLocalAvailableProps((prev) => prev.filter((p) => p.id !== linkPropId));
     }
     setShowLinkProperty(false);
@@ -939,6 +952,10 @@ export default function AccountDetailClient({
             <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{pError}</div>
           )}
 
+          <div>
+            <label className={sectionLabel}>Property Name</label>
+            <input className={input} placeholder="e.g. Lakewood Office Park" value={pName} onChange={(e) => setPName(e.target.value)} />
+          </div>
           <div>
             <label className={sectionLabel}>Address *</label>
             <input className={input} placeholder="123 Main St" value={pAddr} onChange={(e) => { setPAddr(e.target.value); setPError(null); }} />

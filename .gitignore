@@ -35,6 +35,9 @@ yarn-error.log*
 !.env.production
 !.env.local.example
 
+# claude code
+.claude/
+
 # vercel
 .vercel
 

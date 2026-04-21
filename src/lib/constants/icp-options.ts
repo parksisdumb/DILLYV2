@@ -35,6 +35,7 @@ export const ICP_BUILDING_TYPES = [
   { value: "modified_bitumen", label: "Modified Bitumen" },
   { value: "pvc", label: "PVC" },
   { value: "shingle", label: "Shingle" },
+  { value: "tile", label: "Tile" },
 ] as const;
 
 export const ICP_DECISION_ROLES = [

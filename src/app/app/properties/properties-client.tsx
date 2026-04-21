@@ -33,6 +33,7 @@ const ROOF_TYPE_OPTIONS = [
   { value: "built_up", label: "Built-Up" },
   { value: "3_tab", label: "3-Tab Shingle" },
   { value: "architectural", label: "Architectural Shingle" },
+  { value: "tile", label: "Tile" },
   { value: "other", label: "Other" },
 ];
 

@@ -43,6 +43,7 @@ const ROOF_TYPES = [
   { value: "spf", label: "SPF (Spray Foam)" },
   { value: "3_tab", label: "3-Tab Shingle" },
   { value: "architectural", label: "Architectural Shingle" },
+  { value: "tile", label: "Tile" },
   { value: "all", label: "All Types" },
 ];
 

@@ -51,6 +51,7 @@ const ROOF_TYPE_LABELS: Record<string, string> = {
   built_up: "Built-Up",
   "3_tab": "3-Tab Shingle",
   architectural: "Architectural Shingle",
+  tile: "Tile",
   other: "Other",
 };
 

@@ -252,7 +252,7 @@ export default function PropertiesClient({
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
                 value={propName}
                 onChange={(e) => setPropName(e.target.value)}
-                placeholder="e.g. Lakewood Office Park, Riverstone Plaza"
+                placeholder="e.g. Prologis Memphis Industrial Park"
               />
             </div>
             <div>

@@ -954,7 +954,7 @@ export default function AccountDetailClient({
 
           <div>
             <label className={sectionLabel}>Property Name</label>
-            <input className={input} placeholder="e.g. Lakewood Office Park" value={pName} onChange={(e) => setPName(e.target.value)} />
+            <input className={input} placeholder="e.g. Prologis Memphis Industrial Park" value={pName} onChange={(e) => setPName(e.target.value)} />
           </div>
           <div>
             <label className={sectionLabel}>Address *</label>

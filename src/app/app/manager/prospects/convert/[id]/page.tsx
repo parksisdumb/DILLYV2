@@ -93,6 +93,8 @@ export default async function ConvertProspectPage({
     const createProperty = formData.get("create_property") === "on";
     const logTouchpoint = formData.get("log_touchpoint") === "on";
 
+    const propertyName = String(formData.get("property_name") ?? "").trim();
+
     const { data, error } = await sb.rpc("rpc_convert_prospect", {
       p_prospect_id: prospectId,
       p_account_name: accountName,
@@ -122,7 +124,12 @@ export default async function ConvertProspectPage({
       redirect(`/app/manager/prospects/convert/${prospectId}?error=${encodeURIComponent(error.message)}`);
     }
 
-    const result = data as { account_id: string } | null;
+    const result = data as { account_id: string; property_id: string | null } | null;
+
+    if (result?.property_id && propertyName) {
+      await sb.from("properties").update({ name: propertyName }).eq("id", result.property_id);
+    }
+
     if (result?.account_id) {
       redirect(`/app/accounts/${result.account_id}`);
     }

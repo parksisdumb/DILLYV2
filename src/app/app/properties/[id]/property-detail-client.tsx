@@ -207,6 +207,7 @@ export default function PropertyDetailClient({
   }
 
   // Link contact state (declared early — other state depends on localPropContacts)
+  const [showLinkContact, setShowLinkContact] = useState(false);
   const [linkContactId, setLinkContactId] = useState("");
   const [linkRoleLabel, setLinkRoleLabel] = useState("");
   const [linkPrimary, setLinkPrimary] = useState(false);
@@ -214,6 +215,16 @@ export default function PropertyDetailClient({
   const [linkError, setLinkError] = useState<string | null>(null);
   const [localPropContacts, setLocalPropContacts] = useState(propContacts);
   const [localAvailable, setLocalAvailable] = useState(availableContacts);
+
+  // Add contact state
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [addContactFirst, setAddContactFirst] = useState("");
+  const [addContactLast, setAddContactLast] = useState("");
+  const [addContactTitle, setAddContactTitle] = useState("");
+  const [addContactPhone, setAddContactPhone] = useState("");
+  const [addContactEmail, setAddContactEmail] = useState("");
+  const [addContactBusy, setAddContactBusy] = useState(false);
+  const [addContactError, setAddContactError] = useState<string | null>(null);
 
   // Link account state
   const [localAccount, setLocalAccount] = useState(account);
@@ -321,9 +332,74 @@ export default function PropertyDetailClient({
       setLinkContactId("");
       setLinkRoleLabel("");
       setLinkPrimary(false);
+      setShowLinkContact(false);
       showToast("success", "Contact linked.");
     } finally {
       setLinkBusy(false);
+    }
+  }
+
+  async function handleAddContact(e: React.FormEvent) {
+    e.preventDefault();
+    const accountId = localAccount?.id;
+    if (!accountId) {
+      setAddContactError("Link this property to an account first before adding contacts.");
+      return;
+    }
+    if (!addContactFirst.trim() || !addContactLast.trim()) {
+      setAddContactError("First and last name are required.");
+      return;
+    }
+    setAddContactBusy(true);
+    setAddContactError(null);
+    try {
+      const { data: contactData, error: cErr } = await supabase.rpc("rpc_create_contact", {
+        p_account_id: accountId,
+        p_first_name: addContactFirst.trim(),
+        p_last_name: addContactLast.trim(),
+        p_title: addContactTitle.trim() || null,
+        p_email: addContactEmail.trim() || null,
+        p_phone: addContactPhone.trim() || null,
+        p_decision_role: null,
+        p_priority_score: 0,
+      });
+      if (cErr) { setAddContactError(cErr.message); return; }
+
+      const row = (Array.isArray(contactData) ? contactData[0] : contactData) as Record<string, unknown> | null;
+      const newContactId = row?.id as string | undefined;
+      if (!newContactId) { setAddContactError("Contact creation returned no id."); return; }
+
+      const fullName = `${addContactFirst.trim()} ${addContactLast.trim()}`.trim();
+      const titleLabel = addContactTitle.trim() || null;
+
+      const { error: linkErr } = await supabase.rpc("rpc_upsert_property_contact", {
+        p_property_id: property.id,
+        p_contact_id: newContactId,
+        p_role_category: "decision_maker",
+        p_role_label: titleLabel,
+        p_is_primary: false,
+      });
+      if (linkErr) { setAddContactError(linkErr.message); return; }
+
+      setLocalPropContacts((prev) => [
+        ...prev,
+        {
+          contact_id: newContactId,
+          role_label: titleLabel,
+          is_primary: false,
+          contact: { id: newContactId, full_name: fullName, account_id: accountId },
+        },
+      ]);
+
+      setAddContactFirst("");
+      setAddContactLast("");
+      setAddContactTitle("");
+      setAddContactPhone("");
+      setAddContactEmail("");
+      setShowAddContact(false);
+      showToast("success", "Contact added");
+    } finally {
+      setAddContactBusy(false);
     }
   }
 
@@ -1118,10 +1194,120 @@ export default function PropertyDetailClient({
       {/* Tab: Contacts */}
       {tab === "contacts" && (
         <div className="space-y-3">
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowAddContact((v) => !v);
+                setShowLinkContact(false);
+                setAddContactError(null);
+              }}
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              {showAddContact ? "Cancel" : "+ Add Contact"}
+            </button>
+            {localAvailable.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLinkContact((v) => !v);
+                  setShowAddContact(false);
+                  setLinkError(null);
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                {showLinkContact ? "Cancel" : "+ Link Contact"}
+              </button>
+            )}
+          </div>
+
+          {/* Add contact form */}
+          {showAddContact && (
+            !localAccount ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                Link this property to an account first before adding contacts.
+              </div>
+            ) : (
+              <form onSubmit={handleAddContact} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                <p className="text-xs font-medium text-slate-600">Add a new contact to {localAccount.name ?? "this account"}</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">First name *</label>
+                    <input
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                      value={addContactFirst}
+                      onChange={(e) => setAddContactFirst(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Last name *</label>
+                    <input
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                      value={addContactLast}
+                      onChange={(e) => setAddContactLast(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">Title</label>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                    value={addContactTitle}
+                    onChange={(e) => setAddContactTitle(e.target.value)}
+                    placeholder="e.g. Property Manager, Facilities Director, Asset Manager, Building Engineer"
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Phone</label>
+                    <input
+                      type="tel"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                      value={addContactPhone}
+                      onChange={(e) => setAddContactPhone(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Email</label>
+                    <input
+                      type="email"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                      value={addContactEmail}
+                      onChange={(e) => setAddContactEmail(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {addContactError && <p className="text-xs text-red-600">{addContactError}</p>}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={addContactBusy}
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {addContactBusy ? "Saving…" : "Save Contact"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddContact(false);
+                      setAddContactError(null);
+                    }}
+                    className="text-sm text-slate-500 hover:text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )
+          )}
+
           {/* Link contact form */}
-          {localAvailable.length > 0 && (
+          {showLinkContact && localAvailable.length > 0 && (
             <form onSubmit={handleLinkContact} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-              <p className="text-xs font-medium text-slate-600">Link a contact to this property</p>
+              <p className="text-xs font-medium text-slate-600">Link an existing contact to this property</p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <select
                   className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"

@@ -13,7 +13,7 @@ type Tab = "grow" | "advance";
 
 type Account = { id: string; name: string | null };
 type Contact = { id: string; full_name: string | null; account_id: string };
-type Property = { id: string; address_line1: string; city: string | null; state: string | null };
+type Property = { id: string; name: string | null; address_line1: string; city: string | null; state: string | null };
 type TouchpointType = {
   id: string;
   name: string;
@@ -159,7 +159,7 @@ export default function TodayClient({ userId }: { userId: string }) {
           .is("deleted_at", null),
         supabase
           .from("properties")
-          .select("id,address_line1,city,state")
+          .select("id,name,address_line1,city,state")
           .is("deleted_at", null),
         supabase
           .from("touchpoint_outcomes")

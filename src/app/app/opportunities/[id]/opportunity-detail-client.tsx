@@ -25,6 +25,7 @@ type Opportunity = {
 
 type Property = {
   id: string;
+  name: string | null;
   address_line1: string;
   address_line2: string | null;
   city: string;
@@ -229,7 +230,11 @@ export default function OpportunityDetailClient({
   }
 
   const propertyAddress = property
-    ? [property.address_line1, property.city, property.state].filter(Boolean).join(", ")
+    ? (() => {
+        const addr = [property.address_line1, property.city, property.state].filter(Boolean).join(", ");
+        if (property.name && property.name !== property.address_line1) return `${property.name} — ${addr}`;
+        return addr;
+      })()
     : null;
 
   return (

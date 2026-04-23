@@ -52,7 +52,7 @@ export default async function OpportunityDetailPage({
     opp.property_id
       ? supabase
           .from("properties")
-          .select("id,address_line1,address_line2,city,state,postal_code")
+          .select("id,name,address_line1,address_line2,city,state,postal_code")
           .eq("id", opp.property_id as string)
           .maybeSingle()
       : Promise.resolve({ data: null }),

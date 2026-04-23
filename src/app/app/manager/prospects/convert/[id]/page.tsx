@@ -94,6 +94,9 @@ export default async function ConvertProspectPage({
     const logTouchpoint = formData.get("log_touchpoint") === "on";
 
     const propertyName = String(formData.get("property_name") ?? "").trim();
+    if (createProperty && !propertyName) {
+      redirect(`/app/manager/prospects/convert/${prospectId}?error=Property+name+is+required`);
+    }
 
     const { data, error } = await sb.rpc("rpc_convert_prospect", {
       p_prospect_id: prospectId,

@@ -226,10 +226,11 @@ export default function ConvertFormClient({
             {createProperty && (
               <div className="space-y-3">
                 <div>
-                  <label className={labelCls}>Property Name</label>
+                  <label className={labelCls}>Property Name *</label>
                   <input
                     type="text"
                     name="property_name"
+                    required={createProperty}
                     className={inputCls}
                     placeholder="e.g. Prologis Memphis Industrial Park"
                   />

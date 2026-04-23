@@ -398,6 +398,7 @@ export default function AccountDetailClient({
 
   // ── Add Property submit ──
   async function onAddProperty() {
+    if (!pName.trim()) { setPError("Property name is required."); return; }
     if (!pAddr.trim()) { setPError("Address is required."); return; }
     setPError(null);
     setPBusy(true);
@@ -953,8 +954,8 @@ export default function AccountDetailClient({
           )}
 
           <div>
-            <label className={sectionLabel}>Property Name</label>
-            <input className={input} placeholder="e.g. Prologis Memphis Industrial Park" value={pName} onChange={(e) => setPName(e.target.value)} />
+            <label className={sectionLabel}>Property Name *</label>
+            <input className={input} placeholder="e.g. Prologis Memphis Industrial Park" value={pName} onChange={(e) => { setPName(e.target.value); setPError(null); }} />
           </div>
           <div>
             <label className={sectionLabel}>Address *</label>
@@ -981,7 +982,7 @@ export default function AccountDetailClient({
             onClick={() => void onAddProperty()}
             className={[
               "rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
-              pAddr.trim()
+              pName.trim() && pAddr.trim()
                 ? "bg-blue-600 text-white hover:bg-blue-700"
                 : "bg-slate-100 text-slate-400",
             ].join(" ")}

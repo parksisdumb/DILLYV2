@@ -30,7 +30,7 @@ export type Stage = {
 };
 
 export type ScopeType = { id: string; name: string; key: string };
-export type PropertyOption = { id: string; address_line1: string; city: string | null; state: string | null };
+export type PropertyOption = { id: string; name: string | null; address_line1: string; city: string | null; state: string | null };
 export type OrgUser = { user_id: string; role: string };
 
 export default async function OpportunitiesPage() {
@@ -48,7 +48,7 @@ export default async function OpportunitiesPage() {
         .limit(500),
       supabase
         .from("properties")
-        .select("id,address_line1,city,state")
+        .select("id,name,address_line1,city,state")
         .is("deleted_at", null)
         .limit(500),
       supabase.from("accounts").select("id,name").is("deleted_at", null).limit(500),
@@ -66,6 +66,7 @@ export default async function OpportunitiesPage() {
   for (const p of propsRes.data ?? []) {
     propertiesById.set(p.id as string, {
       id: p.id as string,
+      name: p.name as string | null,
       address_line1: p.address_line1 as string,
       city: p.city as string | null,
       state: p.state as string | null,
@@ -96,7 +97,9 @@ export default async function OpportunitiesPage() {
 
   function propertyLabel(prop: PropertyOption | undefined): string | null {
     if (!prop) return null;
-    return [prop.address_line1, prop.city, prop.state].filter(Boolean).join(", ");
+    const addr = [prop.address_line1, prop.city, prop.state].filter(Boolean).join(", ");
+    if (prop.name && prop.name !== prop.address_line1) return `${prop.name} — ${addr}`;
+    return addr;
   }
 
   const rows: OppRow[] = (oppsRes.data ?? []).map((o) => {

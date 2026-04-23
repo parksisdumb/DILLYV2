@@ -144,8 +144,8 @@ export default function PropertiesClient({
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!addr1.trim() || !city.trim() || !state.trim() || !postal.trim() || !accountId) {
-      setError("Address, city, state, postal code, and account are required.");
+    if (!propName.trim() || !addr1.trim() || !city.trim() || !state.trim() || !postal.trim() || !accountId) {
+      setError("Property name, address, city, state, postal code, and account are required.");
       return;
     }
     setBusy(true);
@@ -247,7 +247,7 @@ export default function PropertiesClient({
           <form onSubmit={handleCreate} className="space-y-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
-                Property Name <span className="font-normal text-slate-400">(recommended)</span>
+                Property Name *
               </label>
               <input
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"

@@ -20,7 +20,9 @@ function daysOpen(openedAt: string) {
 }
 
 function propertyLabel(p: PropertyOption) {
-  return [p.address_line1, p.city, p.state].filter(Boolean).join(", ");
+  const addr = [p.address_line1, p.city, p.state].filter(Boolean).join(", ");
+  if (p.name && p.name !== p.address_line1) return `${p.name} — ${addr}`;
+  return addr;
 }
 
 const STATUS_COLORS: Record<string, string> = {

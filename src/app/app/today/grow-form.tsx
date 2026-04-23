@@ -8,7 +8,7 @@ import { getOutcomesForType, getNextActionLabel } from "@/lib/constants/outcome-
 
 type Account = { id: string; name: string | null };
 type Contact = { id: string; full_name: string | null; account_id: string };
-type Property = { id: string; address_line1: string; city: string | null; state: string | null };
+type Property = { id: string; name: string | null; address_line1: string; city: string | null; state: string | null };
 type TouchpointType = { id: string; name: string; key?: string | null; is_outreach: boolean };
 type Outcome = { id: string; name: string; touchpoint_type_id?: string | null };
 
@@ -47,7 +47,9 @@ const chipBtn = (active: boolean) =>
 const sectionLabel = "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500";
 
 function propertyLabel(p: Property) {
-  return [p.address_line1, p.city, p.state].filter(Boolean).join(", ");
+  const addr = [p.address_line1, p.city, p.state].filter(Boolean).join(", ");
+  if (p.name && p.name !== p.address_line1) return `${p.name} — ${addr}`;
+  return addr;
 }
 
 function localDateValue(offsetDays = 1) {
@@ -176,7 +178,7 @@ export default function GrowForm({
     if (!q) return properties.slice(0, 6);
     return properties
       .filter((p) =>
-        [p.address_line1, p.city, p.state]
+        [p.name, p.address_line1, p.city, p.state]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()

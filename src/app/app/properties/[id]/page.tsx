@@ -21,7 +21,7 @@ export default async function PropertyDetailPage({
   const propRes = await supabase
     .from("properties")
     .select(
-      "id,name,address_line1,address_line2,city,state,postal_code,primary_account_id,primary_contact_id,notes,roof_type,roof_age_years,sq_footage,updated_at",
+      "id,name,address_line1,address_line2,city,state,postal_code,primary_account_id,primary_contact_id,notes,roof_type,roof_age_years,sq_footage,building_type,website,updated_at",
     )
     .eq("id", id)
     .is("deleted_at", null)

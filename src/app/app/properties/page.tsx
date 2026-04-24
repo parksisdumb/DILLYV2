@@ -17,6 +17,7 @@ type PropertyRow = {
   roof_type: string | null;
   roof_age_years: number | null;
   sq_footage: number | null;
+  building_type: string | null;
   website: string | null;
   notes: string | null;
   updated_at: string;
@@ -32,7 +33,7 @@ export default async function PropertiesPage() {
     supabase
       .from("properties")
       .select(
-        "id,name,address_line1,address_line2,city,state,postal_code,primary_account_id,primary_contact_id,roof_type,roof_age_years,sq_footage,website,notes,updated_at",
+        "id,name,address_line1,address_line2,city,state,postal_code,primary_account_id,primary_contact_id,roof_type,roof_age_years,sq_footage,building_type,website,notes,updated_at",
       )
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
@@ -82,6 +83,7 @@ export default async function PropertiesPage() {
     roof_type: p.roof_type as string | null,
     roof_age_years: p.roof_age_years as number | null,
     sq_footage: p.sq_footage as number | null,
+    building_type: p.building_type as string | null,
     website: p.website as string | null,
     notes: p.notes as string | null,
     updated_at: p.updated_at as string,

@@ -17,6 +17,7 @@ type Property = {
   roof_type: string | null;
   roof_age_years: number | null;
   sq_footage: number | null;
+  building_type: string | null;
   website: string | null;
 };
 type Account = { id: string; name: string | null; account_type: string | null } | null;
@@ -42,6 +43,8 @@ type TouchpointType = { id: string; name: string; key?: string | null; is_outrea
 type Outcome = { id: string; name: string; touchpoint_type_id?: string | null };
 type ScopeType = { id: string; name: string; key: string };
 type Stage = { id: string; name: string; key: string; is_closed_stage: boolean };
+
+import { BUILDING_TYPE_OPTIONS, BUILDING_TYPE_LABELS } from "@/app/app/properties/properties-client";
 
 const ROOF_TYPE_LABELS: Record<string, string> = {
   flat: "Flat",
@@ -136,6 +139,7 @@ export default function PropertyDetailClient({
   const [editPostal, setEditPostal] = useState(property.postal_code);
   const [editWebsite, setEditWebsite] = useState(property.website ?? "");
   const [editRoofType, setEditRoofType] = useState(property.roof_type ?? "");
+  const [editBuildingType, setEditBuildingType] = useState(property.building_type ?? "");
   const [editRoofAge, setEditRoofAge] = useState(property.roof_age_years?.toString() ?? "");
   const [editSqFt, setEditSqFt] = useState(property.sq_footage?.toString() ?? "");
   const [editNotes, setEditNotes] = useState(property.notes ?? "");
@@ -152,6 +156,7 @@ export default function PropertyDetailClient({
     setEditPostal(localProperty.postal_code);
     setEditWebsite(localProperty.website ?? "");
     setEditRoofType(localProperty.roof_type ?? "");
+    setEditBuildingType(localProperty.building_type ?? "");
     setEditRoofAge(localProperty.roof_age_years?.toString() ?? "");
     setEditSqFt(localProperty.sq_footage?.toString() ?? "");
     setEditNotes(localProperty.notes ?? "");
@@ -179,6 +184,7 @@ export default function PropertyDetailClient({
           postal_code: editPostal.trim(),
           website: editWebsite.trim() || null,
           roof_type: editRoofType || null,
+          building_type: editBuildingType || null,
           roof_age_years: editRoofAge ? parseInt(editRoofAge, 10) : null,
           sq_footage: editSqFt ? parseInt(editSqFt, 10) : null,
           notes: editNotes.trim() || null,
@@ -196,6 +202,7 @@ export default function PropertyDetailClient({
         postal_code: editPostal.trim(),
         website: editWebsite.trim() || null,
         roof_type: editRoofType || null,
+        building_type: editBuildingType || null,
         roof_age_years: editRoofAge ? parseInt(editRoofAge, 10) : null,
         sq_footage: editSqFt ? parseInt(editSqFt, 10) : null,
         notes: editNotes.trim() || null,
@@ -416,13 +423,14 @@ export default function PropertyDetailClient({
         .eq("id", property.id);
       if (error) { setLinkAccountError(error.message); return; }
 
+      const wasLinked = Boolean(localAccount);
       const linked = allAccounts.find((a) => a.id === linkAccountId);
       if (linked) {
         setLocalAccount({ id: linked.id, name: linked.name, account_type: linked.account_type });
       }
       setLinkAccountId("");
       setShowLinkAccount(false);
-      showToast("success", "Account linked.");
+      showToast("success", wasLinked ? "Account changed." : "Account linked.");
     } finally {
       setLinkAccountBusy(false);
     }
@@ -628,6 +636,19 @@ export default function PropertyDetailClient({
               placeholder="https://example.com"
             />
           </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Building Type</label>
+            <select
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editBuildingType}
+              onChange={(e) => setEditBuildingType(e.target.value)}
+            >
+              <option value="">Unknown</option>
+              {BUILDING_TYPE_OPTIONS.map((b) => (
+                <option key={b.value} value={b.value}>{b.label}</option>
+              ))}
+            </select>
+          </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">Roof Type</label>
@@ -718,7 +739,7 @@ export default function PropertyDetailClient({
             </button>
           </div>
           {localAccount ? (
-            <div className="mt-1 flex items-center gap-2">
+            <div className="mt-1 flex flex-wrap items-center gap-2">
               <a
                 href={`/app/accounts/${localAccount.id}`}
                 className="text-sm text-blue-600 hover:underline"
@@ -728,9 +749,9 @@ export default function PropertyDetailClient({
               <button
                 type="button"
                 onClick={() => setShowLinkAccount(!showLinkAccount)}
-                className="text-xs text-slate-400 hover:text-slate-600"
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
               >
-                (change)
+                {showLinkAccount ? "Cancel" : "Change account"}
               </button>
             </div>
           ) : (
@@ -747,9 +768,14 @@ export default function PropertyDetailClient({
               <a href={localProperty.website} target="_blank" rel="noopener noreferrer">{localProperty.website.replace(/^https?:\/\//, "")}</a>
             </p>
           )}
-          {/* Roof metadata badges */}
-          {(localProperty.roof_type || localProperty.roof_age_years || localProperty.sq_footage) && (
+          {/* Property metadata badges */}
+          {(localProperty.building_type || localProperty.roof_type || localProperty.roof_age_years || localProperty.sq_footage) && (
             <div className="mt-2 flex flex-wrap gap-1.5">
+              {localProperty.building_type && (
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                  {BUILDING_TYPE_LABELS[localProperty.building_type] ?? localProperty.building_type}
+                </span>
+              )}
               {localProperty.roof_type && (
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                   {ROOF_TYPE_LABELS[localProperty.roof_type] ?? localProperty.roof_type}
@@ -776,7 +802,9 @@ export default function PropertyDetailClient({
       {/* Link Account form */}
       {showLinkAccount && (
         <form onSubmit={handleLinkAccount} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-          <p className="text-xs font-medium text-slate-600">Link an account to this property</p>
+          <p className="text-xs font-medium text-slate-600">
+            {localAccount ? `Change the account for this property (currently ${localAccount.name ?? "linked"})` : "Link an account to this property"}
+          </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <select
               className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
@@ -796,7 +824,7 @@ export default function PropertyDetailClient({
                 disabled={linkAccountBusy}
                 className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {linkAccountBusy ? "Linking..." : "Link"}
+                {linkAccountBusy ? "Saving..." : (localAccount ? "Change Account" : "Link")}
               </button>
               <button
                 type="button"

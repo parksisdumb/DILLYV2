@@ -20,6 +20,7 @@ type PropertyRow = {
   roof_type: string | null;
   roof_age_years: number | null;
   sq_footage: number | null;
+  building_type: string | null;
   website: string | null;
   notes: string | null;
   updated_at: string;
@@ -36,6 +37,27 @@ const ROOF_TYPE_OPTIONS = [
   { value: "tile", label: "Tile" },
   { value: "other", label: "Other" },
 ];
+
+export const BUILDING_TYPE_OPTIONS = [
+  { value: "office", label: "Office" },
+  { value: "retail", label: "Retail" },
+  { value: "industrial", label: "Industrial" },
+  { value: "warehouse", label: "Warehouse" },
+  { value: "multifamily", label: "Multifamily" },
+  { value: "healthcare", label: "Healthcare" },
+  { value: "school", label: "School / Education" },
+  { value: "hospitality", label: "Hospitality / Hotel" },
+  { value: "restaurant", label: "Restaurant" },
+  { value: "religious", label: "Religious" },
+  { value: "government", label: "Government" },
+  { value: "self_storage", label: "Self Storage" },
+  { value: "mixed_use", label: "Mixed Use" },
+  { value: "other", label: "Other" },
+];
+
+export const BUILDING_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  BUILDING_TYPE_OPTIONS.map((o) => [o.value, o.label]),
+);
 
 function formatAddress(p: PropertyRow) {
   return `${p.address_line1}, ${p.city} ${p.state}`;
@@ -77,6 +99,7 @@ export default function PropertiesClient({
   const [contactId, setContactId] = useState("");
   const [notes, setNotes] = useState("");
   const [website, setWebsite] = useState("");
+  const [buildingType, setBuildingType] = useState("");
   const [roofType, setRoofType] = useState("");
   const [roofAgeYears, setRoofAgeYears] = useState("");
   const [sqFootage, setSqFootage] = useState("");
@@ -136,6 +159,7 @@ export default function PropertiesClient({
     setContactId("");
     setNotes("");
     setWebsite("");
+    setBuildingType("");
     setRoofType("");
     setRoofAgeYears("");
     setSqFootage("");
@@ -166,6 +190,7 @@ export default function PropertiesClient({
           primary_contact_id: contactId || null,
           notes: notes.trim() || null,
           website: website.trim() || null,
+          building_type: buildingType || null,
           roof_type: roofType || null,
           roof_age_years: roofAgeYears ? parseInt(roofAgeYears, 10) : null,
           sq_footage: sqFootage ? parseInt(sqFootage, 10) : null,
@@ -199,6 +224,7 @@ export default function PropertiesClient({
         roof_type: roofType || null,
         roof_age_years: roofAgeYears ? parseInt(roofAgeYears, 10) : null,
         sq_footage: sqFootage ? parseInt(sqFootage, 10) : null,
+        building_type: buildingType || null,
         website: website.trim() || null,
         notes: notes.trim() || null,
         updated_at: new Date().toISOString(),
@@ -353,6 +379,21 @@ export default function PropertiesClient({
                 onChange={(e) => setWebsite(e.target.value)}
                 placeholder="https://example.com"
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Building Type</label>
+              <select
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={buildingType}
+                onChange={(e) => setBuildingType(e.target.value)}
+              >
+                <option value="">Unknown</option>
+                {BUILDING_TYPE_OPTIONS.map((b) => (
+                  <option key={b.value} value={b.value}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
@@ -541,6 +582,11 @@ export default function PropertiesClient({
                     <td className="px-4 py-3 text-slate-600">{p.primary_account_name ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
+                        {p.building_type && (
+                          <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">
+                            {BUILDING_TYPE_LABELS[p.building_type] ?? p.building_type}
+                          </span>
+                        )}
                         {p.roof_type && (
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
                             {p.roof_type.toUpperCase()}
@@ -556,7 +602,7 @@ export default function PropertiesClient({
                             {p.sq_footage >= 1000 ? `${Math.round(p.sq_footage / 1000)}K` : p.sq_footage} sqft
                           </span>
                         )}
-                        {!p.roof_type && p.roof_age_years == null && p.sq_footage == null && (
+                        {!p.building_type && !p.roof_type && p.roof_age_years == null && p.sq_footage == null && (
                           <span className="text-xs text-slate-400">—</span>
                         )}
                       </div>
@@ -614,8 +660,13 @@ export default function PropertiesClient({
                     <a href={p.website} target="_blank" rel="noopener noreferrer">{p.website.replace(/^https?:\/\//, "")}</a>
                   </p>
                 )}
-                {(p.roof_type || p.roof_age_years != null || p.sq_footage != null) && (
+                {(p.building_type || p.roof_type || p.roof_age_years != null || p.sq_footage != null) && (
                   <div className="mt-1 flex flex-wrap gap-1">
+                    {p.building_type && (
+                      <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">
+                        {BUILDING_TYPE_LABELS[p.building_type] ?? p.building_type}
+                      </span>
+                    )}
                     {p.roof_type && (
                       <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
                         {p.roof_type.toUpperCase()}

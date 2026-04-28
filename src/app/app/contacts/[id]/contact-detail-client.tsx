@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
+import { BUILDING_TYPE_LABELS } from "@/app/app/properties/properties-client";
 
 type Contact = {
   id: string;
@@ -17,10 +18,20 @@ type Contact = {
 type Account = { id: string; name: string | null; account_type: string | null };
 type Property = {
   id: string;
+  name: string | null;
   address_line1: string;
   city: string | null;
   state: string | null;
-  postal_code: string | null;
+  building_type: string | null;
+  is_primary: boolean;
+};
+type SearchProperty = {
+  id: string;
+  name: string | null;
+  address_line1: string;
+  city: string | null;
+  state: string | null;
+  building_type: string | null;
 };
 type Touchpoint = {
   id: string;
@@ -90,8 +101,21 @@ function formatDueDate(iso: string) {
   return { label: `Due ${label}`, overdue: false };
 }
 
-function propertyAddress(p: Property) {
-  return [p.address_line1, p.city, p.state, p.postal_code].filter(Boolean).join(", ");
+function propertyDisplayName(p: { name: string | null; address_line1: string }) {
+  return p.name ?? p.address_line1;
+}
+
+function propertySecondary(p: { name: string | null; address_line1: string; city: string | null; state: string | null }) {
+  // If name is the primary line, secondary shows full address line + city/state.
+  // If address is the primary line (no name), secondary shows only city/state.
+  if (p.name) {
+    return [p.address_line1, p.city, p.state].filter(Boolean).join(", ");
+  }
+  return [p.city, p.state].filter(Boolean).join(", ");
+}
+
+function sanitizeSearch(q: string) {
+  return q.replace(/[,()%]/g, "").trim();
 }
 
 export default function ContactDetailClient({
@@ -105,7 +129,6 @@ export default function ContactDetailClient({
   userId,
   orgId,
   userRole,
-  availableProperties,
 }: {
   contact: Contact;
   account: Account;
@@ -117,14 +140,13 @@ export default function ContactDetailClient({
   userId: string;
   orgId: string;
   userRole: string;
-  availableProperties: Property[];
 }) {
   const supabase = createBrowserSupabase();
 
   const [touchpoints, setTouchpoints] = useState(initialTouchpoints);
   const [nextActions, setNextActions] = useState(initialNextActions);
   const [tab, setTab] = useState<"timeline" | "next_actions" | "properties">("timeline");
-  const [activeAction, setActiveAction] = useState<"log" | "followup" | "linkprop" | null>(null);
+  const [activeAction, setActiveAction] = useState<"log" | "followup" | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   // Log touchpoint form
@@ -134,14 +156,17 @@ export default function ContactDetailClient({
   const [logBusy, setLogBusy] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
 
-  // Link property form
-  const [linkPropId, setLinkPropId] = useState("");
-  const [linkRoleLabel, setLinkRoleLabel] = useState("");
-  const [linkPrimary, setLinkPrimary] = useState(false);
-  const [linkBusy, setLinkBusy] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
+  // Linked properties state
   const [localProperties, setLocalProperties] = useState(initialProperties);
-  const [localAvailableProps, setLocalAvailableProps] = useState(availableProperties);
+
+  // Property linker (search + toggle) state
+  const [linkerOpen, setLinkerOpen] = useState(false);
+  const [propSearch, setPropSearch] = useState("");
+  const [propResults, setPropResults] = useState<SearchProperty[]>([]);
+  const [propSearching, setPropSearching] = useState(false);
+  const [linkBusyId, setLinkBusyId] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const propSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Schedule follow-up form
   const [fuPropertyId, setFuPropertyId] = useState(initialProperties[0]?.id ?? "");
@@ -156,41 +181,76 @@ export default function ContactDetailClient({
     setTimeout(() => setToast(null), 3000);
   }
 
-  function toggleAction(action: "log" | "followup" | "linkprop") {
+  function toggleAction(action: "log" | "followup") {
     setActiveAction((prev) => (prev === action ? null : action));
     setLogError(null);
     setFuError(null);
-    setLinkError(null);
   }
 
-  async function handleLinkProperty(e: React.FormEvent) {
-    e.preventDefault();
-    if (!linkPropId) { setLinkError("Select a property."); return; }
-    setLinkBusy(true);
+  // Debounced property search
+  useEffect(() => {
+    if (!linkerOpen) return;
+    if (propSearchTimer.current) clearTimeout(propSearchTimer.current);
+    propSearchTimer.current = setTimeout(async () => {
+      const q = sanitizeSearch(propSearch);
+      setPropSearching(true);
+      try {
+        let query = supabase
+          .from("properties")
+          .select("id,name,address_line1,city,state,building_type")
+          .is("deleted_at", null)
+          .order("name", { ascending: true, nullsFirst: false })
+          .order("address_line1", { ascending: true })
+          .limit(20);
+        if (q) {
+          query = query.or(`name.ilike.%${q}%,address_line1.ilike.%${q}%,city.ilike.%${q}%`);
+        }
+        const { data, error } = await query;
+        if (error) { setLinkError(error.message); return; }
+        setPropResults((data ?? []) as SearchProperty[]);
+        setLinkError(null);
+      } finally {
+        setPropSearching(false);
+      }
+    }, 300);
+    return () => {
+      if (propSearchTimer.current) clearTimeout(propSearchTimer.current);
+    };
+  }, [propSearch, linkerOpen, supabase]);
+
+  async function handleTogglePropertyLink(p: SearchProperty) {
+    const isLinked = localProperties.some((lp) => lp.id === p.id);
+    setLinkBusyId(p.id);
     setLinkError(null);
     try {
-      const { error } = await supabase.rpc("rpc_upsert_property_contact", {
-        p_property_id: linkPropId,
-        p_contact_id: contact.id,
-        p_role_category: "decision_maker",
-        p_role_label: linkRoleLabel.trim() || null,
-        p_is_primary: linkPrimary,
-      });
-      if (error) { setLinkError(error.message); return; }
-
-      const linked = localAvailableProps.find((p) => p.id === linkPropId);
-      if (linked) {
-        setLocalProperties((prev) => [...prev, linked]);
-        setLocalAvailableProps((prev) => prev.filter((p) => p.id !== linkPropId));
+      if (isLinked) {
+        const { error } = await supabase
+          .from("property_contacts")
+          .delete()
+          .eq("contact_id", contact.id)
+          .eq("property_id", p.id);
+        if (error) { setLinkError(error.message); return; }
+        setLocalProperties((prev) => prev.filter((lp) => lp.id !== p.id));
+        showToast("success", "Property unlinked.");
+      } else {
+        const isFirst = localProperties.length === 0;
+        const { error } = await supabase.rpc("rpc_upsert_property_contact", {
+          p_property_id: p.id,
+          p_contact_id: contact.id,
+          p_role_category: "other",
+          p_role_label: null,
+          p_is_primary: isFirst,
+          p_active: true,
+        });
+        if (error) { setLinkError(error.message); return; }
+        setLocalProperties((prev) => [
+          ...prev,
+          { ...p, is_primary: isFirst },
+        ]);
+        showToast("success", "Property linked.");
       }
-      setLinkPropId("");
-      setLinkRoleLabel("");
-      setLinkPrimary(false);
-      setActiveAction(null);
-      setTab("properties");
-      showToast("success", "Property linked.");
     } finally {
-      setLinkBusy(false);
+      setLinkBusyId(null);
     }
   }
 
@@ -360,18 +420,6 @@ export default function ContactDetailClient({
         >
           Schedule Follow-Up
         </button>
-        {localAvailableProps.length > 0 && (
-          <button
-            onClick={() => toggleAction("linkprop")}
-            className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
-              activeAction === "linkprop"
-                ? "bg-blue-600 text-white"
-                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            Link Property
-          </button>
-        )}
       </div>
 
       {/* Log Touchpoint form */}
@@ -544,61 +592,6 @@ export default function ContactDetailClient({
         </div>
       )}
 
-      {/* Link Property form (top-level action) */}
-      {activeAction === "linkprop" && (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-          <h2 className="mb-3 text-sm font-semibold text-slate-800">Link Property</h2>
-          <form onSubmit={handleLinkProperty} className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <select
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                value={linkPropId}
-                onChange={(e) => setLinkPropId(e.target.value)}
-              >
-                <option value="">Select property...</option>
-                {localAvailableProps.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.address_line1}{p.city ? `, ${p.city}` : ""}
-                  </option>
-                ))}
-              </select>
-              <input
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                value={linkRoleLabel}
-                onChange={(e) => setLinkRoleLabel(e.target.value)}
-                placeholder="Role (optional)"
-              />
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-xs text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={linkPrimary}
-                    onChange={(e) => setLinkPrimary(e.target.checked)}
-                    className="rounded border-slate-300"
-                  />
-                  Primary
-                </label>
-                <button
-                  type="submit"
-                  disabled={linkBusy}
-                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {linkBusy ? "Linking..." : "Link Property"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveAction(null)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-            {linkError && <p className="text-xs text-red-600">{linkError}</p>}
-          </form>
-        </div>
-      )}
-
       {/* Tabs */}
       <div className="border-b border-slate-200">
         <div className="flex gap-0">
@@ -709,69 +702,148 @@ export default function ContactDetailClient({
       {/* Tab: Properties */}
       {tab === "properties" && (
         <div className="space-y-3">
-          {/* Link property form */}
-          {localAvailableProps.length > 0 && (
-            <form onSubmit={handleLinkProperty} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-              <p className="text-xs font-medium text-slate-600">Link a property to this contact</p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <select
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                  value={linkPropId}
-                  onChange={(e) => setLinkPropId(e.target.value)}
-                >
-                  <option value="">Select property…</option>
-                  {localAvailableProps.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.address_line1}{p.city ? `, ${p.city}` : ""}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                  value={linkRoleLabel}
-                  onChange={(e) => setLinkRoleLabel(e.target.value)}
-                  placeholder="Role (optional)"
-                />
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={linkPrimary}
-                      onChange={(e) => setLinkPrimary(e.target.checked)}
-                      className="rounded border-slate-300"
-                    />
-                    Primary
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={linkBusy}
-                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {linkBusy ? "Linking…" : "Link"}
-                  </button>
-                </div>
-              </div>
-              {linkError && <p className="text-xs text-red-600">{linkError}</p>}
-            </form>
-          )}
-
+          {/* Linked property chips */}
           {localProperties.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500">
               No properties linked to this contact.
             </p>
           ) : (
-            localProperties.map((p) => (
-              <a
-                key={p.id}
-                href={`/app/properties/${p.id}`}
-                className="block rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50"
-              >
-                <p className="font-medium text-slate-900">{p.address_line1}</p>
-                <p className="text-sm text-slate-500">
-                  {[p.city, p.state, p.postal_code].filter(Boolean).join(", ") || "—"}
+            <div className="flex flex-wrap gap-2">
+              {localProperties.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2"
+                >
+                  <a
+                    href={`/app/properties/${p.id}`}
+                    className="min-w-0 flex-1"
+                  >
+                    <p className="truncate text-sm font-medium text-slate-900 hover:text-blue-600 hover:underline">
+                      {propertyDisplayName(p)}
+                      {p.is_primary && (
+                        <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 align-middle">
+                          Primary
+                        </span>
+                      )}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {propertySecondary(p)}
+                      {p.building_type && (
+                        <span className="ml-1 text-slate-400">
+                          · {BUILDING_TYPE_LABELS[p.building_type] ?? p.building_type}
+                        </span>
+                      )}
+                    </p>
+                  </a>
+                  <button
+                    type="button"
+                    aria-label={`Unlink ${propertyDisplayName(p)}`}
+                    disabled={linkBusyId === p.id}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleTogglePropertyLink({
+                        id: p.id,
+                        name: p.name,
+                        address_line1: p.address_line1,
+                        city: p.city,
+                        state: p.state,
+                        building_type: p.building_type,
+                      });
+                    }}
+                    className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.28 3.22a.75.75 0 00-1.06 1.06L8.94 10l-5.72 5.72a.75.75 0 101.06 1.06L10 11.06l5.72 5.72a.75.75 0 101.06-1.06L11.06 10l5.72-5.72a.75.75 0 00-1.06-1.06L10 8.94 4.28 3.22z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Link Property button + search panel */}
+          {!linkerOpen ? (
+            <button
+              type="button"
+              onClick={() => {
+                setLinkerOpen(true);
+                setLinkError(null);
+              }}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              + Link Property
+            </button>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-slate-600">
+                  {localProperties.length} {localProperties.length === 1 ? "property" : "properties"} linked
                 </p>
-              </a>
-            ))
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLinkerOpen(false);
+                    setPropSearch("");
+                    setPropResults([]);
+                  }}
+                  className="text-xs text-slate-500 hover:text-slate-700"
+                >
+                  Close
+                </button>
+              </div>
+              <input
+                type="text"
+                autoFocus
+                value={propSearch}
+                onChange={(e) => setPropSearch(e.target.value)}
+                placeholder="Search by name, address, or city…"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              />
+              {linkError && <p className="text-xs text-red-600">{linkError}</p>}
+              <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-200">
+                {propSearching && propResults.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-slate-500">Searching…</p>
+                ) : propResults.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-slate-500">
+                    {propSearch ? "No properties match." : "Start typing to search properties."}
+                  </p>
+                ) : (
+                  propResults.map((p) => {
+                    const isLinked = localProperties.some((lp) => lp.id === p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={linkBusyId === p.id}
+                        onClick={() => handleTogglePropertyLink(p)}
+                        className="flex w-full items-start gap-3 border-b border-slate-100 px-3 py-2.5 text-left last:border-b-0 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-slate-300">
+                          {isLinked && (
+                            <svg className="h-4 w-4 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-900">
+                            {propertyDisplayName(p)}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {propertySecondary(p)}
+                            {p.building_type && (
+                              <span className="ml-1 text-slate-400">
+                                · {BUILDING_TYPE_LABELS[p.building_type] ?? p.building_type}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}

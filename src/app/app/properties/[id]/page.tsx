@@ -5,8 +5,19 @@ import PropertyDetailClient from "@/app/app/properties/[id]/property-detail-clie
 export type PropContact = {
   contact_id: string;
   role_label: string | null;
+  role_category: string | null;
+  priority_rank: number | null;
   is_primary: boolean;
-  contact: { id: string; full_name: string | null; account_id: string };
+  contact: {
+    id: string;
+    full_name: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    title: string | null;
+    phone: string | null;
+    email: string | null;
+    account_id: string;
+  };
 };
 
 export default async function PropertyDetailPage({
@@ -54,8 +65,11 @@ export default async function PropertyDetailPage({
       : Promise.resolve({ data: null, error: null }),
     supabase
       .from("property_contacts")
-      .select("contact_id,role_label,is_primary,contacts(id,full_name,account_id)")
-      .eq("property_id", id),
+      .select("contact_id,role_label,role_category,priority_rank,is_primary,contacts(id,full_name,first_name,last_name,title,phone,email,account_id)")
+      .eq("property_id", id)
+      .eq("active", true)
+      .order("is_primary", { ascending: false })
+      .order("priority_rank", { ascending: true }),
     supabase
       .from("opportunities")
       .select("id,title,status,estimated_value,scope_type_id,stage_id,primary_contact_id")
@@ -73,7 +87,7 @@ export default async function PropertyDetailPage({
     supabase.from("scope_types").select("id,name,key").order("sort_order"),
     supabase.from("opportunity_stages").select("id,name,key,is_closed_stage").order("sort_order"),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
-    supabase.from("contacts").select("id,full_name,account_id").is("deleted_at", null).order("full_name"),
+    supabase.from("contacts").select("id,full_name,title,email,account_id").is("deleted_at", null).order("full_name"),
     supabase.from("accounts").select("id,name,account_type").is("deleted_at", null).order("name"),
   ]);
 
@@ -82,8 +96,10 @@ export default async function PropertyDetailPage({
     .map((pc) => ({
       contact_id: pc.contact_id as string,
       role_label: pc.role_label as string | null,
-      is_primary: pc.is_primary as boolean,
-      contact: pc.contacts as unknown as { id: string; full_name: string | null; account_id: string },
+      role_category: (pc.role_category as string | null) ?? null,
+      priority_rank: (pc.priority_rank as number | null) ?? null,
+      is_primary: Boolean(pc.is_primary),
+      contact: pc.contacts as unknown as PropContact["contact"],
     }))
     .filter((pc) => pc.contact != null);
 
@@ -91,7 +107,12 @@ export default async function PropertyDetailPage({
   const linkedContactIds = new Set(propContacts.map((pc) => pc.contact_id));
   const availableContacts = (allContactsRes.data ?? [])
     .filter((c) => !linkedContactIds.has(c.id as string))
-    .map((c) => ({ id: c.id as string, full_name: c.full_name as string | null }));
+    .map((c) => ({
+      id: c.id as string,
+      full_name: c.full_name as string | null,
+      title: (c.title as string | null) ?? null,
+      email: (c.email as string | null) ?? null,
+    }));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cast = <T,>(v: unknown) => (v ?? []) as T[];

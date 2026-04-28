@@ -118,7 +118,7 @@ export default function PropertyDetailClient({
   orgId: string;
   userId: string;
   userRole: string;
-  availableContacts: { id: string; full_name: string | null }[];
+  availableContacts: { id: string; full_name: string | null; title: string | null; email: string | null }[];
   allAccounts: { id: string; name: string | null; account_type: string | null }[];
 }) {
   const supabase = createBrowserSupabase();
@@ -223,6 +223,9 @@ export default function PropertyDetailClient({
   const [linkError, setLinkError] = useState<string | null>(null);
   const [localPropContacts, setLocalPropContacts] = useState(propContacts);
   const [localAvailable, setLocalAvailable] = useState(availableContacts);
+
+  // Link contact search filter (filters localAvailable by name/title/email)
+  const [linkContactSearch, setLinkContactSearch] = useState("");
 
   // Add contact state
   const [showAddContact, setShowAddContact] = useState(false);
@@ -331,8 +334,19 @@ export default function PropertyDetailClient({
           {
             contact_id: linked.id,
             role_label: linkRoleLabel.trim() || null,
+            role_category: "decision_maker",
+            priority_rank: 0,
             is_primary: linkPrimary,
-            contact: { id: linked.id, full_name: linked.full_name, account_id: "" },
+            contact: {
+              id: linked.id,
+              full_name: linked.full_name,
+              first_name: null,
+              last_name: null,
+              title: linked.title,
+              phone: null,
+              email: linked.email,
+              account_id: "",
+            },
           },
         ]);
         setLocalAvailable((prev) => prev.filter((c) => c.id !== linkContactId));
@@ -394,8 +408,19 @@ export default function PropertyDetailClient({
         {
           contact_id: newContactId,
           role_label: titleLabel,
+          role_category: "decision_maker",
+          priority_rank: 0,
           is_primary: false,
-          contact: { id: newContactId, full_name: fullName, account_id: accountId },
+          contact: {
+            id: newContactId,
+            full_name: fullName,
+            first_name: addContactFirst.trim() || null,
+            last_name: addContactLast.trim() || null,
+            title: titleLabel,
+            phone: addContactPhone.trim() || null,
+            email: addContactEmail.trim() || null,
+            account_id: accountId,
+          },
         },
       ]);
 
@@ -1223,6 +1248,11 @@ export default function PropertyDetailClient({
       {/* Tab: Contacts */}
       {tab === "contacts" && (
         <div className="space-y-3">
+          {/* Count */}
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            {localPropContacts.length} {localPropContacts.length === 1 ? "contact" : "contacts"} linked to this property
+          </p>
+
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2">
             <button
@@ -1334,79 +1364,148 @@ export default function PropertyDetailClient({
           )}
 
           {/* Link contact form */}
-          {showLinkContact && localAvailable.length > 0 && (
-            <form onSubmit={handleLinkContact} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-              <p className="text-xs font-medium text-slate-600">Link an existing contact to this property</p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <select
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                  value={linkContactId}
-                  onChange={(e) => setLinkContactId(e.target.value)}
-                >
-                  <option value="">Select contact…</option>
-                  {localAvailable.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name ?? c.id.slice(0, 8)}
-                    </option>
-                  ))}
-                </select>
+          {showLinkContact && localAvailable.length > 0 && (() => {
+            const q = linkContactSearch.trim().toLowerCase();
+            const filtered = q
+              ? localAvailable.filter((c) =>
+                  [c.full_name, c.title, c.email]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLowerCase()
+                    .includes(q),
+                )
+              : localAvailable.slice(0, 30);
+            return (
+              <form onSubmit={handleLinkContact} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                <p className="text-xs font-medium text-slate-600">Link an existing contact to this property</p>
                 <input
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                  value={linkRoleLabel}
-                  onChange={(e) => setLinkRoleLabel(e.target.value)}
-                  placeholder="Role (optional)"
+                  type="text"
+                  value={linkContactSearch}
+                  onChange={(e) => setLinkContactSearch(e.target.value)}
+                  placeholder="Search by name, title, or email…"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
                 />
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={linkPrimary}
-                      onChange={(e) => setLinkPrimary(e.target.checked)}
-                      className="rounded border-slate-300"
-                    />
-                    Primary
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={linkBusy}
-                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {linkBusy ? "Linking…" : "Link"}
-                  </button>
+                <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-200">
+                  {filtered.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-slate-500">No matches.</p>
+                  ) : (
+                    filtered.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setLinkContactId(c.id)}
+                        className={`flex w-full items-start gap-3 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50 ${
+                          linkContactId === c.id ? "bg-blue-50" : ""
+                        }`}
+                      >
+                        <div className="mt-0.5 h-4 w-4 shrink-0 rounded-full border border-slate-300">
+                          {linkContactId === c.id && (
+                            <div className="m-0.5 h-2.5 w-2.5 rounded-full bg-blue-600" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-900">{c.full_name ?? "—"}</p>
+                          <p className="truncate text-xs text-slate-500">
+                            {[c.title, c.email].filter(Boolean).join(" · ") || "No title or email"}
+                          </p>
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
-              </div>
-              {linkError && <p className="text-xs text-red-600">{linkError}</p>}
-            </form>
-          )}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <input
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                    value={linkRoleLabel}
+                    onChange={(e) => setLinkRoleLabel(e.target.value)}
+                    placeholder="Role label (optional)"
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={linkPrimary}
+                        onChange={(e) => setLinkPrimary(e.target.checked)}
+                        className="rounded border-slate-300"
+                      />
+                      Primary
+                    </label>
+                    <button
+                      type="submit"
+                      disabled={linkBusy || !linkContactId}
+                      className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {linkBusy ? "Linking…" : "Link"}
+                    </button>
+                  </div>
+                </div>
+                {linkError && <p className="text-xs text-red-600">{linkError}</p>}
+              </form>
+            );
+          })()}
 
           {localPropContacts.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500">
               No contacts linked to this property.
             </p>
           ) : (
-            localPropContacts.map((pc) => (
-              <a
-                key={pc.contact_id}
-                href={`/app/contacts/${pc.contact_id}`}
-                className="block rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-slate-900">
-                    {pc.contact.full_name ?? "Unknown"}
-                  </span>
-                  {pc.role_label && (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                      {pc.role_label}
-                    </span>
-                  )}
-                  {pc.is_primary && (
-                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                      Primary
-                    </span>
-                  )}
+            localPropContacts.map((pc) => {
+              const c = pc.contact;
+              const roleCategoryLabel = pc.role_category && pc.role_category !== "other"
+                ? pc.role_category.replace(/_/g, " ").replace(/\b\w/g, (s) => s.toUpperCase())
+                : null;
+              return (
+                <div
+                  key={pc.contact_id}
+                  className="rounded-2xl border border-slate-200 bg-white p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a
+                          href={`/app/contacts/${pc.contact_id}`}
+                          className="text-base font-semibold text-slate-900 hover:text-blue-600 hover:underline"
+                        >
+                          {c.full_name ?? "Unknown"}
+                        </a>
+                        {pc.is_primary && (
+                          <span className="text-amber-500" title="Primary contact" aria-label="Primary contact">★</span>
+                        )}
+                      </div>
+                      {c.title && (
+                        <p className="mt-0.5 text-sm text-slate-500">{c.title}</p>
+                      )}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        {pc.role_label && (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                            {pc.role_label}
+                          </span>
+                        )}
+                        {roleCategoryLabel && (
+                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                            {roleCategoryLabel}
+                          </span>
+                        )}
+                      </div>
+                      {(c.phone || c.email) && (
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                          {c.phone && (
+                            <a href={`tel:${c.phone}`} className="text-blue-600 hover:underline">
+                              {c.phone}
+                            </a>
+                          )}
+                          {c.email && (
+                            <a href={`mailto:${c.email}`} className="text-blue-600 hover:underline">
+                              {c.email}
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </a>
-            ))
+              );
+            })
           )}
         </div>
       )}

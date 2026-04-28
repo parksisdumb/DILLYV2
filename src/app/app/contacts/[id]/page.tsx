@@ -20,8 +20,8 @@ export default async function ContactDetailPage({
 
   if (!contactRes.data) notFound();
 
-  // 2. Parallel: account, touchpoints, next_actions, linked properties, lookup tables, role, all properties
-  const [accountRes, tpRes, nextActionsRes, propContactsRes, ttRes, toRes, meRes, allPropsRes] =
+  // 2. Parallel: account, touchpoints, next_actions, linked properties, lookup tables, role
+  const [accountRes, tpRes, nextActionsRes, propContactsRes, ttRes, toRes, meRes] =
     await Promise.all([
       supabase
         .from("accounts")
@@ -42,30 +42,34 @@ export default async function ContactDetailPage({
         .order("due_at"),
       supabase
         .from("property_contacts")
-        .select("property_id,properties(id,address_line1,city,state,postal_code)")
+        .select("property_id,is_primary,properties(id,name,address_line1,city,state,building_type)")
         .eq("contact_id", id),
       supabase.from("touchpoint_types").select("id,name,key,is_outreach").order("sort_order"),
       supabase.from("touchpoint_outcomes").select("id,name,touchpoint_type_id").order("sort_order"),
       supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
-      supabase.from("properties").select("id,address_line1,city,state,postal_code").is("deleted_at", null).order("address_line1"),
     ]);
 
-  // Extract property objects from the junction table join
-  const properties = (propContactsRes.data ?? [])
-    .map((pc) => pc.properties as unknown as { id: string; address_line1: string; city: string | null; state: string | null; postal_code: string | null } | null)
-    .filter((p): p is NonNullable<typeof p> => p !== null);
-
-  // All properties for linking (exclude already-linked ones)
-  const linkedPropertyIds = new Set(properties.map((p) => p.id));
-  const availableProperties = (allPropsRes.data ?? [])
-    .filter((p) => !linkedPropertyIds.has(p.id as string))
-    .map((p) => ({
-      id: p.id as string,
-      address_line1: p.address_line1 as string,
-      city: p.city as string | null,
-      state: p.state as string | null,
-      postal_code: p.postal_code as string | null,
-    }));
+  // Extract linked properties (with is_primary from junction) — sorted primary-first then by name
+  type LinkedProperty = {
+    id: string;
+    name: string | null;
+    address_line1: string;
+    city: string | null;
+    state: string | null;
+    building_type: string | null;
+    is_primary: boolean;
+  };
+  const properties: LinkedProperty[] = (propContactsRes.data ?? [])
+    .map((pc) => {
+      const p = pc.properties as unknown as Omit<LinkedProperty, "is_primary"> | null;
+      if (!p) return null;
+      return { ...p, is_primary: Boolean(pc.is_primary) };
+    })
+    .filter((p): p is LinkedProperty => p !== null)
+    .sort((a, b) => {
+      if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
+      return (a.name ?? a.address_line1).localeCompare(b.name ?? b.address_line1);
+    });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cast = <T,>(v: unknown) => (v ?? []) as T[];
@@ -82,7 +86,6 @@ export default async function ContactDetailPage({
       userId={userId}
       orgId={orgId}
       userRole={meRes.data?.role ?? "rep"}
-      availableProperties={availableProperties}
     />
   );
 }

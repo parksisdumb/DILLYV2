@@ -124,7 +124,7 @@ export default function SuggestedOutreach({ suggestions, onAccept, onDismiss }: 
           key={s.id}
           className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
         >
-          {/* Header: company + source badge + type badge */}
+          {/* Header: company + source badge + type badge + first-touch pill */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-slate-900">
               {s.company_name}
@@ -145,6 +145,9 @@ export default function SuggestedOutreach({ suggestions, onAccept, onDismiss }: 
                 {TYPE_LABELS[s.account_type] ?? s.account_type}
               </span>
             )}
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+              First touch
+            </span>
           </div>
 
           {/* Location + contact info */}

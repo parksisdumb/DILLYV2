@@ -31,6 +31,12 @@ type NextAction = {
   due_at: string;
   notes: string | null;
   recommended_touchpoint_type_id: string | null;
+  created_from_touchpoint_id: string | null;
+};
+
+export type LatestTouchpoint = {
+  happened_at: string;
+  outcome_id: string | null;
 };
 
 type DashboardRow = {
@@ -96,6 +102,8 @@ export default function TodayClient({ userId }: { userId: string }) {
   const [touchpointTypes, setTouchpointTypes] = useState<TouchpointType[]>([]);
   const [touchpointOutcomes, setTouchpointOutcomes] = useState<Outcome[]>([]);
   const [nextActions, setNextActions] = useState<NextAction[]>([]);
+  const [latestTouchpointByContactId, setLatestTouchpointByContactId] = useState<Map<string, LatestTouchpoint>>(new Map());
+  const [sourceTouchpointOutcomeByActionId, setSourceTouchpointOutcomeByActionId] = useState<Map<string, string | null>>(new Map());
   const [suggestions, setSuggestions] = useState<SuggestionRow[]>([]);
 
   const [dashboard, setDashboard] = useState<DashboardRow>({
@@ -135,6 +143,51 @@ export default function TodayClient({ userId }: { userId: string }) {
     }, 2500);
   }, []);
 
+  // Batch fetch context for Advance cards: latest touchpoint per contact in the queue,
+  // plus the outcome of each next_action's source touchpoint. Two queries total via .in() — no N+1.
+  const refreshAdvanceContext = useCallback(async (rows: NextAction[]) => {
+    const queueContactIds = Array.from(
+      new Set(rows.map((a) => a.contact_id).filter((v): v is string => Boolean(v))),
+    );
+    const sourceTpIds = Array.from(
+      new Set(rows.map((a) => a.created_from_touchpoint_id).filter((v): v is string => Boolean(v))),
+    );
+
+    const [latestTpsRes, sourceTpsRes] = await Promise.all([
+      queueContactIds.length > 0
+        ? supabase
+            .from("touchpoints")
+            .select("contact_id,happened_at,outcome_id")
+            .in("contact_id", queueContactIds)
+            .order("happened_at", { ascending: false })
+        : Promise.resolve({ data: [] as { contact_id: string; happened_at: string; outcome_id: string | null }[], error: null }),
+      sourceTpIds.length > 0
+        ? supabase.from("touchpoints").select("id,outcome_id").in("id", sourceTpIds)
+        : Promise.resolve({ data: [] as { id: string; outcome_id: string | null }[], error: null }),
+    ]);
+
+    const latestMap = new Map<string, LatestTouchpoint>();
+    for (const tp of (latestTpsRes.data ?? []) as { contact_id: string; happened_at: string; outcome_id: string | null }[]) {
+      if (!latestMap.has(tp.contact_id)) {
+        latestMap.set(tp.contact_id, { happened_at: tp.happened_at, outcome_id: tp.outcome_id });
+      }
+    }
+    setLatestTouchpointByContactId(latestMap);
+
+    const tpOutcomeById = new Map<string, string | null>();
+    for (const tp of (sourceTpsRes.data ?? []) as { id: string; outcome_id: string | null }[]) {
+      tpOutcomeById.set(tp.id, tp.outcome_id);
+    }
+    const sourceMap = new Map<string, string | null>();
+    for (const a of rows) {
+      if (a.created_from_touchpoint_id) {
+        const oid = tpOutcomeById.get(a.created_from_touchpoint_id) ?? null;
+        if (oid) sourceMap.set(a.id, oid);
+      }
+    }
+    setSourceTouchpointOutcomeByActionId(sourceMap);
+  }, [supabase]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -168,7 +221,7 @@ export default function TodayClient({ userId }: { userId: string }) {
         supabase
           .from("next_actions")
           .select(
-            "id,property_id,contact_id,account_id,opportunity_id,due_at,notes,recommended_touchpoint_type_id",
+            "id,property_id,contact_id,account_id,opportunity_id,due_at,notes,recommended_touchpoint_type_id,created_from_touchpoint_id",
           )
           .eq("assigned_user_id", userId)
           .eq("status", "open")
@@ -234,7 +287,9 @@ export default function TodayClient({ userId }: { userId: string }) {
           })),
         ) as Outcome[],
       );
-      setNextActions((na.data ?? []) as NextAction[]);
+      const nextActionRows = (na.data ?? []) as NextAction[];
+      setNextActions(nextActionRows);
+      await refreshAdvanceContext(nextActionRows);
 
       // Fetch suggested outreach for this rep
       const { data: sugData } = await supabase
@@ -311,12 +366,16 @@ export default function TodayClient({ userId }: { userId: string }) {
     const { data } = await supabase
       .from("next_actions")
       .select(
-        "id,property_id,contact_id,account_id,opportunity_id,due_at,notes,recommended_touchpoint_type_id",
+        "id,property_id,contact_id,account_id,opportunity_id,due_at,notes,recommended_touchpoint_type_id,created_from_touchpoint_id",
       )
       .eq("assigned_user_id", userId)
       .eq("status", "open")
       .order("due_at");
-    if (data) setNextActions(data as NextAction[]);
+    if (data) {
+      const rows = data as NextAction[];
+      setNextActions(rows);
+      await refreshAdvanceContext(rows);
+    }
   }
 
   // ── Advance: full reload after complete/snooze ─────────────────────────
@@ -410,6 +469,8 @@ export default function TodayClient({ userId }: { userId: string }) {
           accountsById={accountsById}
           outreachTypes={outreachTypes}
           outcomes={touchpointOutcomes}
+          latestTouchpointByContactId={latestTouchpointByContactId}
+          sourceTouchpointOutcomeByActionId={sourceTouchpointOutcomeByActionId}
           onActionCompleted={handleActionCompleted}
         />
       )}

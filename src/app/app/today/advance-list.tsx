@@ -19,7 +19,10 @@ type NextAction = {
   due_at: string;
   notes: string | null;
   recommended_touchpoint_type_id: string | null;
+  created_from_touchpoint_id: string | null;
 };
+
+type LatestTouchpoint = { happened_at: string; outcome_id: string | null };
 
 type Props = {
   userId: string;
@@ -28,6 +31,8 @@ type Props = {
   accountsById: Map<string, Account>;
   outreachTypes: TouchpointType[];
   outcomes: Outcome[];
+  latestTouchpointByContactId: Map<string, LatestTouchpoint>;
+  sourceTouchpointOutcomeByActionId: Map<string, string | null>;
   onActionCompleted: () => void;
 };
 
@@ -50,6 +55,23 @@ function formatDueDate(iso: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function daysSince(iso: string): number {
+  const ms = Date.now() - new Date(iso).getTime();
+  return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
+function daysAgoLabel(days: number): string {
+  if (days === 0) return "Today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+function daysAgoColor(days: number): string {
+  if (days <= 3) return "text-emerald-600";
+  if (days <= 14) return "text-amber-600";
+  return "text-red-600";
+}
+
 const chipBtn = (active: boolean) =>
   [
     "rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
@@ -70,9 +92,16 @@ export default function AdvanceList({
   accountsById,
   outreachTypes,
   outcomes,
+  latestTouchpointByContactId,
+  sourceTouchpointOutcomeByActionId,
   onActionCompleted,
 }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
+
+  const outcomeNameById = useMemo(
+    () => new Map(outcomes.map((o) => [o.id, o.name])),
+    [outcomes],
+  );
 
   // ── Card expansion ──
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -227,6 +256,13 @@ export default function AdvanceList({
           ? outreachTypes.find((t) => t.id === action.recommended_touchpoint_type_id)
           : null;
 
+        const latestTp = action.contact_id ? latestTouchpointByContactId.get(action.contact_id) : null;
+        const latestTpDays = latestTp ? daysSince(latestTp.happened_at) : null;
+        const latestTpOutcome = latestTp?.outcome_id ? outcomeNameById.get(latestTp.outcome_id) ?? null : null;
+
+        const sourceOutcomeId = sourceTouchpointOutcomeByActionId.get(action.id) ?? null;
+        const sourceOutcomeName = sourceOutcomeId ? outcomeNameById.get(sourceOutcomeId) ?? null : null;
+
         const filteredOutcomes = getOutcomesForType(formTypeId);
 
         return (
@@ -265,9 +301,31 @@ export default function AdvanceList({
                   {account?.name ?? ""}
                   {recommendedType ? ` · ${recommendedType.name}` : ""}
                 </div>
+                {/* Outreach context: last touchpoint or first-touch pill */}
+                {latestTp && latestTpDays !== null ? (
+                  <div className="text-xs">
+                    <span className={`font-medium ${daysAgoColor(latestTpDays)}`}>
+                      {daysAgoLabel(latestTpDays)}
+                    </span>
+                    {latestTpOutcome && (
+                      <span className="text-slate-500"> · {latestTpOutcome}</span>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                      First touch
+                    </span>
+                  </div>
+                )}
+                {sourceOutcomeName && (
+                  <div className="text-xs text-slate-500">
+                    Following up on: <span className="text-slate-700">{sourceOutcomeName}</span>
+                  </div>
+                )}
                 <div className="text-xs text-slate-400">Due {formatDueDate(action.due_at)}</div>
                 {action.notes && (
-                  <div className="truncate text-xs text-slate-600">{action.notes}</div>
+                  <div className="truncate text-xs italic text-slate-600">{action.notes}</div>
                 )}
               </div>
               <svg

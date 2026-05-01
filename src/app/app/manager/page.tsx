@@ -35,6 +35,33 @@ export type TopAccount = {
   touchpointCount30d: number;
 };
 
+export type PipelineHealth = "active" | "cooling" | "stalled" | "no_activity";
+
+export type PipelineRow = {
+  oppId: string;
+  oppTitle: string | null;
+  estimatedValue: number | null;
+  stageName: string;
+  accountId: string | null;
+  accountName: string;
+  propertyId: string | null;
+  propertyName: string | null;
+  propertyAddress: string;
+  repName: string | null;
+  daysInStage: number;
+  lastActivityAt: string | null;
+  daysSinceActivity: number | null;
+  health: PipelineHealth;
+};
+
+export type PipelineSummary = {
+  totalValue: number;
+  activeCount: number;
+  coolingCount: number;
+  stalledCount: number;
+  noActivityCount: number;
+};
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default async function ManagerPage() {
@@ -94,7 +121,7 @@ export default async function ManagerPage() {
       .gte("due_at", thirtyDaysAgo.toISOString()),
     supabase
       .from("opportunities")
-      .select("stage_id,opened_at")
+      .select("id,title,stage_id,account_id,property_id,estimated_value,opened_at,updated_at")
       .eq("status", "open")
       .is("deleted_at", null),
     supabase.from("opportunity_stages").select("id,name,key,sort_order,is_closed_stage").order("sort_order"),
@@ -248,6 +275,49 @@ export default async function ManagerPage() {
     };
   });
 
+  // ── Pipeline Health: dependent fetches (properties, assignments, last activity) ──
+
+  type OpenOppRow = {
+    id: string;
+    title: string | null;
+    stage_id: string;
+    account_id: string | null;
+    property_id: string | null;
+    estimated_value: number | null;
+    opened_at: string;
+    updated_at: string;
+  };
+  const openOppsTyped = (openOppsRes.data ?? []) as unknown as OpenOppRow[];
+  const oppPropertyIds = Array.from(
+    new Set(openOppsTyped.map((o) => o.property_id).filter((v): v is string => Boolean(v))),
+  );
+  const oppAccountIds = Array.from(
+    new Set(openOppsTyped.map((o) => o.account_id).filter((v): v is string => Boolean(v))),
+  );
+  const oppIds = openOppsTyped.map((o) => o.id);
+
+  const [oppPropsRes, oppAssignsRes, oppTpsRes] = await Promise.all([
+    oppPropertyIds.length > 0
+      ? supabase
+          .from("properties")
+          .select("id,name,address_line1,city,state")
+          .in("id", oppPropertyIds)
+      : Promise.resolve({ data: [] as { id: string; name: string | null; address_line1: string; city: string | null; state: string | null }[] }),
+    oppIds.length > 0
+      ? supabase
+          .from("opportunity_assignments")
+          .select("opportunity_id,user_id,is_primary,assignment_role")
+          .in("opportunity_id", oppIds)
+      : Promise.resolve({ data: [] as { opportunity_id: string; user_id: string; is_primary: boolean; assignment_role: string | null }[] }),
+    oppAccountIds.length > 0
+      ? supabase
+          .from("touchpoints")
+          .select("account_id,happened_at")
+          .in("account_id", oppAccountIds)
+          .order("happened_at", { ascending: false })
+      : Promise.resolve({ data: [] as { account_id: string; happened_at: string }[] }),
+  ]);
+
   // ── Build TopAccount[] ─────────────────────────────────────────────────
 
   const accountById = new Map<string, string | null>();
@@ -269,6 +339,104 @@ export default async function ManagerPage() {
       accountName: accountById.get(accountId) ?? accountId.slice(0, 8),
       touchpointCount30d: count,
     }));
+
+  // ── Build PipelineRow[] + PipelineSummary ──────────────────────────────
+
+  const stageNameById = new Map<string, string>();
+  for (const s of stagesRes.data ?? []) {
+    stageNameById.set(s.id as string, s.name as string);
+  }
+
+  type PropertyLite = { id: string; name: string | null; address_line1: string; city: string | null; state: string | null };
+  const propertyById = new Map<string, PropertyLite>();
+  for (const p of (oppPropsRes.data ?? []) as PropertyLite[]) {
+    propertyById.set(p.id, p);
+  }
+
+  // Primary rep per opportunity: prefer is_primary, fall back to assignment_role='primary_rep'
+  type Assign = { opportunity_id: string; user_id: string; is_primary: boolean; assignment_role: string | null };
+  const repByOppId = new Map<string, string>();
+  for (const a of (oppAssignsRes.data ?? []) as Assign[]) {
+    if (a.is_primary && !repByOppId.has(a.opportunity_id)) {
+      repByOppId.set(a.opportunity_id, a.user_id);
+    }
+  }
+  for (const a of (oppAssignsRes.data ?? []) as Assign[]) {
+    if (!repByOppId.has(a.opportunity_id) && a.assignment_role === "primary_rep") {
+      repByOppId.set(a.opportunity_id, a.user_id);
+    }
+  }
+
+  const repNameByUserId = new Map<string, string>();
+  for (const m of orgUserRows) {
+    const name = (m.full_name as string | null)?.trim() || (m.email as string | null)?.split("@")[0] || (m.user_id as string).slice(0, 8);
+    repNameByUserId.set(m.user_id as string, name);
+  }
+
+  // Latest happened_at per account (touchpoints already ordered DESC)
+  const lastActivityByAccount = new Map<string, string>();
+  for (const tp of (oppTpsRes.data ?? []) as { account_id: string; happened_at: string }[]) {
+    if (!lastActivityByAccount.has(tp.account_id)) {
+      lastActivityByAccount.set(tp.account_id, tp.happened_at);
+    }
+  }
+
+  function classifyHealth(daysSince: number | null): PipelineHealth {
+    if (daysSince === null) return "no_activity";
+    if (daysSince <= 7) return "active";
+    if (daysSince <= 21) return "cooling";
+    return "stalled";
+  }
+
+  const pipelineRows: PipelineRow[] = openOppsTyped.map((o) => {
+    const lastAt = o.account_id ? lastActivityByAccount.get(o.account_id) ?? null : null;
+    const daysSince = lastAt ? Math.floor((nowMs - new Date(lastAt).getTime()) / 86400000) : null;
+    const daysInStage = Math.floor((nowMs - new Date(o.updated_at).getTime()) / 86400000);
+    const prop = o.property_id ? propertyById.get(o.property_id) ?? null : null;
+    const propAddress = prop
+      ? [prop.address_line1, prop.city, prop.state].filter(Boolean).join(", ")
+      : "";
+    const repUserId = repByOppId.get(o.id) ?? null;
+    return {
+      oppId: o.id,
+      oppTitle: o.title,
+      estimatedValue: o.estimated_value,
+      stageName: stageNameById.get(o.stage_id) ?? "—",
+      accountId: o.account_id,
+      accountName: (o.account_id ? accountById.get(o.account_id) : null) ?? "—",
+      propertyId: o.property_id,
+      propertyName: prop?.name ?? null,
+      propertyAddress: propAddress,
+      repName: repUserId ? repNameByUserId.get(repUserId) ?? null : null,
+      daysInStage,
+      lastActivityAt: lastAt,
+      daysSinceActivity: daysSince,
+      health: classifyHealth(daysSince),
+    };
+  });
+
+  // Sort: NoActivity → Stalled → Cooling → Active. Within each, days-since-activity DESC.
+  const HEALTH_ORDER: Record<PipelineHealth, number> = {
+    no_activity: 0,
+    stalled: 1,
+    cooling: 2,
+    active: 3,
+  };
+  pipelineRows.sort((a, b) => {
+    const hcmp = HEALTH_ORDER[a.health] - HEALTH_ORDER[b.health];
+    if (hcmp !== 0) return hcmp;
+    const ad = a.daysSinceActivity ?? Number.POSITIVE_INFINITY;
+    const bd = b.daysSinceActivity ?? Number.POSITIVE_INFINITY;
+    return bd - ad;
+  });
+
+  const pipelineSummary: PipelineSummary = {
+    totalValue: pipelineRows.reduce((s, r) => s + (r.estimatedValue ?? 0), 0),
+    activeCount: pipelineRows.filter((r) => r.health === "active").length,
+    coolingCount: pipelineRows.filter((r) => r.health === "cooling").length,
+    stalledCount: pipelineRows.filter((r) => r.health === "stalled").length,
+    noActivityCount: pipelineRows.filter((r) => r.health === "no_activity").length,
+  };
 
   // ── Build queue counts per rep ──────────────────────────────────────────
   const { data: queueData } = await supabase
@@ -315,6 +483,8 @@ export default async function ManagerPage() {
       repStats={repStats}
       stageSummaries={stageSummaries}
       topAccounts={topAccounts}
+      pipelineRows={pipelineRows}
+      pipelineSummary={pipelineSummary}
       queueCounts={queueCountsObj}
       unassignedProspectCount={unassignedCount}
       hasIcp={(icpCount ?? 0) > 0}

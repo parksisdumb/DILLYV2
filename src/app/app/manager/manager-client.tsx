@@ -2,19 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { RepStat, StageSummary, TopAccount } from "@/app/app/manager/page";
+import type { RepStat, StageSummary, TopAccount, PipelineRow, PipelineSummary } from "@/app/app/manager/page";
+import PipelineHealthTab from "@/app/app/manager/pipeline-health-tab";
 
 type Props = {
   repStats: RepStat[];
   stageSummaries: StageSummary[];
   topAccounts: TopAccount[];
+  pipelineRows: PipelineRow[];
+  pipelineSummary: PipelineSummary;
   queueCounts: Record<string, number>;
   unassignedProspectCount: number;
   hasIcp: boolean;
   generatedAt: string;
 };
 
-type Tab = "today" | "leaderboard" | "compliance" | "pipeline" | "accounts";
+type Tab = "today" | "leaderboard" | "compliance" | "pipeline" | "health" | "accounts";
 
 // ── Progress bar ────────────────────────────────────────────────────────────
 
@@ -54,7 +57,7 @@ function ComplianceBadge({ rate }: { rate: number }) {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function ManagerClient({ repStats, stageSummaries, topAccounts, queueCounts, unassignedProspectCount, hasIcp, generatedAt }: Props) {
+export default function ManagerClient({ repStats, stageSummaries, topAccounts, pipelineRows, pipelineSummary, queueCounts, unassignedProspectCount, hasIcp, generatedAt }: Props) {
   const [tab, setTab] = useState<Tab>("today");
 
   const generatedDate = new Date(generatedAt);
@@ -70,6 +73,7 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, q
     { key: "leaderboard", label: "Leaderboard" },
     { key: "compliance", label: "Compliance" },
     { key: "pipeline", label: "Pipeline" },
+    { key: "health", label: "Pipeline Health" },
     { key: "accounts", label: "Accounts" },
   ];
 
@@ -351,6 +355,11 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, q
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Tab: Pipeline Health ──────────────────────────────────────────── */}
+      {tab === "health" && (
+        <PipelineHealthTab rows={pipelineRows} summary={pipelineSummary} />
       )}
 
       {/* ── Tab: Accounts ─────────────────────────────────────────────────── */}

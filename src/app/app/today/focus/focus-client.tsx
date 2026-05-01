@@ -129,8 +129,15 @@ export default function FocusClient({
   }
 
   async function convertProspectAndLog(item: FocusProspectItem, outcome: OutcomeButton): Promise<boolean> {
+    // Two-step on purpose. rpc_convert_prospect with p_log_touchpoint=true has a
+    // latent bug — its internal `v_result := public.rpc_log_outreach_touchpoint(...)`
+    // assigns a record-returning function to a jsonb variable and PG raises
+    // "invalid input syntax for type json: Token \"(\" is invalid". Nobody hit
+    // it before because the manager prospect-convert flow always passes
+    // p_log_touchpoint=false. Until that RPC is patched, convert without the
+    // touchpoint, then log it separately.
     const hasContactName = Boolean((item.contactFirstName ?? "").trim() || (item.contactLastName ?? "").trim());
-    const { error: convErr } = await supabase.rpc("rpc_convert_prospect", {
+    const { data: convData, error: convErr } = await supabase.rpc("rpc_convert_prospect", {
       p_prospect_id: item.prospectId,
       p_account_name: item.companyName,
       p_account_type: item.accountType,
@@ -138,7 +145,7 @@ export default function FocusClient({
       p_account_phone: item.accountPhone,
       p_account_notes: null,
       p_create_contact: hasContactName,
-      p_contact_full_name: hasContactName ? null : null,
+      p_contact_full_name: null,
       p_contact_first_name: item.contactFirstName,
       p_contact_last_name: item.contactLastName,
       p_contact_title: item.contactTitle,
@@ -149,16 +156,40 @@ export default function FocusClient({
       p_property_city: null,
       p_property_state: null,
       p_property_postal_code: null,
-      p_log_touchpoint: hasContactName, // RPC only logs when a contact was created
-      p_touchpoint_type_id: hasContactName ? callTypeId : null,
-      p_touchpoint_outcome_id: hasContactName ? outcome.id : null,
-      p_touchpoint_notes: `Focus session · ${outcome.label}`,
+      p_log_touchpoint: false,
+      p_touchpoint_type_id: null,
+      p_touchpoint_outcome_id: null,
+      p_touchpoint_notes: null,
     });
     if (convErr) {
       showToast(`Couldn't convert ${item.companyName}: ${convErr.message}`);
       return false;
     }
-    // rpc_convert_prospect already updates suggested_outreach.status to 'converted'.
+    // rpc_convert_prospect already updated suggested_outreach.status to 'converted'.
+
+    // Now log the call as a separate touchpoint, if a contact was created.
+    const result = convData as { account_id?: string; contact_id?: string | null } | null;
+    if (!result?.contact_id || !result?.account_id) {
+      // No contact info on the prospect — conversion still succeeded, just no
+      // touchpoint logged. Treat as a soft success so the session keeps moving.
+      showToast(`${item.companyName} added; no contact to log against.`);
+      return true;
+    }
+    const { error: tpErr } = await supabase.rpc("rpc_log_outreach_touchpoint", {
+      p_contact_id: result.contact_id,
+      p_account_id: result.account_id,
+      p_touchpoint_type_id: callTypeId,
+      p_property_id: null,
+      p_outcome_id: outcome.id,
+      p_notes: `Focus session · ${outcome.label}`,
+      p_engagement_phase: "first_touch",
+    });
+    if (tpErr) {
+      showToast(`Converted ${item.companyName}, but touchpoint failed: ${tpErr.message}`);
+      // Conversion stuck — return true so the session advances and the rep can
+      // log a touchpoint manually later if needed.
+      return true;
+    }
     return true;
   }
 

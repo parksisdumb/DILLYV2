@@ -65,7 +65,7 @@ export type PipelineSummary = {
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default async function ManagerPage() {
-  const { supabase, userId } = await requireServerOrgContext();
+  const { supabase, userId, orgId } = await requireServerOrgContext();
 
   // Role gate
   const meRes = await supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle();
@@ -438,6 +438,31 @@ export default async function ManagerPage() {
     noActivityCount: pipelineRows.filter((r) => r.health === "no_activity").length,
   };
 
+  // ── Org monthly revenue target (for Pipeline Health coverage line) ────
+  const monthlyDefRes = await supabase
+    .from("kpi_definitions")
+    .select("id")
+    .eq("key", "monthly_revenue_target")
+    .is("org_id", null)
+    .maybeSingle();
+  const monthlyRevenueDefId = (monthlyDefRes.data?.id as string | undefined) ?? null;
+
+  let monthlyRevenueTarget: number | null = null;
+  let monthlyRevenueTargetId: string | null = null;
+  if (monthlyRevenueDefId) {
+    const targetRes = await supabase
+      .from("kpi_targets")
+      .select("id,target_value")
+      .eq("kpi_definition_id", monthlyRevenueDefId)
+      .eq("period", "monthly")
+      .is("user_id", null)
+      .maybeSingle();
+    if (targetRes.data) {
+      monthlyRevenueTarget = Number(targetRes.data.target_value);
+      monthlyRevenueTargetId = targetRes.data.id as string;
+    }
+  }
+
   // ── Build queue counts per rep ──────────────────────────────────────────
   const { data: queueData } = await supabase
     .from("suggested_outreach")
@@ -485,6 +510,10 @@ export default async function ManagerPage() {
       topAccounts={topAccounts}
       pipelineRows={pipelineRows}
       pipelineSummary={pipelineSummary}
+      orgId={orgId}
+      monthlyRevenueDefId={monthlyRevenueDefId}
+      monthlyRevenueTarget={monthlyRevenueTarget}
+      monthlyRevenueTargetId={monthlyRevenueTargetId}
       queueCounts={queueCountsObj}
       unassignedProspectCount={unassignedCount}
       hasIcp={(icpCount ?? 0) > 0}

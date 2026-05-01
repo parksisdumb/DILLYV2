@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { PipelineHealth, PipelineRow, PipelineSummary } from "@/app/app/manager/page";
 
 const money = new Intl.NumberFormat("en-US", {
@@ -49,12 +51,169 @@ function formatLastActivity(iso: string | null, days: number | null): string {
   return `${days} days ago`;
 }
 
+function coverageColor(ratio: number): string {
+  if (ratio >= 3) return "text-green-700";
+  if (ratio >= 2) return "text-amber-700";
+  return "text-red-700";
+}
+
+function MonthlyTargetSection({
+  totalValue,
+  orgId,
+  monthlyRevenueDefId,
+  initialTarget,
+  initialTargetId,
+}: {
+  totalValue: number;
+  orgId: string;
+  monthlyRevenueDefId: string | null;
+  initialTarget: number | null;
+  initialTargetId: string | null;
+}) {
+  const supabase = createBrowserSupabase();
+  const [target, setTarget] = useState<number | null>(initialTarget);
+  const [targetId, setTargetId] = useState<string | null>(initialTargetId);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string>(initialTarget != null ? String(initialTarget) : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Definition row missing (migration not applied) — render a noisy hint so the
+  // manager understands why they can't set a target. Should not happen in prod.
+  if (!monthlyRevenueDefId) {
+    return (
+      <p className="text-xs text-amber-700">
+        Monthly revenue target definition is missing. Run the latest migration to enable this.
+      </p>
+    );
+  }
+
+  async function handleSave() {
+    const parsed = Number(draft.replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setError("Enter a positive dollar amount.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      if (targetId) {
+        const { error: updErr } = await supabase
+          .from("kpi_targets")
+          .update({ target_value: parsed })
+          .eq("id", targetId);
+        if (updErr) { setError(updErr.message); return; }
+      } else {
+        const { data: inserted, error: insErr } = await supabase
+          .from("kpi_targets")
+          .insert({
+            org_id: orgId,
+            user_id: null,
+            kpi_definition_id: monthlyRevenueDefId,
+            period: "monthly",
+            target_value: parsed,
+          })
+          .select("id")
+          .single();
+        if (insErr) { setError(insErr.message); return; }
+        setTargetId(inserted.id as string);
+      }
+      setTarget(parsed);
+      setEditing(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3">
+        <label className="block text-xs font-medium text-slate-600">Monthly Revenue Target</label>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-slate-700">$</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); setError(null); }}
+            placeholder="500000"
+            className="w-40 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+            autoFocus
+          />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void handleSave()}
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {busy ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setEditing(false); setError(null); setDraft(target != null ? String(target) : ""); }}
+            className="text-sm text-slate-500 hover:text-slate-700"
+          >
+            Cancel
+          </button>
+        </div>
+        {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+      </div>
+    );
+  }
+
+  if (target == null || target <= 0) {
+    return (
+      <p className="text-sm text-slate-500">
+        Set a monthly target to see pipeline coverage{" "}
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="font-medium text-blue-600 hover:underline"
+        >
+          → Set Target
+        </button>
+      </p>
+    );
+  }
+
+  const ratio = totalValue / target;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="text-slate-600">Pipeline coverage:</span>
+      <span className={`font-semibold ${coverageColor(ratio)}`}>
+        {ratio.toFixed(1)}x
+      </span>
+      <span className="text-xs text-slate-400">
+        ({money.format(totalValue)} / {money.format(target)} monthly target)
+      </span>
+      <button
+        type="button"
+        aria-label="Edit monthly target"
+        onClick={() => { setDraft(String(target)); setEditing(true); }}
+        className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+      >
+        <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L4 13.172V16h2.828l7.379-7.379-2.828-2.828z" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 export default function PipelineHealthTab({
   rows,
   summary,
+  orgId,
+  monthlyRevenueDefId,
+  initialMonthlyTarget,
+  initialMonthlyTargetId,
 }: {
   rows: PipelineRow[];
   summary: PipelineSummary;
+  orgId: string;
+  monthlyRevenueDefId: string | null;
+  initialMonthlyTarget: number | null;
+  initialMonthlyTargetId: string | null;
 }) {
   return (
     <div className="space-y-4">
@@ -84,6 +243,15 @@ export default function PipelineHealthTab({
           tone="red"
         />
       </div>
+
+      {/* Coverage line + set/edit target */}
+      <MonthlyTargetSection
+        totalValue={summary.totalValue}
+        orgId={orgId}
+        monthlyRevenueDefId={monthlyRevenueDefId}
+        initialTarget={initialMonthlyTarget}
+        initialTargetId={initialMonthlyTargetId}
+      />
 
       {/* Main table */}
       {rows.length === 0 ? (

@@ -11,6 +11,10 @@ type Props = {
   topAccounts: TopAccount[];
   pipelineRows: PipelineRow[];
   pipelineSummary: PipelineSummary;
+  orgId: string;
+  monthlyRevenueDefId: string | null;
+  monthlyRevenueTarget: number | null;
+  monthlyRevenueTargetId: string | null;
   queueCounts: Record<string, number>;
   unassignedProspectCount: number;
   hasIcp: boolean;
@@ -57,7 +61,7 @@ function ComplianceBadge({ rate }: { rate: number }) {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function ManagerClient({ repStats, stageSummaries, topAccounts, pipelineRows, pipelineSummary, queueCounts, unassignedProspectCount, hasIcp, generatedAt }: Props) {
+export default function ManagerClient({ repStats, stageSummaries, topAccounts, pipelineRows, pipelineSummary, orgId, monthlyRevenueDefId, monthlyRevenueTarget, monthlyRevenueTargetId, queueCounts, unassignedProspectCount, hasIcp, generatedAt }: Props) {
   const [tab, setTab] = useState<Tab>("today");
 
   const generatedDate = new Date(generatedAt);
@@ -359,7 +363,14 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, p
 
       {/* ── Tab: Pipeline Health ──────────────────────────────────────────── */}
       {tab === "health" && (
-        <PipelineHealthTab rows={pipelineRows} summary={pipelineSummary} />
+        <PipelineHealthTab
+          rows={pipelineRows}
+          summary={pipelineSummary}
+          orgId={orgId}
+          monthlyRevenueDefId={monthlyRevenueDefId}
+          initialMonthlyTarget={monthlyRevenueTarget}
+          initialMonthlyTargetId={monthlyRevenueTargetId}
+        />
       )}
 
       {/* ── Tab: Accounts ─────────────────────────────────────────────────── */}

@@ -8,6 +8,7 @@ import type {
   AnalyticsOpportunity,
   AnalyticsNextAction,
 } from "./page";
+import ConversionFunnelSection from "./conversion-funnel-section";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -541,6 +542,9 @@ export default function AnalyticsClient({ data }: { data: AnalyticsData }) {
           ))}
         </div>
       </div>
+
+      {/* ── Section 2.5: Conversion Funnel (per rep, with coaching flags) ─── */}
+      <ConversionFunnelSection reps={data.reps} />
 
       {/* ── Section 3: Rep Performance ────────────────────────────────────── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5">

@@ -441,17 +441,35 @@ export default function TodayClient({ userId }: { userId: string }) {
       </div>
 
       {tab === "grow" && orgId && (
-        <GrowForm
-          userId={userId}
-          orgId={orgId}
-          contacts={contacts}
-          accounts={accounts}
-          accountsById={accountsById}
-          properties={properties}
-          outreachTypes={outreachTypes}
-          outcomes={touchpointOutcomes}
-          onSuccess={handleGrowSuccess}
-        />
+        <>
+          {nextActions.length > 0 && (
+            <a
+              href="/app/today/focus"
+              className="flex items-center justify-between rounded-2xl border border-blue-200 bg-blue-600 p-4 text-white shadow-sm hover:bg-blue-700"
+            >
+              <div className="flex flex-col">
+                <span className="text-base font-semibold">🎯 Start Focus Session</span>
+                <span className="text-xs text-blue-100">
+                  {nextActions.length} {nextActions.length === 1 ? "contact" : "contacts"} in queue
+                </span>
+              </div>
+              <span className="text-sm tabular-nums text-blue-100">
+                {dashboard.outreach_today}/{dashboard.outreach_target} calls today
+              </span>
+            </a>
+          )}
+          <GrowForm
+            userId={userId}
+            orgId={orgId}
+            contacts={contacts}
+            accounts={accounts}
+            accountsById={accountsById}
+            properties={properties}
+            outreachTypes={outreachTypes}
+            outcomes={touchpointOutcomes}
+            onSuccess={handleGrowSuccess}
+          />
+        </>
       )}
 
       {/* New Prospects — always visible between Grow and Advance */}

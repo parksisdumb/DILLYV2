@@ -159,6 +159,10 @@ const NEXT_ACTION_SPECS: {
   // Overdue
   { contactIdx: 2, propertyIdx: 2, oppIdx: 2, typeKey: "call", notes: "Schedule Greenville Ave inspection date", daysFromNow: -3, status: "open" },
   { contactIdx: 7, propertyIdx: 6, oppIdx: 5, typeKey: "email", notes: "Send Quorum Dr coating proposal", daysFromNow: -1, status: "open" },
+  // Focus Mode realism: 3 overdue first-touch calls for rep1
+  { contactIdx: 1, propertyIdx: 1, oppIdx: 1, typeKey: "call", notes: "Reach out — Lone Star renewal cycle starting", daysFromNow: -2, status: "open" },
+  { contactIdx: 5, propertyIdx: 5, oppIdx: 4, typeKey: "call", notes: "DFW Facilities — circle back on Q3 walkthroughs", daysFromNow: -3, status: "open" },
+  { contactIdx: 6, propertyIdx: 5, oppIdx: 4, typeKey: "call", notes: "DFW Facilities — confirm regional decision-maker", daysFromNow: -1, status: "open" },
   // Today
   { contactIdx: 0, propertyIdx: 0, oppIdx: 0, typeKey: "call", notes: "Confirm Spring Valley contract signing", daysFromNow: 0, status: "open" },
   { contactIdx: 4, propertyIdx: 4, oppIdx: 4, typeKey: "call", notes: "Follow up on Carpenter Fwy board decision", daysFromNow: 0, status: "open" },
@@ -171,6 +175,42 @@ const NEXT_ACTION_SPECS: {
   // Completed
   { contactIdx: 0, propertyIdx: 0, oppIdx: 0, typeKey: "email", notes: "Send revised proposal with warranty options", daysFromNow: -5, status: "completed" },
   { contactIdx: 9, propertyIdx: 7, oppIdx: 6, typeKey: "call", notes: "Confirm Arlington subcontract details", daysFromNow: -4, status: "completed" },
+];
+
+// ── Focus Mode prospect specs ─────────────────────────────────────────────
+// Each row creates one prospects record + one suggested_outreach row (status=
+// 'new', user=rep1) so /app/today/focus has prospect-kind items in its queue.
+const FOCUS_PROSPECT_SPECS: {
+  companyName: string; accountType: string;
+  firstName: string; lastName: string; title: string;
+  phone: string; email: string;
+  city: string; state: string;
+  rankScore: number;
+}[] = [
+  {
+    companyName: "Frost Tower Holdings",
+    accountType: "owner",
+    firstName: "Marcus", lastName: "Albright", title: "Director of Real Estate",
+    phone: "210-555-2001", email: "marcus.albright@frosttowerholdings.example",
+    city: "San Antonio", state: "TX",
+    rankScore: 80,
+  },
+  {
+    companyName: "Hill Country Industrial Park",
+    accountType: "commercial_property_management",
+    firstName: "Vanessa", lastName: "Ortega", title: "Property Manager",
+    phone: "512-555-2002", email: "vortega@hillcountryindustrial.example",
+    city: "Austin", state: "TX",
+    rankScore: 65,
+  },
+  {
+    companyName: "Magnolia Self Storage Group",
+    accountType: "owner",
+    firstName: "Reggie", lastName: "Vaughn", title: "Operations Manager",
+    phone: "713-555-2003", email: "reggie@magnoliastorage.example",
+    city: "Houston", state: "TX",
+    rankScore: 45,
+  },
 ];
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -829,6 +869,84 @@ async function ensureNextActions(
   }
 }
 
+// ── Focus Mode prospects + suggested_outreach ─────────────────────────────
+// Idempotent on (org_id, company_name) for prospects and on
+// (user_id, prospect_id) for suggestions.
+async function ensureFocusProspects(
+  client: SupabaseClient,
+  orgId: string,
+  rep1Id: string,
+): Promise<void> {
+  const names = FOCUS_PROSPECT_SPECS.map((s) => s.companyName);
+  const { data: existing, error: existingErr } = await client
+    .from("prospects")
+    .select("id,company_name")
+    .eq("org_id", orgId)
+    .in("company_name", names);
+  if (existingErr) throw existingErr;
+  const existingByName = new Map((existing ?? []).map((r) => [r.company_name as string, r.id as string]));
+
+  // Insert any prospects not already present
+  const newProspectRows = FOCUS_PROSPECT_SPECS
+    .filter((s) => !existingByName.has(s.companyName))
+    .map((s) => ({
+      org_id: orgId,
+      company_name: s.companyName,
+      account_type: s.accountType,
+      contact_first_name: s.firstName,
+      contact_last_name: s.lastName,
+      contact_title: s.title,
+      email: s.email,
+      phone: s.phone,
+      city: s.city,
+      state: s.state,
+      source: "manual",
+      status: "unworked",
+    }));
+  if (newProspectRows.length > 0) {
+    const { data: inserted, error } = await client
+      .from("prospects")
+      .insert(newProspectRows)
+      .select("id,company_name");
+    if (error) throw error;
+    for (const r of inserted ?? []) {
+      existingByName.set(r.company_name as string, r.id as string);
+    }
+  }
+
+  // Build suggested_outreach rows scoped to rep1
+  const prospectIds = FOCUS_PROSPECT_SPECS
+    .map((s) => existingByName.get(s.companyName))
+    .filter((id): id is string => Boolean(id));
+  const { data: existingSugs, error: sugErr } = await client
+    .from("suggested_outreach")
+    .select("prospect_id")
+    .eq("org_id", orgId)
+    .eq("user_id", rep1Id)
+    .in("prospect_id", prospectIds);
+  if (sugErr) throw sugErr;
+  const existingSugProspectIds = new Set((existingSugs ?? []).map((r) => r.prospect_id as string));
+
+  const newSugs = FOCUS_PROSPECT_SPECS
+    .map((s) => {
+      const pid = existingByName.get(s.companyName);
+      if (!pid || existingSugProspectIds.has(pid)) return null;
+      return {
+        org_id: orgId,
+        user_id: rep1Id,
+        prospect_id: pid,
+        rank_score: s.rankScore,
+        reason_codes: ["seed_focus_mode"],
+        status: "new",
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  if (newSugs.length > 0) {
+    const { error } = await client.from("suggested_outreach").insert(newSugs);
+    if (error) throw error;
+  }
+}
+
 // ── Score rules & events ───────────────────────────────────────────────────
 
 async function ensureScoreRules(
@@ -957,6 +1075,10 @@ async function main() {
     stage = "next actions";
     console.log("  Next actions...");
     await ensureNextActions(supabase, orgId, contacts, properties, opportunities, types.touchpointTypes, rep1Id);
+
+    stage = "focus mode prospects";
+    console.log("  Focus Mode prospects + suggested_outreach...");
+    await ensureFocusProspects(supabase, orgId, rep1Id);
 
     stage = "scoring";
     console.log("  Score rules + events...");

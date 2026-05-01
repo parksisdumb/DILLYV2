@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
-import type { FocusQueueItem } from "./page";
+import type { FocusQueueItem, FocusFollowUpItem, FocusProspectItem } from "./page";
 
 type OutcomeButton = {
   id: string;
@@ -27,7 +27,7 @@ type Props = {
 };
 
 type LoggedOutcome = {
-  contactId: string;
+  contactKey: string; // contactId for follow_ups, prospectId for prospects
   outcomeKey: string;
   points: number;
 };
@@ -57,6 +57,7 @@ export default function FocusClient({
   outreachToday: outreachAtStart,
   outreachTarget,
   streakAtStart,
+  userId,
 }: Props) {
   const router = useRouter();
   const supabase = useMemo(() => createBrowserSupabase(), []);
@@ -64,9 +65,10 @@ export default function FocusClient({
   const [queue, setQueue] = useState<FocusQueueItem[]>(initialQueue);
   const [completed, setCompleted] = useState<LoggedOutcome[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [pulse, setPulse] = useState(false);
   const [secondsElapsed, setSecondsElapsed] = useState(0);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Timer
   useEffect(() => {
@@ -77,15 +79,13 @@ export default function FocusClient({
     return () => clearInterval(id);
   }, []);
 
-  const currentContact: FocusQueueItem | null = queue[0] ?? null;
-  const isComplete = currentContact === null;
+  const currentItem: FocusQueueItem | null = queue[0] ?? null;
+  const isComplete = currentItem === null;
 
-  // Session-derived stats
   const sessionConnects = completed.filter((c) => c.outcomeKey === "connected_conversation").length;
   const sessionInspections = completed.filter((c) => c.outcomeKey === "inspection_scheduled").length;
   const sessionPoints = completed.reduce((s, c) => s + c.points, 0);
 
-  // Calls toward daily target = touchpoints logged today PLUS calls in this session
   const callsToward = outreachAtStart + completed.length;
   const targetPct = outreachTarget > 0 ? Math.min(100, Math.round((callsToward / outreachTarget) * 100)) : 0;
   const targetMet = callsToward >= outreachTarget && outreachTarget > 0;
@@ -95,61 +95,111 @@ export default function FocusClient({
     setTimeout(() => setPulse(false), 500);
   }
 
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
+  }
+
+  async function logFollowUpOutcome(item: FocusFollowUpItem, outcome: OutcomeButton): Promise<boolean> {
+    const { data, error: rpcErr } = await supabase.rpc("rpc_log_outreach_touchpoint", {
+      p_contact_id: item.contactId,
+      p_account_id: item.accountId,
+      p_touchpoint_type_id: callTypeId,
+      p_property_id: item.propertyId ?? null,
+      p_outcome_id: outcome.id,
+      p_notes: `Focus session · ${outcome.label}`,
+      p_engagement_phase: "follow_up",
+    });
+    if (rpcErr) {
+      showToast(`Couldn't log call: ${rpcErr.message}`);
+      return false;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    const tpId = (row as Record<string, unknown> | null)?.touchpoint_id as string | undefined;
+    await supabase
+      .from("next_actions")
+      .update({
+        status: "completed",
+        ...(tpId ? { completed_by_touchpoint_id: tpId } : {}),
+      })
+      .eq("id", item.nextActionId)
+      .eq("status", "open");
+    return true;
+  }
+
+  async function convertProspectAndLog(item: FocusProspectItem, outcome: OutcomeButton): Promise<boolean> {
+    const hasContactName = Boolean((item.contactFirstName ?? "").trim() || (item.contactLastName ?? "").trim());
+    const { error: convErr } = await supabase.rpc("rpc_convert_prospect", {
+      p_prospect_id: item.prospectId,
+      p_account_name: item.companyName,
+      p_account_type: item.accountType,
+      p_account_website: item.accountWebsite,
+      p_account_phone: item.accountPhone,
+      p_account_notes: null,
+      p_create_contact: hasContactName,
+      p_contact_full_name: hasContactName ? null : null,
+      p_contact_first_name: item.contactFirstName,
+      p_contact_last_name: item.contactLastName,
+      p_contact_title: item.contactTitle,
+      p_contact_email: item.contactEmail,
+      p_contact_phone: item.contactPhone,
+      p_create_property: false,
+      p_property_address: null,
+      p_property_city: null,
+      p_property_state: null,
+      p_property_postal_code: null,
+      p_log_touchpoint: hasContactName, // RPC only logs when a contact was created
+      p_touchpoint_type_id: hasContactName ? callTypeId : null,
+      p_touchpoint_outcome_id: hasContactName ? outcome.id : null,
+      p_touchpoint_notes: `Focus session · ${outcome.label}`,
+    });
+    if (convErr) {
+      showToast(`Couldn't convert ${item.companyName}: ${convErr.message}`);
+      return false;
+    }
+    // rpc_convert_prospect already updates suggested_outreach.status to 'converted'.
+    return true;
+  }
+
   async function handleOutcome(outcome: OutcomeButton) {
-    if (!currentContact || busy) return;
+    if (!currentItem || busy) return;
     if (!callTypeId) {
-      setError("No 'call' touchpoint type configured for this org.");
+      showToast("No 'call' touchpoint type configured for this org.");
       return;
     }
     setBusy(true);
-    setError(null);
     try {
-      const { data, error: rpcErr } = await supabase.rpc("rpc_log_outreach_touchpoint", {
-        p_contact_id: currentContact.contactId,
-        p_account_id: currentContact.accountId,
-        p_touchpoint_type_id: callTypeId,
-        p_property_id: currentContact.propertyId ?? null,
-        p_outcome_id: outcome.id,
-        p_notes: `Focus session · ${outcome.label}`,
-        p_engagement_phase: "follow_up",
-      });
-      if (rpcErr) {
-        setError(rpcErr.message);
-        return;
+      let ok = false;
+      if (currentItem.kind === "follow_up") {
+        ok = await logFollowUpOutcome(currentItem, outcome);
+      } else {
+        ok = await convertProspectAndLog(currentItem, outcome);
       }
 
-      // Mark next_action complete (best effort)
-      const row = Array.isArray(data) ? data[0] : data;
-      const tpId = (row as Record<string, unknown> | null)?.touchpoint_id as string | undefined;
-      await supabase
-        .from("next_actions")
-        .update({
-          status: "completed",
-          ...(tpId ? { completed_by_touchpoint_id: tpId } : {}),
-        })
-        .eq("id", currentContact.nextActionId)
-        .eq("status", "open");
-
-      setCompleted((prev) => [
-        ...prev,
-        {
-          contactId: currentContact.contactId,
-          outcomeKey: outcome.key,
-          points: outcome.points,
-        },
-      ]);
+      // Always advance the queue — failures show a toast and skip rather than block.
+      const contactKey = currentItem.kind === "follow_up" ? currentItem.contactId : currentItem.prospectId;
+      if (ok) {
+        setCompleted((prev) => [
+          ...prev,
+          {
+            contactKey,
+            outcomeKey: outcome.key,
+            points: outcome.points,
+          },
+        ]);
+        if (outcome.key === "connected_conversation" || outcome.key === "inspection_scheduled") {
+          showPulse();
+        }
+      }
       setQueue((prev) => prev.slice(1));
-
-      if (outcome.key === "connected_conversation" || outcome.key === "inspection_scheduled") {
-        showPulse();
-      }
     } finally {
       setBusy(false);
     }
   }
 
   function handleSkip() {
-    if (!currentContact || busy) return;
+    if (!currentItem || busy) return;
     setQueue((prev) => {
       if (prev.length <= 1) return prev;
       const [first, ...rest] = prev;
@@ -230,6 +280,7 @@ export default function FocusClient({
           completed={completed}
           targetMet={targetMet}
           streakAtStart={streakAtStart}
+          userId={userId}
           onBack={handleEndSession}
           onAnother={handleStartAnother}
         />
@@ -238,54 +289,54 @@ export default function FocusClient({
           {/* Contact card */}
           <div className="px-5 pt-6 pb-4">
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                {queue.length} left
-              </div>
-              <h1 className="mt-1 text-2xl font-bold leading-tight text-slate-100">
-                {currentContact!.accountName}
-              </h1>
-              <div className="mt-1 text-base text-slate-300">
-                {currentContact!.contactName}
-                {currentContact!.contactTitle && (
-                  <span className="text-slate-500"> · {currentContact!.contactTitle}</span>
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-500">
+                <span>{queue.length} left</span>
+                {currentItem!.kind === "prospect" && (
+                  <span className="rounded-full bg-blue-900/60 px-2 py-0.5 text-[10px] font-semibold text-blue-200">
+                    NEW PROSPECT
+                  </span>
                 )}
               </div>
-              {currentContact!.contactPhone && (
+              <h1 className="mt-1 text-2xl font-bold leading-tight text-slate-100">
+                {currentItem!.primaryName}
+              </h1>
+              <div className="mt-1 text-base text-slate-300">{currentItem!.contactDisplay}</div>
+              {currentItem!.phone && (
                 <a
-                  href={`tel:${currentContact!.contactPhone}`}
+                  href={`tel:${currentItem!.phone}`}
                   className="mt-3 block text-2xl font-semibold tabular-nums text-blue-300 hover:underline"
                 >
-                  {formatPhone(currentContact!.contactPhone)}
+                  {formatPhone(currentItem!.phone)}
                 </a>
               )}
-              {(currentContact!.propertyName || currentContact!.propertyAddress) && (
-                <p className="mt-2 text-sm text-slate-500">
-                  {currentContact!.propertyName ?? currentContact!.propertyAddress}
-                </p>
+              {currentItem!.propertyDisplay && (
+                <p className="mt-2 text-sm text-slate-500">{currentItem!.propertyDisplay}</p>
               )}
 
               {/* Context line */}
               <div className="mt-3 border-t border-slate-800 pt-3 text-sm">
-                {currentContact!.lastOutcomeName && currentContact!.daysSinceLastOutreach !== null ? (
+                {currentItem!.lastOutcomeName && currentItem!.daysSinceLastOutreach !== null ? (
                   <div>
-                    <span className={`font-medium ${daysAgoColor(currentContact!.daysSinceLastOutreach)}`}>
-                      Last outreach: {daysAgoLabel(currentContact!.daysSinceLastOutreach)}
+                    <span className={`font-medium ${daysAgoColor(currentItem!.daysSinceLastOutreach)}`}>
+                      Last outreach: {daysAgoLabel(currentItem!.daysSinceLastOutreach)}
                     </span>
-                    <span className="text-slate-400"> · {currentContact!.lastOutcomeName}</span>
+                    <span className="text-slate-400"> · {currentItem!.lastOutcomeName}</span>
                   </div>
                 ) : (
                   <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">
                     First touch
                   </span>
                 )}
-                {currentContact!.notes && (
-                  <p className="mt-1 italic text-slate-400">{currentContact!.notes}</p>
+                {currentItem!.notes && (
+                  <p className="mt-1 italic text-slate-400">{currentItem!.notes}</p>
                 )}
               </div>
             </div>
 
-            {error && (
-              <p className="mt-2 text-xs text-red-400">{error}</p>
+            {toast && (
+              <p className="mt-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+                {toast}
+              </p>
             )}
           </div>
 
@@ -325,15 +376,49 @@ function CompleteScreen({
   completed,
   targetMet,
   streakAtStart,
+  userId,
   onBack,
   onAnother,
 }: {
   completed: LoggedOutcome[];
   targetMet: boolean;
   streakAtStart: number;
+  userId: string;
   onBack: () => void;
   onAnother: () => void;
 }) {
+  const supabase = useMemo(() => createBrowserSupabase(), []);
+  const [rank, setRank] = useState<{ position: number; total: number } | null>(null);
+
+  // Fetch today's leaderboard rank once when complete screen mounts.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const { data, error } = await supabase
+        .from("score_events")
+        .select("user_id,points")
+        .gte("created_at", startOfToday.toISOString());
+      if (cancelled || error) return;
+      const sums = new Map<string, number>();
+      for (const r of (data ?? []) as { user_id: string; points: number }[]) {
+        sums.set(r.user_id, (sums.get(r.user_id) ?? 0) + r.points);
+      }
+      const sorted = Array.from(sums.entries()).sort((a, b) => b[1] - a[1]);
+      const idx = sorted.findIndex(([uid]) => uid === userId);
+      if (idx >= 0) {
+        setRank({ position: idx + 1, total: sorted.length });
+      } else if (sorted.length > 0) {
+        // Rep has no points today but other reps do — they're tied for last
+        setRank({ position: sorted.length + 1, total: sorted.length + 1 });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, userId]);
+
   const total = completed.length;
   const connects = completed.filter((c) => c.outcomeKey === "connected_conversation").length;
   const voicemails = completed.filter((c) => c.outcomeKey === "no_answer_voicemail").length;
@@ -366,6 +451,13 @@ function CompleteScreen({
       <p className="mt-4 text-sm text-slate-400">
         🔥 Day {streakAtStart} streak — keep it going
       </p>
+
+      {rank && (
+        <p className="mt-2 text-sm text-slate-400">
+          You&apos;re <span className="font-semibold text-slate-200">#{rank.position}</span> on the team today
+          {rank.total > 1 && <span className="text-slate-500"> · of {rank.total}</span>}
+        </p>
+      )}
 
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         <button

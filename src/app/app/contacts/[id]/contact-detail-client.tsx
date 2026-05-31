@@ -224,11 +224,14 @@ export default function ContactDetailClient({
     setLinkError(null);
     try {
       if (isLinked) {
+        // Soft-delete: preserve history and respect the composite PK.
+        // Never hard-delete property_contacts (touchpoint/next_action history references it).
         const { error } = await supabase
           .from("property_contacts")
-          .delete()
+          .update({ active: false })
           .eq("contact_id", contact.id)
-          .eq("property_id", p.id);
+          .eq("property_id", p.id)
+          .eq("org_id", orgId);
         if (error) { setLinkError(error.message); return; }
         setLocalProperties((prev) => prev.filter((lp) => lp.id !== p.id));
         showToast("success", "Property unlinked.");
@@ -702,66 +705,7 @@ export default function ContactDetailClient({
       {/* Tab: Properties */}
       {tab === "properties" && (
         <div className="space-y-3">
-          {/* Linked property chips */}
-          {localProperties.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-500">
-              No properties linked to this contact.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {localProperties.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2"
-                >
-                  <a
-                    href={`/app/properties/${p.id}`}
-                    className="min-w-0 flex-1"
-                  >
-                    <p className="truncate text-sm font-medium text-slate-900 hover:text-blue-600 hover:underline">
-                      {propertyDisplayName(p)}
-                      {p.is_primary && (
-                        <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 align-middle">
-                          Primary
-                        </span>
-                      )}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">
-                      {propertySecondary(p)}
-                      {p.building_type && (
-                        <span className="ml-1 text-slate-400">
-                          · {BUILDING_TYPE_LABELS[p.building_type] ?? p.building_type}
-                        </span>
-                      )}
-                    </p>
-                  </a>
-                  <button
-                    type="button"
-                    aria-label={`Unlink ${propertyDisplayName(p)}`}
-                    disabled={linkBusyId === p.id}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleTogglePropertyLink({
-                        id: p.id,
-                        name: p.name,
-                        address_line1: p.address_line1,
-                        city: p.city,
-                        state: p.state,
-                        building_type: p.building_type,
-                      });
-                    }}
-                    className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
-                  >
-                    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M4.28 3.22a.75.75 0 00-1.06 1.06L8.94 10l-5.72 5.72a.75.75 0 101.06 1.06L10 11.06l5.72 5.72a.75.75 0 101.06-1.06L11.06 10l5.72-5.72a.75.75 0 00-1.06-1.06L10 8.94 4.28 3.22z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Link Property button + search panel */}
+          {/* Link Property button + search panel — above the list for discoverability */}
           {!linkerOpen ? (
             <button
               type="button"
@@ -843,6 +787,65 @@ export default function ContactDetailClient({
                   })
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Linked property chips */}
+          {localProperties.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-500">
+              No properties linked to this contact.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {localProperties.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2"
+                >
+                  <a
+                    href={`/app/properties/${p.id}`}
+                    className="min-w-0 flex-1"
+                  >
+                    <p className="truncate text-sm font-semibold text-slate-900 hover:text-blue-600 hover:underline">
+                      {propertyDisplayName(p)}
+                      {p.is_primary && (
+                        <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 align-middle">
+                          Primary
+                        </span>
+                      )}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {propertySecondary(p)}
+                      {p.building_type && (
+                        <span className="ml-1 text-slate-400">
+                          · {BUILDING_TYPE_LABELS[p.building_type] ?? p.building_type}
+                        </span>
+                      )}
+                    </p>
+                  </a>
+                  <button
+                    type="button"
+                    aria-label={`Unlink ${propertyDisplayName(p)}`}
+                    disabled={linkBusyId === p.id}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleTogglePropertyLink({
+                        id: p.id,
+                        name: p.name,
+                        address_line1: p.address_line1,
+                        city: p.city,
+                        state: p.state,
+                        building_type: p.building_type,
+                      });
+                    }}
+                    className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.28 3.22a.75.75 0 00-1.06 1.06L8.94 10l-5.72 5.72a.75.75 0 101.06 1.06L10 11.06l5.72 5.72a.75.75 0 101.06-1.06L11.06 10l5.72-5.72a.75.75 0 00-1.06-1.06L10 8.94 4.28 3.22z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>

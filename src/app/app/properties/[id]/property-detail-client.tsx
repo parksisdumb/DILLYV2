@@ -321,7 +321,7 @@ export default function PropertyDetailClient({
       const { error } = await supabase.rpc("rpc_upsert_property_contact", {
         p_property_id: property.id,
         p_contact_id: linkContactId,
-        p_role_category: "decision_maker",
+        p_role_category: "other",
         p_role_label: linkRoleLabel.trim() || null,
         p_is_primary: linkPrimary,
       });
@@ -334,7 +334,7 @@ export default function PropertyDetailClient({
           {
             contact_id: linked.id,
             role_label: linkRoleLabel.trim() || null,
-            role_category: "decision_maker",
+            role_category: "other",
             priority_rank: 0,
             is_primary: linkPrimary,
             contact: {
@@ -397,7 +397,7 @@ export default function PropertyDetailClient({
       const { error: linkErr } = await supabase.rpc("rpc_upsert_property_contact", {
         p_property_id: property.id,
         p_contact_id: newContactId,
-        p_role_category: "decision_maker",
+        p_role_category: "other",
         p_role_label: titleLabel,
         p_is_primary: false,
       });
@@ -408,7 +408,7 @@ export default function PropertyDetailClient({
         {
           contact_id: newContactId,
           role_label: titleLabel,
-          role_category: "decision_maker",
+          role_category: "other",
           priority_rank: 0,
           is_primary: false,
           contact: {
@@ -1253,33 +1253,48 @@ export default function PropertyDetailClient({
             {localPropContacts.length} {localPropContacts.length === 1 ? "contact" : "contacts"} linked to this property
           </p>
 
-          {/* Action buttons */}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setShowAddContact((v) => !v);
-                setShowLinkContact(false);
-                setAddContactError(null);
-              }}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              {showAddContact ? "Cancel" : "+ Add Contact"}
-            </button>
-            {localAvailable.length > 0 && (
+          {/* Action buttons — or an account-required prompt when no account is linked */}
+          {!localAccount ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm text-amber-800">
+                Link this property to an account first to add contacts.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowLinkAccount(true)}
+                className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Link Account
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => {
-                  setShowLinkContact((v) => !v);
-                  setShowAddContact(false);
-                  setLinkError(null);
+                  setShowAddContact((v) => !v);
+                  setShowLinkContact(false);
+                  setAddContactError(null);
                 }}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
               >
-                {showLinkContact ? "Cancel" : "+ Link Contact"}
+                {showAddContact ? "Cancel" : "+ Add Contact"}
               </button>
-            )}
-          </div>
+              {localAvailable.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLinkContact((v) => !v);
+                    setShowAddContact(false);
+                    setLinkError(null);
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  {showLinkContact ? "Cancel" : "+ Link Contact"}
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Add contact form */}
           {showAddContact && (

@@ -13,6 +13,7 @@ export async function sendInviteEmail(
     firstName?: string;
     lastName?: string;
     redirectPath?: string;
+    confirmEmail?: boolean;
   } = {},
 ) {
   const admin = createAdminClient();
@@ -33,8 +34,10 @@ export async function sendInviteEmail(
   });
 
   // Immediately confirm the email so the user can log in with password
-  // without needing to click the invite link first.
-  if (result.data?.user?.id) {
+  // without needing to click the invite link first. Skip this when
+  // confirmEmail is false (true invite — the user sets their own password
+  // via the emailed link).
+  if (opts.confirmEmail !== false && result.data?.user?.id) {
     await admin.auth.admin.updateUserById(result.data.user.id, {
       email_confirm: true,
     });

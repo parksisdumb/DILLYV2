@@ -81,6 +81,31 @@ await supabase.rpc("rpc_log_touchpoint", {
 
 Both RPCs handle score_events and streak updates atomically.
 
+**Linking a contact to a property** (many-to-many) — ALWAYS use the RPC, never insert/delete `property_contacts` directly:
+```ts
+await supabase.rpc("rpc_upsert_property_contact", {
+  p_property_id: "...",      // required — uuid
+  p_contact_id: "...",       // required — uuid
+  p_role_category: "other",  // default 'other'; only use decision_maker/influencer/etc. when the user explicitly picks a role
+  p_role_label: "...",       // optional — free text
+  p_is_primary: false,       // optional — demotes other primaries in the same role_category
+  p_active: true,            // optional — default true
+});
+```
+- Conflict key is `(property_id, contact_id, role_category)`. Linking the same pair with different `role_category` values creates SEPARATE rows — keep the default consistent (`other`) across all link UIs so the same pair never duplicates.
+- To **unlink**, soft-delete: `update property_contacts set active = false` filtered by `contact_id`, `property_id`, and `org_id`. Never hard-delete (preserves history; respects the composite PK).
+
+---
+
+## User & Org Creation
+
+There are TWO separate paths for creating orgs and users — do not conflate them:
+
+1. **Platform admin portal (`/admin`)** — gated by a shared secret (`ADMIN_SECRET_KEY`), uses the service-role admin client (bypasses RLS). Creating an org is just an `orgs` insert (no users/roles seeded). "Add User" then directly creates the auth user + `profiles` row + `org_users` row with a chosen role (admin/manager/rep). This is how a new org's first manager/admin is created today.
+2. **In-app invite flow (`/app/admin/team`)** — a logged-in manager/admin invites by email via `rpc_invite_user` (inserts an `org_invites` row); the invitee accepts at `/invite/accept/[token]` via `rpc_accept_invite`. Managers can only invite reps; admins can invite any role.
+
+`rpc_provision_org_owner(p_org_name, p_owner_user_id)` exists (service-role only) and atomically creates an org, seeds roles, and assigns the owner as admin — but it is **dead code**. The admin portal does NOT call it. Do not assume it runs.
+
 ---
 
 ## Key Database Tables
@@ -92,6 +117,7 @@ Both RPCs handle score_events and streak updates atomically.
 | `accounts` | Companies (owners, PMs, GCs) |
 | `contacts` | People, always tied to an account (`account_id` NOT NULL) |
 | `properties` | Buildings — required for opportunities |
+| `property_contacts` | Junction table for the many-to-many between contacts and properties. PK `(property_id, contact_id, role_category)`. Has `role_category`, `role_label`, `priority_rank`, `is_primary`, `active`. Soft-delete via `active=false` — never hard-delete. Write only via `rpc_upsert_property_contact`. |
 | `opportunities` | A potential job, always linked to a property |
 | `touchpoints` | Immutable activity ledger (insert-only, never delete). `property_id` is nullable. |
 | `next_actions` | Follow-up queue — `contact_id` and `account_id` are NOT NULL |
@@ -211,7 +237,7 @@ Local dev credentials after `npx supabase db reset && npm run seed:dev`:
 - Local Supabase Studio: http://127.0.0.1:54323
 - Local app: http://localhost:3000
 
-Current migrations (applied in order):
+Current migrations (67 total on disk, as of 2026-05-29; applied in order):
 1. `20260220204621_init_schema_v1` — core schema
 2. `20260221000022_rls_policies_v1` — initial RLS
 3. `20260221060949_rpc_core_v1` — RPCs + seed data (includes legacy `rpc_create_touchpoint_and_side_effects`)
@@ -261,3 +287,23 @@ Current migrations (applied in order):
 47. `20260323100000_rls_performance_audit_v1` — wraps auth.uid() in SELECT subquery across all RLS policies + missing indexes
 48. `20260323110000_reit_portfolio_summary_v1` — adds portfolio_summary jsonb to reit_universe, seeds reit_website_properties agent
 49. `20260323120000_intel_schema_expansion_v1` — renames reit_universe → intel_entities with expanded columns, adds intel_contacts + intel_tenants tables, new intel_prospects columns (entity_id, tenant, parcel, roof_age_estimate generated, verified)
+50. `20260313130000_org_users_name_email_v1` — adds `full_name` + `email` columns to org_users (NOTE: timestamp orders this between #37 and #38; previously missing from this list)
+51. `20260325100000_agent_registry_cms_healthcare_v1` — agent_registry rows for CMS / healthcare property sources
+52. `20260325110000_agent_runs_split_types_v1` — widens/splits agent_runs.run_type values
+53. `20260327100000_properties_name_v1` — adds `name text` column to properties
+54. `20260401100000_intel_properties_v1` — `intel_properties` table (NO RLS, service role only)
+55. `20260401110000_agent_registry_enrichment_v1` — agent_registry rows for enrichment agents
+56. `20260403100000_icp_feedback_v1` — ICP feedback capture table/columns
+57. `20260403110000_call_outcome_taxonomy_v1` — expanded call/touchpoint outcome taxonomy
+58. `20260403120000_agent_registry_fleet_v1` — agent_registry fleet expansion
+59. `20260406100000_properties_website_v1` — adds `website text` column to properties
+60. `20260406110000_accounts_primary_contact_v1` — adds primary_contact reference to accounts
+61. `20260407100000_intel_receive_schema_v1` — intel ingest/receive schema for agent payloads
+62. `20260421100000_properties_name_required_v1` — properties.name NOT NULL
+63. `20260421110000_properties_building_type_v1` — adds `building_type` column to properties
+64. `20260421120000_pgrst_schema_reload_v1` — PostgREST schema cache reload
+65. `20260501100000_monthly_revenue_target_v1` — monthly revenue target KPI/config
+66. `20260501120000_score_rules_new_outcome_taxonomy_v1` — score_rules aligned to the new outcome taxonomy
+67. `20260502100000_fix_rpc_convert_prospect_v1` — fixes `rpc_convert_prospect`
+
+> Migration list maintenance: when you add a migration, bump the "N total on disk" count above and append the new entry here.

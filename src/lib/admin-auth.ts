@@ -12,13 +12,6 @@ export async function requireAdmin() {
   const session = cookieStore.get("admin_session")?.value;
   const adminSecret = process.env.ADMIN_SECRET_KEY;
 
-  console.log("[admin-auth]", {
-    hasCookie: !!session,
-    cookieLen: session?.length,
-    hasSecret: !!adminSecret,
-    match: !!adminSecret && session === adminToken(adminSecret),
-  });
-
   if (!adminSecret || session !== adminToken(adminSecret)) {
     redirect("/admin/login");
   }

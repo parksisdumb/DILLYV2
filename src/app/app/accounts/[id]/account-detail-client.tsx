@@ -208,6 +208,7 @@ export default function AccountDetailClient({
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
   // ── Data state ──
+  const [localAccount, setLocalAccount] = useState<Account>(account);
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
   const [properties, setProperties] = useState<Property[]>(initialProperties);
   const [opportunities] = useState<Opportunity[]>(initialOpportunities);
@@ -215,6 +216,48 @@ export default function AccountDetailClient({
 
   // ── Tab state ──
   const [tab, setTab] = useState<Tab>("contacts");
+
+  // ── Edit Account form ──
+  const [editing, setEditing] = useState(false);
+  const [eName, setEName] = useState(account.name ?? "");
+  const [eType, setEType] = useState(account.account_type ?? "");
+  const [eStatus, setEStatus] = useState(account.status);
+  const [eWebsite, setEWebsite] = useState(account.website ?? "");
+  const [ePhone, setEPhone] = useState(account.phone ?? "");
+  const [eNotes, setENotes] = useState(account.notes ?? "");
+  const [eBusy, setEBusy] = useState(false);
+  const [eError, setEError] = useState<string | null>(null);
+
+  function startEdit() {
+    setEName(localAccount.name ?? "");
+    setEType(localAccount.account_type ?? "");
+    setEStatus(localAccount.status);
+    setEWebsite(localAccount.website ?? "");
+    setEPhone(localAccount.phone ?? "");
+    setENotes(localAccount.notes ?? "");
+    setEError(null);
+    setEditing(true);
+  }
+
+  async function onSaveEdit() {
+    if (!eName.trim()) { setEError("Account name is required."); return; }
+    setEBusy(true);
+    setEError(null);
+    const updates = {
+      name: eName.trim(),
+      account_type: eType || null,
+      status: eStatus,
+      website: eWebsite.trim() || null,
+      phone: ePhone.trim() || null,
+      notes: eNotes.trim() || null,
+    };
+    const { error } = await supabase.from("accounts").update(updates).eq("id", account.id);
+    setEBusy(false);
+    if (error) { setEError(error.message); return; }
+    setLocalAccount((prev) => ({ ...prev, ...updates }));
+    setEditing(false);
+    showToast("success", "Account updated.");
+  }
 
   // ── Log Touchpoint form ──
   const [showLogForm, setShowLogForm] = useState(false);
@@ -603,37 +646,113 @@ export default function AccountDetailClient({
 
       {/* ── Header card ── */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        {editing ? (
+          <div className="p-4 space-y-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Edit Account</div>
+            {eError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{eError}</div>
+            )}
+            <div>
+              <label className={sectionLabel}>Account Name *</label>
+              <input className={input} value={eName} onChange={(e) => { setEName(e.target.value); setEError(null); }} placeholder="Acme Property Group" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={sectionLabel}>Type</label>
+                <select className={input} value={eType} onChange={(e) => setEType(e.target.value)}>
+                  <option value="">Unspecified</option>
+                  {Object.entries(TYPE_LABELS).map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={sectionLabel}>Status</label>
+                <select className={input} value={eStatus} onChange={(e) => setEStatus(e.target.value)}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={sectionLabel}>Website</label>
+                <input className={input} type="url" value={eWebsite} onChange={(e) => setEWebsite(e.target.value)} placeholder="https://example.com" />
+              </div>
+              <div>
+                <label className={sectionLabel}>Phone</label>
+                <input className={input} type="tel" value={ePhone} onChange={(e) => setEPhone(e.target.value)} placeholder="(555) 000-0000" />
+              </div>
+            </div>
+            <div>
+              <label className={sectionLabel}>Notes</label>
+              <textarea
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
+                rows={2}
+                value={eNotes}
+                onChange={(e) => setENotes(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={eBusy}
+                onClick={() => void onSaveEdit()}
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {eBusy ? "Saving..." : "Save Changes"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="p-4 space-y-2">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <h1 className="text-xl font-semibold text-slate-900">{account.name ?? "Unnamed Account"}</h1>
-            {account.account_type && (
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${TYPE_COLORS[account.account_type] ?? "bg-slate-100 text-slate-600"}`}>
-                {TYPE_LABELS[account.account_type] ?? account.account_type}
-              </span>
-            )}
+            <h1 className="text-xl font-semibold text-slate-900">{localAccount.name ?? "Unnamed Account"}</h1>
+            <div className="flex items-center gap-2">
+              {localAccount.account_type && (
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${TYPE_COLORS[localAccount.account_type] ?? "bg-slate-100 text-slate-600"}`}>
+                  {TYPE_LABELS[localAccount.account_type] ?? localAccount.account_type}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={startEdit}
+                className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Edit
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">
-            <span className={`font-medium ${account.status === "active" ? "text-emerald-600" : "text-slate-400"}`}>
-              ● {account.status === "active" ? "Active" : account.status}
+            <span className={`font-medium ${localAccount.status === "active" ? "text-emerald-600" : "text-slate-400"}`}>
+              ● {localAccount.status === "active" ? "Active" : localAccount.status}
             </span>
-            {account.website && (
-              <a href={account.website.startsWith("http") ? account.website : `https://${account.website}`} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 hover:underline">
-                {account.website.replace(/^https?:\/\//, "")}
+            {localAccount.website && (
+              <a href={localAccount.website.startsWith("http") ? localAccount.website : `https://${localAccount.website}`} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600 hover:underline">
+                {localAccount.website.replace(/^https?:\/\//, "")}
               </a>
             )}
-            {account.phone && (
-              <a href={`tel:${account.phone}`} className="text-blue-600 font-medium hover:underline">
-                {formatPhone(account.phone)}
+            {localAccount.phone && (
+              <a href={`tel:${localAccount.phone}`} className="text-blue-600 font-medium hover:underline">
+                {formatPhone(localAccount.phone)}
               </a>
             )}
             {lastTouchAt && <span>Last touch: {formatDate(lastTouchAt)}</span>}
           </div>
 
-          {account.notes && (
-            <p className="text-sm text-slate-600">{account.notes}</p>
+          {localAccount.notes && (
+            <p className="text-sm text-slate-600">{localAccount.notes}</p>
           )}
         </div>
+        )}
 
         {/* ICP Priority */}
         <div className="border-t border-slate-100 px-4 py-2.5 flex items-center gap-2">

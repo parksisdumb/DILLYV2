@@ -71,6 +71,15 @@ const ROLE_COLORS: Record<string, string> = {
   other: "bg-gray-100 text-gray-600",
 };
 
+const ROLE_OPTIONS = [
+  { value: "decision_maker", label: "Decision Maker" },
+  { value: "influencer", label: "Influencer" },
+  { value: "champion", label: "Champion" },
+  { value: "gatekeeper", label: "Gatekeeper" },
+  { value: "end_user", label: "End User" },
+  { value: "other", label: "Other" },
+];
+
 const PHASE_LABELS: Record<string, string> = {
   first_touch: "First Touch",
   follow_up: "Follow Up",
@@ -143,8 +152,61 @@ export default function ContactDetailClient({
 }) {
   const supabase = createBrowserSupabase();
 
+  const [localContact, setLocalContact] = useState(contact);
   const [touchpoints, setTouchpoints] = useState(initialTouchpoints);
   const [nextActions, setNextActions] = useState(initialNextActions);
+
+  // Edit contact state
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(contact.full_name ?? "");
+  const [editTitle, setEditTitle] = useState(contact.title ?? "");
+  const [editPhone, setEditPhone] = useState(contact.phone ?? "");
+  const [editEmail, setEditEmail] = useState(contact.email ?? "");
+  const [editRole, setEditRole] = useState(contact.decision_role ?? "");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  function startEdit() {
+    setEditName(localContact.full_name ?? "");
+    setEditTitle(localContact.title ?? "");
+    setEditPhone(localContact.phone ?? "");
+    setEditEmail(localContact.email ?? "");
+    setEditRole(localContact.decision_role ?? "");
+    setEditError(null);
+    setEditing(true);
+  }
+
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editName.trim()) {
+      setEditError("Name is required.");
+      return;
+    }
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      const updates = {
+        full_name: editName.trim(),
+        title: editTitle.trim() || null,
+        phone: editPhone.trim() || null,
+        email: editEmail.trim() || null,
+        decision_role: editRole || null,
+      };
+      const { error } = await supabase
+        .from("contacts")
+        .update(updates)
+        .eq("id", contact.id);
+      if (error) {
+        setEditError(error.message);
+        return;
+      }
+      setLocalContact((prev) => ({ ...prev, ...updates }));
+      setEditing(false);
+      showToast("success", "Contact updated.");
+    } finally {
+      setEditBusy(false);
+    }
+  }
   const [tab, setTab] = useState<"timeline" | "next_actions" | "properties">("timeline");
   const [activeAction, setActiveAction] = useState<"log" | "followup" | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
@@ -365,41 +427,124 @@ export default function ContactDetailClient({
       </a>
 
       {/* Header card */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-slate-900">{contact.full_name ?? "—"}</h1>
-            {contact.title && <p className="text-sm text-slate-500">{contact.title}</p>}
-            <a
-              href={`/app/accounts/${account.id}`}
-              className="mt-1 inline-block text-sm text-blue-600 hover:underline"
-            >
-              {account.name ?? "Unknown account"}
-            </a>
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-slate-600">
-              {contact.phone && (
-                <a href={`tel:${contact.phone}`} className="text-blue-600 font-medium hover:underline">
-                  {formatPhone(contact.phone)}
-                </a>
-              )}
-              {contact.email && (
-                <a href={`mailto:${contact.email}`} className="text-blue-600 hover:underline">
-                  {contact.email}
-                </a>
-              )}
+      {editing ? (
+        <form onSubmit={handleSaveEdit} className="rounded-2xl border border-blue-200 bg-blue-50 p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-800">Edit Contact</h2>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Name *</label>
+            <input
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="Full name"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Title</label>
+            <input
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="e.g. Facilities Director"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Phone</label>
+              <input
+                type="tel"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Email</label>
+              <input
+                type="email"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editEmail}
+                onChange={(e) => setEditEmail(e.target.value)}
+              />
             </div>
           </div>
-          {contact.decision_role && (
-            <span
-              className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-                ROLE_COLORS[contact.decision_role] ?? "bg-gray-100 text-gray-600"
-              }`}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Role</label>
+            <select
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editRole}
+              onChange={(e) => setEditRole(e.target.value)}
             >
-              {ROLE_LABELS[contact.decision_role] ?? contact.decision_role}
-            </span>
-          )}
+              <option value="">Unspecified</option>
+              {ROLE_OPTIONS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+          </div>
+          {editError && <p className="text-xs text-red-600">{editError}</p>}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={editBusy}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {editBusy ? "Saving…" : "Save Changes"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold text-slate-900">{localContact.full_name ?? "—"}</h1>
+              {localContact.title && <p className="text-sm text-slate-500">{localContact.title}</p>}
+              <a
+                href={`/app/accounts/${account.id}`}
+                className="mt-1 inline-block text-sm text-blue-600 hover:underline"
+              >
+                {account.name ?? "Unknown account"}
+              </a>
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-slate-600">
+                {localContact.phone && (
+                  <a href={`tel:${localContact.phone}`} className="text-blue-600 font-medium hover:underline">
+                    {formatPhone(localContact.phone)}
+                  </a>
+                )}
+                {localContact.email && (
+                  <a href={`mailto:${localContact.email}`} className="text-blue-600 hover:underline">
+                    {localContact.email}
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {localContact.decision_role && (
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                    ROLE_COLORS[localContact.decision_role] ?? "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  {ROLE_LABELS[localContact.decision_role] ?? localContact.decision_role}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={startEdit}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Edit
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2">

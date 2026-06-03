@@ -110,6 +110,16 @@ export default function OpportunityDetailClient({
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  // Edit opportunity state
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(initOpp.title ?? "");
+  const [editScopeId, setEditScopeId] = useState(initOpp.scope_type_id ?? "");
+  const [editEstValue, setEditEstValue] = useState(initOpp.estimated_value?.toString() ?? "");
+  const [editBidValue, setEditBidValue] = useState(initOpp.bid_value?.toString() ?? "");
+  const [editFinalValue, setEditFinalValue] = useState(initOpp.final_value?.toString() ?? "");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   const supabase = createBrowserSupabase();
 
   const scopeTypeMap = useMemo(() => new Map(scopeTypes.map((s) => [s.id, s])), [scopeTypes]);
@@ -133,6 +143,45 @@ export default function OpportunityDetailClient({
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
+  }
+
+  function startEdit() {
+    setEditTitle(opportunity.title ?? "");
+    setEditScopeId(opportunity.scope_type_id ?? "");
+    setEditEstValue(opportunity.estimated_value?.toString() ?? "");
+    setEditBidValue(opportunity.bid_value?.toString() ?? "");
+    setEditFinalValue(opportunity.final_value?.toString() ?? "");
+    setEditError(null);
+    setEditing(true);
+  }
+
+  function parseMoney(v: string): number | null {
+    const t = v.trim();
+    if (!t) return null;
+    const n = Number(t.replace(/[$,]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setEditBusy(true);
+    setEditError(null);
+    const updates = {
+      title: editTitle.trim() || null,
+      scope_type_id: editScopeId || null,
+      estimated_value: parseMoney(editEstValue),
+      bid_value: parseMoney(editBidValue),
+      final_value: parseMoney(editFinalValue),
+    };
+    const { error } = await supabase
+      .from("opportunities")
+      .update(updates)
+      .eq("id", opportunity.id);
+    setEditBusy(false);
+    if (error) { setEditError(error.message); return; }
+    setOpportunity((prev) => ({ ...prev, ...updates }));
+    setEditing(false);
+    showToast("Opportunity updated.");
   }
 
   async function advanceToStage(newStageId: string) {
@@ -252,6 +301,85 @@ export default function OpportunityDetailClient({
       </Link>
 
       {/* Header card */}
+      {editing ? (
+        <form onSubmit={handleSaveEdit} className="rounded-2xl border border-blue-200 bg-blue-50 p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-800">Edit Opportunity</h2>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Scope</label>
+            <select
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editScopeId}
+              onChange={(e) => setEditScopeId(e.target.value)}
+            >
+              <option value="">Unspecified</option>
+              {scopeTypes.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Title</label>
+            <input
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Optional label"
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Est. Value</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editEstValue}
+                onChange={(e) => setEditEstValue(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Bid Value</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editBidValue}
+                onChange={(e) => setEditBidValue(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Final Value</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                value={editFinalValue}
+                onChange={(e) => setEditFinalValue(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+          </div>
+          {editError && <p className="text-xs text-red-600">{editError}</p>}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={editBusy}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {editBusy ? "Saving…" : "Save Changes"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -278,11 +406,20 @@ export default function OpportunityDetailClient({
               </Link>
             )}
           </div>
-          <span
-            className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_COLORS[opportunity.status] ?? ""}`}
-          >
-            {opportunity.status}
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_COLORS[opportunity.status] ?? ""}`}
+            >
+              {opportunity.status}
+            </span>
+            <button
+              type="button"
+              onClick={startEdit}
+              className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Edit
+            </button>
+          </div>
         </div>
 
         {/* Value + dates */}
@@ -310,6 +447,7 @@ export default function OpportunityDetailClient({
           )}
         </div>
       </div>
+      )}
 
       {/* Stage progression (only for open opps) */}
       {opportunity.status === "open" && (

@@ -38,8 +38,11 @@ type Touchpoint = {
   touchpoint_type_id: string;
   outcome_id: string | null;
   contact_id: string | null;
+  direction: string;
 };
 type TouchpointType = { id: string; name: string; key?: string | null; is_outreach: boolean };
+
+const INBOUND_TYPE_KEYS = ["call", "email", "text"];
 type Outcome = { id: string; name: string; touchpoint_type_id?: string | null };
 type ScopeType = { id: string; name: string; key: string };
 type Stage = { id: string; name: string; key: string; is_closed_stage: boolean };
@@ -245,6 +248,7 @@ export default function PropertyDetailClient({
   const [showLinkAccount, setShowLinkAccount] = useState(false);
 
   // Log touchpoint form
+  const [logDirection, setLogDirection] = useState<"outbound" | "inbound">("outbound");
   const [logTypeId, setLogTypeId] = useState("");
   const [logContactId, setLogContactId] = useState(localPropContacts[0]?.contact_id ?? "");
   const [logOutcomeId, setLogOutcomeId] = useState("");
@@ -282,9 +286,21 @@ export default function PropertyDetailClient({
   const contactNameById = new Map(localPropContacts.map((pc) => [pc.contact_id, pc.contact.full_name]));
 
   const selectedType = logTypeId ? typeById.get(logTypeId) : null;
+  const inboundTypes = touchpointTypes.filter(
+    (t) => t.key && INBOUND_TYPE_KEYS.includes(t.key),
+  );
+  const logTypeOptions = logDirection === "inbound" ? inboundTypes : touchpointTypes;
   const logOutcomes = touchpointOutcomes.filter(
     (o) => !logTypeId || o.touchpoint_type_id === logTypeId,
   );
+
+  function setDirection(dir: "outbound" | "inbound") {
+    setLogDirection(dir);
+    setLogTypeId("");
+    setLogOutcomeId("");
+    setLogPhase(dir === "inbound" ? "follow_up" : "visibility");
+    setLogError(null);
+  }
   const phaseOptions = selectedType?.is_outreach
     ? [
         { value: "first_touch", label: "First Touch" },
@@ -463,15 +479,16 @@ export default function PropertyDetailClient({
 
   async function handleLogSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const isInbound = logDirection === "inbound";
     if (!logTypeId) {
       setLogError("Select a touchpoint type.");
       return;
     }
-    if (selectedType?.is_outreach && !logContactId) {
+    if (!isInbound && selectedType?.is_outreach && !logContactId) {
       setLogError("Contact is required for outreach touchpoints.");
       return;
     }
-    if (selectedType?.is_outreach && !logNotes.trim()) {
+    if ((isInbound || selectedType?.is_outreach) && !logNotes.trim()) {
       setLogError("Notes are required.");
       return;
     }
@@ -480,7 +497,21 @@ export default function PropertyDetailClient({
     try {
       let tpId: string | null = null;
 
-      if (selectedType?.is_outreach) {
+      if (isInbound) {
+        const pc = localPropContacts.find((p) => p.contact_id === logContactId);
+        const { data, error } = await supabase.rpc("rpc_log_inbound_touchpoint", {
+          p_touchpoint_type_id: logTypeId,
+          p_property_id: property.id,
+          p_contact_id: logContactId || null,
+          p_account_id: pc?.contact.account_id ?? null,
+          p_outcome_id: logOutcomeId || null,
+          p_notes: logNotes.trim(),
+          p_engagement_phase: logPhase,
+        });
+        if (error) { setLogError(error.message); return; }
+        const row = (Array.isArray(data) ? data[0] : data) as { touchpoint_id?: string } | null;
+        tpId = row?.touchpoint_id ?? null;
+      } else if (selectedType?.is_outreach) {
         const pc = localPropContacts.find((p) => p.contact_id === logContactId);
         const { data, error } = await supabase.rpc("rpc_log_outreach_touchpoint", {
           p_contact_id: logContactId,
@@ -514,8 +545,10 @@ export default function PropertyDetailClient({
         touchpoint_type_id: logTypeId,
         outcome_id: logOutcomeId || null,
         contact_id: logContactId || null,
+        direction: isInbound ? "inbound" : "outbound",
       };
       setTouchpoints((prev) => [newTp, ...prev]);
+      setLogDirection("outbound");
       setLogTypeId("");
       setLogContactId(localPropContacts[0]?.contact_id ?? "");
       setLogOutcomeId("");
@@ -523,7 +556,7 @@ export default function PropertyDetailClient({
       setLogNotes("");
       setActiveAction(null);
       setTab("timeline");
-      showToast("success", "Touchpoint logged.");
+      showToast("success", isInbound ? "Inbound touchpoint logged." : "Touchpoint logged.");
     } finally {
       setLogBusy(false);
     }
@@ -944,11 +977,39 @@ export default function PropertyDetailClient({
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">Log Touchpoint</h2>
           <form onSubmit={handleLogSubmit} className="space-y-3">
+            {/* Direction toggle */}
+            <div>
+              <p className="mb-2 text-xs font-medium text-slate-600">Direction</p>
+              <div className="flex gap-2">
+                {([
+                  { value: "outbound", label: "Outbound" },
+                  { value: "inbound", label: "Inbound" },
+                ] as const).map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => setDirection(d.value)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      logDirection === d.value
+                        ? "bg-blue-600 text-white"
+                        : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {logDirection === "inbound" && (
+                <p className="mt-1.5 text-xs text-slate-500">
+                  A call/email/text initiated by the contact. Visibility only — no points or outreach credit. Contact optional.
+                </p>
+              )}
+            </div>
             {/* Type chips */}
             <div>
               <p className="mb-2 text-xs font-medium text-slate-600">Type *</p>
               <div className="flex flex-wrap gap-2">
-                {touchpointTypes.map((t) => (
+                {logTypeOptions.map((t) => (
                   <button
                     key={t.id}
                     type="button"
@@ -968,14 +1029,14 @@ export default function PropertyDetailClient({
             {localPropContacts.length > 0 && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">
-                  Contact{selectedType?.is_outreach ? " *" : " (optional)"}
+                  Contact{logDirection !== "inbound" && selectedType?.is_outreach ? " *" : " (optional)"}
                 </label>
                 <select
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
                   value={logContactId}
                   onChange={(e) => setLogContactId(e.target.value)}
                 >
-                  {!selectedType?.is_outreach && <option value="">None</option>}
+                  {(logDirection === "inbound" || !selectedType?.is_outreach) && <option value="">None</option>}
                   {localPropContacts.map((pc) => (
                     <option key={pc.contact_id} value={pc.contact_id}>
                       {pc.contact.full_name ?? "Unknown"}
@@ -985,7 +1046,7 @@ export default function PropertyDetailClient({
                 </select>
               </div>
             )}
-            {localPropContacts.length === 0 && selectedType?.is_outreach && (
+            {localPropContacts.length === 0 && selectedType?.is_outreach && logDirection !== "inbound" && (
               <p className="text-xs text-amber-600">
                 No contacts linked to this property. Outreach requires a contact.
               </p>
@@ -1032,7 +1093,7 @@ export default function PropertyDetailClient({
             {/* Notes */}
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
-                Notes{selectedType?.is_outreach ? " *" : ""}
+                Notes{logDirection === "inbound" || selectedType?.is_outreach ? " *" : ""}
               </label>
               <textarea
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
@@ -1543,6 +1604,11 @@ export default function PropertyDetailClient({
                     <span className="text-xs text-slate-500">{formatDate(tp.happened_at)}</span>
                     {type && (
                       <span className="text-xs font-medium text-slate-700">{type.name}</span>
+                    )}
+                    {tp.direction === "inbound" && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                        ↙ Inbound
+                      </span>
                     )}
                     {outcome && (
                       <span className="text-xs text-slate-600">— {outcome.name}</span>

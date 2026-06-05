@@ -78,7 +78,7 @@ export default async function PropertyDetailPage({
       .order("opened_at", { ascending: false }),
     supabase
       .from("touchpoints")
-      .select("id,happened_at,notes,engagement_phase,touchpoint_type_id,outcome_id,contact_id")
+      .select("id,happened_at,notes,engagement_phase,touchpoint_type_id,outcome_id,contact_id,direction")
       .eq("property_id", id)
       .order("happened_at", { ascending: false })
       .limit(50),

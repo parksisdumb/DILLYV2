@@ -56,7 +56,10 @@ type Touchpoint = {
   touchpoint_type_id: string;
   outcome_id: string | null;
   contact_id: string | null;
+  direction: string;
 };
+
+const INBOUND_TYPE_KEYS = ["call", "email", "text"];
 
 type TouchpointType = {
   id: string;
@@ -261,6 +264,7 @@ export default function AccountDetailClient({
 
   // ── Log Touchpoint form ──
   const [showLogForm, setShowLogForm] = useState(false);
+  const [logDirection, setLogDirection] = useState<"outbound" | "inbound">("outbound");
   const [logContactId, setLogContactId] = useState("");
   const [logTypeId, setLogTypeId] = useState("");
   const [logOutcomeId, setLogOutcomeId] = useState("");
@@ -333,6 +337,18 @@ export default function AccountDetailClient({
 
   // ── Derived lookups ──
   const outreachTypes = useMemo(() => touchpointTypes.filter((t) => t.is_outreach), [touchpointTypes]);
+  const inboundTypes = useMemo(
+    () => touchpointTypes.filter((t) => t.key && INBOUND_TYPE_KEYS.includes(t.key)),
+    [touchpointTypes],
+  );
+  const logTypeOptions = logDirection === "inbound" ? inboundTypes : outreachTypes;
+
+  function setDirection(dir: "outbound" | "inbound") {
+    setLogDirection(dir);
+    setLogTypeId("");
+    setLogOutcomeId("");
+    setLogError(null);
+  }
   const typesById = useMemo(() => new Map(touchpointTypes.map((t) => [t.id, t])), [touchpointTypes]);
   const outcomesById = useMemo(() => new Map(touchpointOutcomes.map((o) => [o.id, o])), [touchpointOutcomes]);
   const contactsById = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
@@ -358,25 +374,33 @@ export default function AccountDetailClient({
 
   // ── Log Touchpoint submit ──
   async function onLogSubmit() {
-    if (!logContactId) { setLogError("Select a contact."); return; }
-    if (!logTypeId) { setLogError("Select how you reached out."); return; }
+    const isInbound = logDirection === "inbound";
+    // Outbound outreach requires a contact; inbound can be account-only.
+    if (!isInbound && !logContactId) { setLogError("Select a contact."); return; }
+    if (!logTypeId) { setLogError(isInbound ? "Select a type." : "Select how you reached out."); return; }
     if (!logNotes.trim()) { setLogError("Notes are required."); return; }
 
-    // Verify contact belongs to this account
-    const contact = contactsById.get(logContactId);
-    if (!contact) { setLogError("Contact not found."); return; }
+    if (logContactId && !contactsById.get(logContactId)) { setLogError("Contact not found."); return; }
 
     setLogError(null);
     setLogBusy(true);
 
-    const { data: rpcData, error: rpcErr } = await supabase.rpc("rpc_log_outreach_touchpoint", {
-      p_contact_id: logContactId,
-      p_account_id: account.id,
-      p_touchpoint_type_id: logTypeId,
-      p_outcome_id: logOutcomeId || null,
-      p_notes: logNotes.trim(),
-      p_engagement_phase: "follow_up",
-    });
+    const { data: rpcData, error: rpcErr } = isInbound
+      ? await supabase.rpc("rpc_log_inbound_touchpoint", {
+          p_touchpoint_type_id: logTypeId,
+          p_contact_id: logContactId || null,
+          p_account_id: account.id,
+          p_outcome_id: logOutcomeId || null,
+          p_notes: logNotes.trim(),
+        })
+      : await supabase.rpc("rpc_log_outreach_touchpoint", {
+          p_contact_id: logContactId,
+          p_account_id: account.id,
+          p_touchpoint_type_id: logTypeId,
+          p_outcome_id: logOutcomeId || null,
+          p_notes: logNotes.trim(),
+          p_engagement_phase: "follow_up",
+        });
 
     setLogBusy(false);
 
@@ -390,14 +414,15 @@ export default function AccountDetailClient({
       engagement_phase: "follow_up",
       touchpoint_type_id: logTypeId,
       outcome_id: logOutcomeId || null,
-      contact_id: logContactId,
+      contact_id: logContactId || null,
+      direction: isInbound ? "inbound" : "outbound",
     };
 
     setTouchpoints((prev) => [newTp, ...prev]);
     setShowLogForm(false);
-    setLogContactId(""); setLogTypeId(""); setLogOutcomeId(""); setLogNotes("");
+    setLogDirection("outbound"); setLogContactId(""); setLogTypeId(""); setLogOutcomeId(""); setLogNotes("");
     setTab("timeline");
-    showToast("success", "Touchpoint logged.");
+    showToast("success", isInbound ? "Inbound touchpoint logged." : "Touchpoint logged.");
   }
 
   // ── Add Contact submit ──
@@ -931,28 +956,44 @@ export default function AccountDetailClient({
             <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{logError}</div>
           )}
 
-          {contacts.length === 0 ? (
-            <p className="text-sm text-slate-500">Add a contact first before logging a touchpoint.</p>
+          {/* Direction */}
+          <div>
+            <label className={sectionLabel}>Direction</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setDirection("outbound")} className={chipBtn(logDirection === "outbound")}>Outbound</button>
+              <button type="button" onClick={() => setDirection("inbound")} className={chipBtn(logDirection === "inbound")}>Inbound</button>
+            </div>
+            {logDirection === "inbound" && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                A call/email/text someone from this account initiated. Visibility only — no points or outreach credit. Contact is optional.
+              </p>
+            )}
+          </div>
+
+          {logDirection === "outbound" && contacts.length === 0 ? (
+            <p className="text-sm text-slate-500">Add a contact first to log outbound outreach, or switch to Inbound above.</p>
           ) : (
             <>
-              <div>
-                <label className={sectionLabel}>Contact</label>
-                <select
-                  className={input}
-                  value={logContactId}
-                  onChange={(e) => { setLogContactId(e.target.value); setLogError(null); }}
-                >
-                  <option value="">Select contact...</option>
-                  {contacts.map((c) => (
-                    <option key={c.id} value={c.id}>{c.full_name ?? "Unnamed"}</option>
-                  ))}
-                </select>
-              </div>
+              {contacts.length > 0 && (
+                <div>
+                  <label className={sectionLabel}>Contact{logDirection === "inbound" ? " (optional)" : ""}</label>
+                  <select
+                    className={input}
+                    value={logContactId}
+                    onChange={(e) => { setLogContactId(e.target.value); setLogError(null); }}
+                  >
+                    <option value="">{logDirection === "inbound" ? "No specific contact" : "Select contact..."}</option>
+                    {contacts.map((c) => (
+                      <option key={c.id} value={c.id}>{c.full_name ?? "Unnamed"}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
-                <label className={sectionLabel}>How did you reach out?</label>
+                <label className={sectionLabel}>{logDirection === "inbound" ? "Type" : "How did you reach out?"}</label>
                 <div className="flex flex-wrap gap-2">
-                  {outreachTypes.map((t) => (
+                  {logTypeOptions.map((t) => (
                     <button
                       key={t.id}
                       type="button"
@@ -999,7 +1040,7 @@ export default function AccountDetailClient({
                 onClick={() => void onLogSubmit()}
                 className={[
                   "rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
-                  logContactId && logTypeId && logNotes.trim()
+                  (logDirection === "inbound" || logContactId) && logTypeId && logNotes.trim()
                     ? "bg-blue-600 text-white hover:bg-blue-700"
                     : "bg-slate-100 text-slate-400",
                 ].join(" ")}
@@ -1421,6 +1462,11 @@ export default function AccountDetailClient({
                           {formatDate(tp.happened_at)}
                         </span>
                         <span className="text-sm text-slate-600">— {typeName}</span>
+                        {tp.direction === "inbound" && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                            ↙ Inbound
+                          </span>
+                        )}
                         {outcomeName && (
                           <span className="text-sm text-slate-600">— {outcomeName}</span>
                         )}

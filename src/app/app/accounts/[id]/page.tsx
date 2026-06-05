@@ -37,7 +37,7 @@ export default async function AccountDetailPage({
       .order("address_line1"),
     supabase
       .from("touchpoints")
-      .select("id,happened_at,notes,engagement_phase,touchpoint_type_id,outcome_id,contact_id")
+      .select("id,happened_at,notes,engagement_phase,touchpoint_type_id,outcome_id,contact_id,direction")
       .eq("account_id", id)
       .order("happened_at", { ascending: false })
       .limit(50),

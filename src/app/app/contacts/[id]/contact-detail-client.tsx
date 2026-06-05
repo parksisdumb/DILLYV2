@@ -41,7 +41,10 @@ type Touchpoint = {
   touchpoint_type_id: string;
   outcome_id: string | null;
   account_id: string | null;
+  direction: string;
 };
+
+const INBOUND_TYPE_KEYS = ["call", "email", "text"];
 type NextAction = {
   id: string;
   due_at: string;
@@ -212,6 +215,7 @@ export default function ContactDetailClient({
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   // Log touchpoint form
+  const [logDirection, setLogDirection] = useState<"outbound" | "inbound">("outbound");
   const [logTypeId, setLogTypeId] = useState("");
   const [logOutcomeId, setLogOutcomeId] = useState("");
   const [logNotes, setLogNotes] = useState("");
@@ -325,9 +329,20 @@ export default function ContactDetailClient({
   const propertyById = new Map(localProperties.map((p) => [p.id, p]));
 
   const outreachTypes = touchpointTypes.filter((t) => t.is_outreach);
+  const inboundTypes = touchpointTypes.filter(
+    (t) => t.key && INBOUND_TYPE_KEYS.includes(t.key)
+  );
+  const logTypeOptions = logDirection === "inbound" ? inboundTypes : outreachTypes;
   const logOutcomes = touchpointOutcomes.filter(
     (o) => !logTypeId || o.touchpoint_type_id === logTypeId
   );
+
+  function setDirection(dir: "outbound" | "inbound") {
+    setLogDirection(dir);
+    setLogTypeId("");
+    setLogOutcomeId("");
+    setLogError(null);
+  }
 
   async function handleLogSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -338,35 +353,46 @@ export default function ContactDetailClient({
     setLogBusy(true);
     setLogError(null);
     try {
-      const { data, error } = await supabase.rpc("rpc_log_outreach_touchpoint", {
-        p_contact_id: contact.id,
-        p_account_id: contact.account_id,
-        p_touchpoint_type_id: logTypeId,
-        p_outcome_id: logOutcomeId || null,
-        p_notes: logNotes.trim(),
-        p_engagement_phase: "follow_up",
-      });
+      const isInbound = logDirection === "inbound";
+      const { data, error } = isInbound
+        ? await supabase.rpc("rpc_log_inbound_touchpoint", {
+            p_touchpoint_type_id: logTypeId,
+            p_contact_id: contact.id,
+            p_account_id: contact.account_id,
+            p_outcome_id: logOutcomeId || null,
+            p_notes: logNotes.trim(),
+          })
+        : await supabase.rpc("rpc_log_outreach_touchpoint", {
+            p_contact_id: contact.id,
+            p_account_id: contact.account_id,
+            p_touchpoint_type_id: logTypeId,
+            p_outcome_id: logOutcomeId || null,
+            p_notes: logNotes.trim(),
+            p_engagement_phase: "follow_up",
+          });
       if (error) {
         setLogError(error.message);
         return;
       }
-      const result = data as { touchpoint_id: string };
+      const row = (Array.isArray(data) ? data[0] : data) as { touchpoint_id?: string } | null;
       const newTp: Touchpoint = {
-        id: result.touchpoint_id,
+        id: row?.touchpoint_id ?? crypto.randomUUID(),
         happened_at: new Date().toISOString(),
         notes: logNotes.trim(),
         engagement_phase: "follow_up",
         touchpoint_type_id: logTypeId,
         outcome_id: logOutcomeId || null,
         account_id: contact.account_id,
+        direction: isInbound ? "inbound" : "outbound",
       };
       setTouchpoints((prev) => [newTp, ...prev]);
+      setLogDirection("outbound");
       setLogTypeId("");
       setLogOutcomeId("");
       setLogNotes("");
       setActiveAction(null);
       setTab("timeline");
-      showToast("success", "Touchpoint logged.");
+      showToast("success", isInbound ? "Inbound touchpoint logged." : "Touchpoint logged.");
     } finally {
       setLogBusy(false);
     }
@@ -575,11 +601,39 @@ export default function ContactDetailClient({
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">Log Touchpoint</h2>
           <form onSubmit={handleLogSubmit} className="space-y-3">
+            {/* Direction toggle */}
+            <div>
+              <p className="mb-2 text-xs font-medium text-slate-600">Direction</p>
+              <div className="flex gap-2">
+                {([
+                  { value: "outbound", label: "Outbound" },
+                  { value: "inbound", label: "Inbound" },
+                ] as const).map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => setDirection(d.value)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      logDirection === d.value
+                        ? "bg-blue-600 text-white"
+                        : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+              {logDirection === "inbound" && (
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Logs a call/email/text this contact initiated. Visibility only — no points or outreach credit.
+                </p>
+              )}
+            </div>
             {/* Type chips */}
             <div>
               <p className="mb-2 text-xs font-medium text-slate-600">Type *</p>
               <div className="flex flex-wrap gap-2">
-                {outreachTypes.map((t) => (
+                {logTypeOptions.map((t) => (
                   <button
                     key={t.id}
                     type="button"
@@ -782,6 +836,11 @@ export default function ContactDetailClient({
                     <span className="text-xs text-slate-500">{formatDate(tp.happened_at)}</span>
                     {type && (
                       <span className="text-xs font-medium text-slate-700">{type.name}</span>
+                    )}
+                    {tp.direction === "inbound" && (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                        ↙ Inbound
+                      </span>
                     )}
                     {outcome && (
                       <span className="text-xs text-slate-600">— {outcome.name}</span>

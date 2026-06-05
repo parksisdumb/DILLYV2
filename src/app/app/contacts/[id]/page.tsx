@@ -30,7 +30,7 @@ export default async function ContactDetailPage({
         .single(),
       supabase
         .from("touchpoints")
-        .select("id,happened_at,notes,engagement_phase,touchpoint_type_id,outcome_id,account_id")
+        .select("id,happened_at,notes,engagement_phase,touchpoint_type_id,outcome_id,account_id,direction")
         .eq("contact_id", id)
         .order("happened_at", { ascending: false })
         .limit(50),

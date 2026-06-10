@@ -237,7 +237,7 @@ Local dev credentials after `npx supabase db reset && npm run seed:dev`:
 - Local Supabase Studio: http://127.0.0.1:54323
 - Local app: http://localhost:3000
 
-Current migrations (67 total on disk, as of 2026-05-29; applied in order):
+Current migrations (69 total on disk, as of 2026-06-08; applied in order):
 1. `20260220204621_init_schema_v1` — core schema
 2. `20260221000022_rls_policies_v1` — initial RLS
 3. `20260221060949_rpc_core_v1` — RPCs + seed data (includes legacy `rpc_create_touchpoint_and_side_effects`)
@@ -305,5 +305,7 @@ Current migrations (67 total on disk, as of 2026-05-29; applied in order):
 65. `20260501100000_monthly_revenue_target_v1` — monthly revenue target KPI/config
 66. `20260501120000_score_rules_new_outcome_taxonomy_v1` — score_rules aligned to the new outcome taxonomy
 67. `20260502100000_fix_rpc_convert_prospect_v1` — fixes `rpc_convert_prospect`
+68. `20260605100000_touchpoint_direction_inbound_v1` — adds `direction` ('inbound'|'outbound', default 'outbound') to touchpoints, relaxes the outreach-contact trigger so inbound touchpoints can be account/property-anchored (contact only required for OUTBOUND outreach), and adds `rpc_log_inbound_touchpoint` (call/email/text only; visibility-only — no score_events/streaks/KPI impact)
+69. `20260608100000_contacts_dedupe_no_silent_substitution_v1` — fixes `rpc_create_contact` silently returning an existing contact on email/phone match (multiple distinct people sharing a company switchboard line all collapsed into the first contact). Now ALWAYS inserts the new contact; phone is no longer a dedup key; an existing same-email contact becomes an advisory `warning` only. Same return signature.
 
 > Migration list maintenance: when you add a migration, bump the "N total on disk" count above and append the new entry here.

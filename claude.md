@@ -237,7 +237,7 @@ Local dev credentials after `npx supabase db reset && npm run seed:dev`:
 - Local Supabase Studio: http://127.0.0.1:54323
 - Local app: http://localhost:3000
 
-Current migrations (69 total on disk, as of 2026-06-08; applied in order):
+Current migrations (70 total on disk, as of 2026-06-13; applied in order):
 1. `20260220204621_init_schema_v1` — core schema
 2. `20260221000022_rls_policies_v1` — initial RLS
 3. `20260221060949_rpc_core_v1` — RPCs + seed data (includes legacy `rpc_create_touchpoint_and_side_effects`)
@@ -307,5 +307,6 @@ Current migrations (69 total on disk, as of 2026-06-08; applied in order):
 67. `20260502100000_fix_rpc_convert_prospect_v1` — fixes `rpc_convert_prospect`
 68. `20260605100000_touchpoint_direction_inbound_v1` — adds `direction` ('inbound'|'outbound', default 'outbound') to touchpoints, relaxes the outreach-contact trigger so inbound touchpoints can be account/property-anchored (contact only required for OUTBOUND outreach), and adds `rpc_log_inbound_touchpoint` (call/email/text only; visibility-only — no score_events/streaks/KPI impact)
 69. `20260608100000_contacts_dedupe_no_silent_substitution_v1` — fixes `rpc_create_contact` silently returning an existing contact on email/phone match (multiple distinct people sharing a company switchboard line all collapsed into the first contact). Now ALWAYS inserts the new contact; phone is no longer a dedup key; an existing same-email contact becomes an advisory `warning` only. Same return signature.
+70. `20260613100000_fix_scoring_wildcard_rules_backfill_v1` — fixes scoring producing empty `score_events`. Both `rpc_log_outreach_touchpoint` and `rpc_log_touchpoint` now match `score_rules` with NULL `touchpoint_type_id`/`outcome_id` as a WILDCARD (most-specific rule wins: type+outcome > outcome-only > base; org rule beats global; then newest), instead of `sr.touchpoint_type_id = p_touchpoint_type_id` which NULL never satisfied. Seeds GLOBAL outcome-only rules (org_id NULL) for the real outcome taxonomy + one global base rule (all NULL, 1 pt) so every touchpoint scores ≥1. Backfills `score_events` for pre-existing touchpoints (reason `touchpoint_backfill`, `created_at = happened_at`, idempotent via NOT EXISTS on touchpoint_id).
 
 > Migration list maintenance: when you add a migration, bump the "N total on disk" count above and append the new entry here.

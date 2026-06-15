@@ -8,6 +8,8 @@ import GrowForm from "@/app/app/today/grow-form";
 import AdvanceList from "@/app/app/today/advance-list";
 import SuggestedOutreach from "@/app/app/today/suggested-outreach";
 import type { SuggestionRow } from "@/app/app/today/suggested-outreach";
+import TeamLeaderboard from "@/app/app/today/team-leaderboard";
+import type { LeaderboardEntry } from "@/app/app/today/team-leaderboard";
 
 type Tab = "grow" | "advance";
 
@@ -62,8 +64,13 @@ type OutreachResult = {
   outreach_remaining: number;
 };
 
-const buttonMuted =
-  "rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50";
+// Tab buttons: pick ONE complete class set per state so utilities never conflict
+// (a shared base + appended bg/text classes lets Tailwind's conflict resolution
+// hide a label — e.g. white text on white bg). Inactive always has dark text.
+const tabBase =
+  "flex items-center rounded-md border px-3 py-1.5 text-sm font-medium transition-colors";
+const tabActive = "border-blue-600 bg-blue-600 text-white";
+const tabInactive = "border-slate-300 bg-white text-slate-700 hover:bg-slate-50";
 
 const toNumber = (value: unknown, fallback = 0) => {
   const n = Number(value);
@@ -105,6 +112,7 @@ export default function TodayClient({ userId }: { userId: string }) {
   const [latestTouchpointByContactId, setLatestTouchpointByContactId] = useState<Map<string, LatestTouchpoint>>(new Map());
   const [sourceTouchpointOutcomeByActionId, setSourceTouchpointOutcomeByActionId] = useState<Map<string, string | null>>(new Map());
   const [suggestions, setSuggestions] = useState<SuggestionRow[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
 
   const [dashboard, setDashboard] = useState<DashboardRow>({
     points_today: 0,
@@ -320,6 +328,37 @@ export default function TodayClient({ userId }: { userId: string }) {
       });
       setSuggestions(mapped);
 
+      // Team leaderboard — weekly points for ALL org members (shown to every role).
+      // Same score_events weekly window the manager leaderboard uses (Monday-start UTC).
+      const nowTs = new Date();
+      const weekStart = new Date(
+        Date.UTC(nowTs.getUTCFullYear(), nowTs.getUTCMonth(), nowTs.getUTCDate()),
+      );
+      const utcDay = nowTs.getUTCDay();
+      weekStart.setUTCDate(weekStart.getUTCDate() - (utcDay === 0 ? 6 : utcDay - 1));
+
+      const [membersRes, weekScoresRes] = await Promise.all([
+        supabase.from("org_users").select("user_id,full_name,email"),
+        supabase
+          .from("score_events")
+          .select("user_id,points")
+          .gte("created_at", weekStart.toISOString()),
+      ]);
+
+      const pointsByUser = new Map<string, number>();
+      for (const se of (weekScoresRes.data ?? []) as { user_id: string; points: number }[]) {
+        pointsByUser.set(se.user_id, (pointsByUser.get(se.user_id) ?? 0) + toNumber(se.points, 0));
+      }
+      const seenUsers = new Set<string>();
+      const leaderboardRows: LeaderboardEntry[] = [];
+      for (const m of (membersRes.data ?? []) as { user_id: string; full_name: string | null; email: string | null }[]) {
+        if (seenUsers.has(m.user_id)) continue;
+        seenUsers.add(m.user_id);
+        const name = m.full_name?.trim() || m.email?.split("@")[0] || m.user_id.slice(0, 8);
+        leaderboardRows.push({ userId: m.user_id, name, points: pointsByUser.get(m.user_id) ?? 0 });
+      }
+      setLeaderboard(leaderboardRows);
+
       const dashRow = Array.isArray(dash.data)
         ? ((dash.data[0] as Partial<DashboardRow> | undefined) ?? undefined)
         : undefined;
@@ -422,13 +461,13 @@ export default function TodayClient({ userId }: { userId: string }) {
       {/* Tab switcher */}
       <div className="flex gap-2">
         <button
-          className={`${buttonMuted} ${tab === "grow" ? "border-blue-600 bg-blue-600 text-white" : ""}`}
+          className={`${tabBase} ${tab === "grow" ? tabActive : tabInactive}`}
           onClick={() => setTab("grow")}
         >
           Grow
         </button>
         <button
-          className={`${buttonMuted} ${tab === "advance" ? "border-blue-600 bg-blue-600 text-white" : ""}`}
+          className={`${tabBase} ${tab === "advance" ? tabActive : tabInactive}`}
           onClick={() => setTab("advance")}
         >
           Advance
@@ -492,6 +531,9 @@ export default function TodayClient({ userId }: { userId: string }) {
           onActionCompleted={handleActionCompleted}
         />
       )}
+
+      {/* Team Leaderboard — visible to all roles, ranks everyone by weekly points */}
+      <TeamLeaderboard entries={leaderboard} currentUserId={userId} />
 
       {toast && (
         <div

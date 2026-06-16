@@ -52,8 +52,8 @@ export default async function OpportunitiesPage() {
         .is("deleted_at", null)
         .limit(500),
       supabase.from("accounts").select("id,name").is("deleted_at", null).limit(500),
-      supabase.from("opportunity_stages").select("id,name,key,sort_order,is_closed_stage").order("sort_order"),
-      supabase.from("scope_types").select("id,name,key").order("sort_order"),
+      supabase.from("opportunity_stages").select("id,name,key,sort_order,is_closed_stage,org_id").order("sort_order"),
+      supabase.from("scope_types").select("id,name,key,org_id").order("sort_order"),
       supabase.from("opportunity_assignments").select("opportunity_id,user_id,is_primary"),
       supabase.from("org_users").select("user_id,role").limit(200),
       supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
@@ -127,8 +127,21 @@ export default async function OpportunitiesPage() {
     };
   });
 
-  const stages: Stage[] = (stagesRes.data ?? []).map((s) => s as unknown as Stage);
-  const scopeTypes: ScopeType[] = (scopeRes.data ?? []).map((s) => s as unknown as ScopeType);
+  // Config tables hold both org-specific and global (org_id = null) rows. An org
+  // that has customized its own stages/scopes uses ONLY those; otherwise it falls
+  // back to the global defaults. (Name-resolution maps above intentionally keep
+  // ALL rows so existing opportunities resolve regardless of which set they used.)
+  function pickOrgOrGlobal<T extends { org_id?: string | null }>(rows: T[]): T[] {
+    const orgRows = rows.filter((r) => r.org_id === orgId);
+    return orgRows.length > 0 ? orgRows : rows.filter((r) => r.org_id == null);
+  }
+
+  const stages: Stage[] = pickOrgOrGlobal((stagesRes.data ?? []) as (Stage & { org_id: string | null })[]).map(
+    (s) => s as unknown as Stage,
+  );
+  const scopeTypes: ScopeType[] = pickOrgOrGlobal((scopeRes.data ?? []) as (ScopeType & { org_id: string | null })[]).map(
+    (s) => s as unknown as ScopeType,
+  );
   const properties: PropertyOption[] = Array.from(propertiesById.values());
   const orgUsers: OrgUser[] = (orgUsersRes.data ?? []).map((u) => ({
     user_id: u.user_id as string,

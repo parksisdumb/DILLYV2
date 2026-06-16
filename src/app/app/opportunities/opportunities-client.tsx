@@ -249,6 +249,11 @@ export default function OpportunitiesClient({
             {/* Scope */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Scope *</label>
+              {scopeTypes.length === 0 && (
+                <p className="text-sm text-amber-700">
+                  No scope types configured for this org. Ask an admin to set them up.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {scopeTypes.map((s) => (
                   <button
@@ -270,6 +275,11 @@ export default function OpportunitiesClient({
             {/* Stage */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Stage *</label>
+              {openStages.length === 0 && (
+                <p className="mb-1 text-sm text-amber-700">
+                  No pipeline stages configured for this org. Ask an admin to set them up.
+                </p>
+              )}
               <select
                 value={stageId}
                 onChange={(e) => setStageId(e.target.value)}

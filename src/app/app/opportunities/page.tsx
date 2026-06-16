@@ -30,7 +30,8 @@ export type Stage = {
 };
 
 export type ScopeType = { id: string; name: string; key: string };
-export type PropertyOption = { id: string; name: string | null; address_line1: string; city: string | null; state: string | null };
+export type PropertyOption = { id: string; name: string | null; address_line1: string; city: string | null; state: string | null; primary_account_id: string | null };
+export type AccountOption = { id: string; name: string | null };
 export type OrgUser = { user_id: string; role: string };
 
 export default async function OpportunitiesPage() {
@@ -48,7 +49,7 @@ export default async function OpportunitiesPage() {
         .limit(500),
       supabase
         .from("properties")
-        .select("id,name,address_line1,city,state")
+        .select("id,name,address_line1,city,state,primary_account_id")
         .is("deleted_at", null)
         .limit(500),
       supabase.from("accounts").select("id,name").is("deleted_at", null).limit(500),
@@ -70,6 +71,7 @@ export default async function OpportunitiesPage() {
       address_line1: p.address_line1 as string,
       city: p.city as string | null,
       state: p.state as string | null,
+      primary_account_id: p.primary_account_id as string | null,
     });
   }
 
@@ -143,6 +145,10 @@ export default async function OpportunitiesPage() {
     (s) => s as unknown as ScopeType,
   );
   const properties: PropertyOption[] = Array.from(propertiesById.values());
+  const accountOptions: AccountOption[] = (accountsRes.data ?? []).map((a) => ({
+    id: a.id as string,
+    name: a.name as string | null,
+  }));
   const orgUsers: OrgUser[] = (orgUsersRes.data ?? []).map((u) => ({
     user_id: u.user_id as string,
     role: u.role as string,
@@ -154,6 +160,7 @@ export default async function OpportunitiesPage() {
       stages={stages}
       scopeTypes={scopeTypes}
       properties={properties}
+      accounts={accountOptions}
       orgUsers={orgUsers}
       orgId={orgId}
       userId={userId}

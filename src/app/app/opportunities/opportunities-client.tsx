@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
-import type { OppRow, Stage, ScopeType, PropertyOption, OrgUser } from "@/app/app/opportunities/page";
+import type { OppRow, Stage, ScopeType, PropertyOption, AccountOption, OrgUser } from "@/app/app/opportunities/page";
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -36,6 +36,7 @@ type Props = {
   stages: Stage[];
   scopeTypes: ScopeType[];
   properties: PropertyOption[];
+  accounts: AccountOption[];
   orgUsers: OrgUser[];
   orgId: string;
   userId: string;
@@ -47,6 +48,7 @@ export default function OpportunitiesClient({
   stages,
   scopeTypes,
   properties,
+  accounts,
   orgUsers,
   orgId,
   userId,
@@ -69,6 +71,8 @@ export default function OpportunitiesClient({
   const [toast, setToast] = useState<string | null>(null);
 
   const supabase = createBrowserSupabase();
+
+  const accountsById = useMemo(() => new Map(accounts.map((a) => [a.id, a.name])), [accounts]);
 
   // Pipeline summary (full dataset, not filtered)
   const summary = useMemo(() => {
@@ -140,6 +144,9 @@ export default function OpportunitiesClient({
         stage_id: stageId,
         title: title.trim() || null,
         estimated_value: value ? parseFloat(value) : null,
+        // Inherit the account from the selected property so the pipeline shows an
+        // account and account-level rollups work (the property's owner account).
+        account_id: properties.find((p) => p.id === propId)?.primary_account_id ?? null,
       })
       .select(
         "id,title,status,estimated_value,stage_id,scope_type_id,property_id,account_id,primary_contact_id,opened_at,closed_at,updated_at",
@@ -165,7 +172,7 @@ export default function OpportunitiesClient({
       property_id: data.property_id as string | null,
       property_label: prop ? propertyLabel(prop) : null,
       account_id: data.account_id as string | null,
-      account_name: null,
+      account_name: data.account_id ? (accountsById.get(data.account_id as string) ?? null) : null,
       primary_contact_id: data.primary_contact_id as string | null,
       opened_at: data.opened_at as string,
       closed_at: null,

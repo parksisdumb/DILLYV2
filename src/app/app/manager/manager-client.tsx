@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { RepStat, StageSummary, TopAccount, PipelineRow, PipelineSummary } from "@/app/app/manager/page";
 import PipelineHealthTab from "@/app/app/manager/pipeline-health-tab";
+import ActivityView from "@/app/app/manager/activity-view";
 
 type Props = {
   repStats: RepStat[];
@@ -21,7 +22,7 @@ type Props = {
   generatedAt: string;
 };
 
-type Tab = "today" | "leaderboard" | "compliance" | "pipeline" | "health" | "accounts";
+type Tab = "today" | "activity" | "leaderboard" | "compliance" | "pipeline" | "health" | "accounts";
 
 // ── Progress bar ────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, p
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "today", label: "Team Today" },
+    { key: "activity", label: "Activity" },
     { key: "leaderboard", label: "Leaderboard" },
     { key: "compliance", label: "Compliance" },
     { key: "pipeline", label: "Pipeline" },
@@ -209,6 +211,14 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, p
             </div>
           )}
         </>
+      )}
+
+      {/* ── Tab: Activity ─────────────────────────────────────────────────── */}
+      {tab === "activity" && (
+        <ActivityView
+          reps={repStats.map((r) => ({ userId: r.userId, name: r.name }))}
+          orgId={orgId}
+        />
       )}
 
       {/* ── Tab: Leaderboard ──────────────────────────────────────────────── */}

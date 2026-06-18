@@ -142,6 +142,7 @@ export default function AppShell({
         { href: "/app/contacts", label: "Contacts" },
         { href: "/app/properties", label: "Properties" },
         { href: "/app/opportunities", label: "Pipeline" },
+        { href: "/app/data-health", label: "Data Health" },
         { href: "/app/manager/prospects", label: "Prospects" },
         { href: "/app/manager/analytics", label: "Reports" },
       ]
@@ -151,6 +152,7 @@ export default function AppShell({
         { href: "/app/properties", label: "Properties" },
         { href: "/app/contacts", label: "Contacts" },
         { href: "/app/opportunities", label: "Pipeline" },
+        { href: "/app/data-health", label: "Data Health" },
       ];
 
   // Settings items (manager only, collapsible)

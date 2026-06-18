@@ -20,7 +20,7 @@ type AccountRow = {
 export default async function AccountsPage() {
   const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  const [acctRes, contactRes, tpRes, oppRes, meRes, propsRes, propCountRes] = await Promise.all([
+  const [acctRes, contactRes, tpRes, oppRes, meRes, propsRes, propCountRes, orgUsersRes] = await Promise.all([
     supabase
       .from("accounts")
       .select("id,name,account_type,status,notes,website,phone,updated_at,created_by")
@@ -36,6 +36,7 @@ export default async function AccountsPage() {
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     supabase.from("properties").select("id,address_line1,city,state,postal_code").is("deleted_at", null).order("address_line1"),
     supabase.from("properties").select("primary_account_id").is("deleted_at", null).not("primary_account_id", "is", null),
+    supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
   ]);
 
   const firstError = [acctRes.error, contactRes.error, tpRes.error, oppRes.error, propsRes.error, propCountRes.error].find(Boolean);
@@ -94,9 +95,15 @@ export default async function AccountsPage() {
     postal_code: p.postal_code as string | null,
   }));
 
+  const reps = (orgUsersRes.data ?? []).map((u) => ({
+    userId: u.user_id as string,
+    name: (u.full_name as string | null)?.trim() || (u.email as string | null)?.split("@")[0] || (u.user_id as string).slice(0, 8),
+  }));
+
   return (
     <AccountsClient
       accounts={rows}
+      reps={reps}
       orgId={orgId}
       userId={userId}
       userRole={userRole}

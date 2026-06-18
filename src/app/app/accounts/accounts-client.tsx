@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
+import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -32,6 +33,7 @@ type PropertyOption = {
 
 type Props = {
   accounts: AccountRow[];
+  reps: RepOption[];
   orgId: string;
   userId: string;
   userRole: string;
@@ -93,13 +95,14 @@ function TypeBadge({ type }: { type: string | null }) {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export default function AccountsClient({ accounts: initialAccounts, orgId, userId, userRole, allProperties }: Props) {
+export default function AccountsClient({ accounts: initialAccounts, reps, orgId, userId, userRole, allProperties }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
   // ── List state ──
   const [accounts, setAccounts] = useState<AccountRow[]>(initialAccounts);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [createdByFilter, setCreatedByFilter] = useState("");
   const [sort, setSort] = useState<Sort>("last_touched");
 
   // ── Create form state ──
@@ -131,6 +134,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
     const q = search.trim().toLowerCase();
     if (q) rows = rows.filter((a) => (a.name ?? "").toLowerCase().includes(q));
     if (typeFilter) rows = rows.filter((a) => a.account_type === typeFilter);
+    if (createdByFilter) rows = rows.filter((a) => a.created_by === createdByFilter);
 
     return [...rows].sort((a, b) => {
       if (sort === "name") return (a.name ?? "").localeCompare(b.name ?? "");
@@ -143,7 +147,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
       if (!b.last_touch_at) return -1;
       return b.last_touch_at.localeCompare(a.last_touch_at);
     });
-  }, [accounts, search, typeFilter, sort]);
+  }, [accounts, search, typeFilter, createdByFilter, sort]);
 
   // ── Can user delete this row? ──
   function canDelete(row: AccountRow): boolean {
@@ -364,6 +368,7 @@ export default function AccountsClient({ accounts: initialAccounts, orgId, userI
           <option value="most_properties">Most Properties</option>
           <option value="most_opportunities">Most Opps</option>
         </select>
+        <RepFilter reps={reps} value={createdByFilter} onChange={setCreatedByFilter} />
       </div>
 
       {/* ── Type filter chips ── */}

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { OppRow, Stage, ScopeType, PropertyOption, AccountOption, OrgUser } from "@/app/app/opportunities/page";
+import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -33,6 +34,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 type Props = {
   opportunities: OppRow[];
+  reps: RepOption[];
   stages: Stage[];
   scopeTypes: ScopeType[];
   properties: PropertyOption[];
@@ -45,6 +47,7 @@ type Props = {
 
 export default function OpportunitiesClient({
   opportunities: initOpps,
+  reps,
   stages,
   scopeTypes,
   properties,
@@ -57,6 +60,7 @@ export default function OpportunitiesClient({
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "won" | "lost">("open");
   const [stageFilter, setStageFilter] = useState("");
   const [repFilter, setRepFilter] = useState("");
+  const [createdByFilter, setCreatedByFilter] = useState("");
   const [sort, setSort] = useState<"updated" | "value" | "age">("updated");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -97,14 +101,15 @@ export default function OpportunitiesClient({
         (o) =>
           (statusFilter === "all" || o.status === statusFilter) &&
           (!stageFilter || o.stage_id === stageFilter) &&
-          (!repFilter || o.primary_rep_user_id === repFilter),
+          (!repFilter || o.primary_rep_user_id === repFilter) &&
+          (!createdByFilter || o.created_by === createdByFilter),
       )
       .sort((a, b) => {
         if (sort === "value") return (b.estimated_value ?? 0) - (a.estimated_value ?? 0);
         if (sort === "age") return new Date(a.opened_at).getTime() - new Date(b.opened_at).getTime();
         return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
       });
-  }, [opportunities, statusFilter, stageFilter, repFilter, sort]);
+  }, [opportunities, statusFilter, stageFilter, repFilter, createdByFilter, sort]);
 
   const openStages = useMemo(() => stages.filter((s) => !s.is_closed_stage), [stages]);
   const repOptions = useMemo(() => {
@@ -177,6 +182,7 @@ export default function OpportunitiesClient({
       opened_at: data.opened_at as string,
       closed_at: null,
       updated_at: data.updated_at as string,
+      created_by: userId,
       primary_rep_user_id: null,
     };
 
@@ -379,6 +385,14 @@ export default function OpportunitiesClient({
               </option>
             ))}
           </select>
+
+          {/* Uploaded-by filter (created_by) */}
+          <RepFilter
+            reps={reps}
+            value={createdByFilter}
+            onChange={setCreatedByFilter}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none"
+          />
 
           {/* Rep filter */}
           {repOptions.length > 0 && (

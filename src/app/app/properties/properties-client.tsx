@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { AccountOption, ContactOption } from "./page";
+import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 
 type PropertyRow = {
   id: string;
@@ -24,6 +25,7 @@ type PropertyRow = {
   website: string | null;
   notes: string | null;
   updated_at: string;
+  created_by: string | null;
 };
 
 const ROOF_TYPE_OPTIONS = [
@@ -65,6 +67,7 @@ function formatAddress(p: PropertyRow) {
 
 export default function PropertiesClient({
   properties: initialProperties,
+  reps,
   accounts,
   contacts,
   orgId,
@@ -72,6 +75,7 @@ export default function PropertiesClient({
   userRole,
 }: {
   properties: PropertyRow[];
+  reps: RepOption[];
   accounts: AccountOption[];
   contacts: ContactOption[];
   orgId: string;
@@ -85,6 +89,7 @@ export default function PropertiesClient({
   const [filterAccountId, setFilterAccountId] = useState("");
   const [filterCity, setFilterCity] = useState("");
   const [filterState, setFilterState] = useState("");
+  const [createdByFilter, setCreatedByFilter] = useState("");
   const [sort, setSort] = useState<"updated" | "name" | "address" | "opportunities">("updated");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -135,6 +140,7 @@ export default function PropertiesClient({
       if (filterAccountId && p.primary_account_id !== filterAccountId) return false;
       if (filterCity && p.city !== filterCity) return false;
       if (filterState && p.state !== filterState) return false;
+      if (createdByFilter && p.created_by !== createdByFilter) return false;
       return true;
     });
 
@@ -146,7 +152,7 @@ export default function PropertiesClient({
     });
 
     return list;
-  }, [properties, search, filterAccountId, filterCity, filterState, sort]);
+  }, [properties, search, filterAccountId, filterCity, filterState, createdByFilter, sort]);
 
   function resetCreateForm() {
     setPropName("");
@@ -228,6 +234,7 @@ export default function PropertiesClient({
         website: website.trim() || null,
         notes: notes.trim() || null,
         updated_at: new Date().toISOString(),
+        created_by: userId,
       };
 
       setProperties((prev) => [newProp, ...prev]);
@@ -489,6 +496,12 @@ export default function PropertiesClient({
             </option>
           ))}
         </select>
+        <RepFilter
+          reps={reps}
+          value={createdByFilter}
+          onChange={setCreatedByFilter}
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+        />
         {distinctCities.length > 0 && (
           <select
             value={filterCity}

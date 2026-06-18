@@ -12,6 +12,7 @@ type ContactRow = {
   account_name: string | null;
   last_touch_at: string | null;
   updated_at: string;
+  created_by: string | null;
 };
 
 export type AccountOption = { id: string; name: string | null };
@@ -20,10 +21,10 @@ export type PropertyOption = { id: string; address_line1: string; city: string |
 export default async function ContactsPage() {
   const { supabase, userId } = await requireServerOrgContext();
 
-  const [contactsRes, accountsRes, tpRes, meRes, propsRes] = await Promise.all([
+  const [contactsRes, accountsRes, tpRes, meRes, propsRes, orgUsersRes] = await Promise.all([
     supabase
       .from("contacts")
-      .select("id,full_name,title,phone,email,decision_role,account_id,updated_at")
+      .select("id,full_name,title,phone,email,decision_role,account_id,updated_at,created_by")
       .is("deleted_at", null)
       .order("full_name")
       .limit(500),
@@ -44,6 +45,7 @@ export default async function ContactsPage() {
       .is("deleted_at", null)
       .order("address_line1")
       .limit(500),
+    supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
   ]);
 
   if (contactsRes.error) throw new Error(contactsRes.error.message);
@@ -74,6 +76,7 @@ export default async function ContactsPage() {
     account_name: accountsById.get(c.account_id as string) ?? null,
     last_touch_at: lastTouchByContact.get(c.id as string) ?? null,
     updated_at: c.updated_at as string,
+    created_by: c.created_by as string | null,
   }));
 
   const accounts: AccountOption[] = (accountsRes.data ?? []).map((a) => ({
@@ -89,9 +92,15 @@ export default async function ContactsPage() {
     primary_account_id: p.primary_account_id as string | null,
   }));
 
+  const reps = (orgUsersRes.data ?? []).map((u) => ({
+    userId: u.user_id as string,
+    name: (u.full_name as string | null)?.trim() || (u.email as string | null)?.split("@")[0] || (u.user_id as string).slice(0, 8),
+  }));
+
   return (
     <ContactsClient
       contacts={rows}
+      reps={reps}
       accounts={accounts}
       properties={properties}
       userId={userId}

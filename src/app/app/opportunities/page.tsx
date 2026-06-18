@@ -18,6 +18,7 @@ export type OppRow = {
   opened_at: string;
   closed_at: string | null;
   updated_at: string;
+  created_by: string | null;
   primary_rep_user_id: string | null;
 };
 
@@ -42,7 +43,7 @@ export default async function OpportunitiesPage() {
       supabase
         .from("opportunities")
         .select(
-          "id,title,status,estimated_value,stage_id,scope_type_id,property_id,account_id,primary_contact_id,opened_at,closed_at,updated_at",
+          "id,title,status,estimated_value,stage_id,scope_type_id,property_id,account_id,primary_contact_id,opened_at,closed_at,updated_at,created_by",
         )
         .is("deleted_at", null)
         .order("updated_at", { ascending: false })
@@ -56,7 +57,7 @@ export default async function OpportunitiesPage() {
       supabase.from("opportunity_stages").select("id,name,key,sort_order,is_closed_stage,org_id").order("sort_order"),
       supabase.from("scope_types").select("id,name,key,org_id").order("sort_order"),
       supabase.from("opportunity_assignments").select("opportunity_id,user_id,is_primary"),
-      supabase.from("org_users").select("user_id,role").limit(200),
+      supabase.from("org_users").select("user_id,role,full_name,email").limit(200),
       supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     ]);
 
@@ -125,6 +126,7 @@ export default async function OpportunitiesPage() {
       opened_at: o.opened_at as string,
       closed_at: o.closed_at as string | null,
       updated_at: o.updated_at as string,
+      created_by: o.created_by as string | null,
       primary_rep_user_id: primaryRepByOppId.get(o.id as string) ?? null,
     };
   });
@@ -153,10 +155,15 @@ export default async function OpportunitiesPage() {
     user_id: u.user_id as string,
     role: u.role as string,
   }));
+  const reps = (orgUsersRes.data ?? []).map((u) => ({
+    userId: u.user_id as string,
+    name: ((u as { full_name?: string | null }).full_name ?? "")?.trim() || ((u as { email?: string | null }).email ?? "")?.split("@")[0] || (u.user_id as string).slice(0, 8),
+  }));
 
   return (
     <OpportunitiesClient
       opportunities={rows}
+      reps={reps}
       stages={stages}
       scopeTypes={scopeTypes}
       properties={properties}

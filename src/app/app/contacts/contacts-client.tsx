@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { AccountOption, PropertyOption } from "./page";
+import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 
 type ContactRow = {
   id: string;
@@ -15,6 +16,7 @@ type ContactRow = {
   account_name: string | null;
   last_touch_at: string | null;
   updated_at: string;
+  created_by: string | null;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -62,12 +64,14 @@ function RoleBadge({ role }: { role: string | null }) {
 
 export default function ContactsClient({
   contacts: initialContacts,
+  reps,
   accounts,
   properties,
   userId,
   userRole,
 }: {
   contacts: ContactRow[];
+  reps: RepOption[];
   accounts: AccountOption[];
   properties: PropertyOption[];
   userId: string;
@@ -79,6 +83,7 @@ export default function ContactsClient({
   const [search, setSearch] = useState("");
   const [filterAccountId, setFilterAccountId] = useState("");
   const [filterRole, setFilterRole] = useState("");
+  const [createdByFilter, setCreatedByFilter] = useState("");
   const [sort, setSort] = useState<"name" | "last_touch" | "newest">("name");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -107,6 +112,7 @@ export default function ContactsClient({
       if (search && !c.full_name?.toLowerCase().includes(search.toLowerCase())) return false;
       if (filterAccountId && c.account_id !== filterAccountId) return false;
       if (filterRole && c.decision_role !== filterRole) return false;
+      if (createdByFilter && c.created_by !== createdByFilter) return false;
       return true;
     });
 
@@ -122,7 +128,7 @@ export default function ContactsClient({
     });
 
     return list;
-  }, [contacts, search, filterAccountId, filterRole, sort]);
+  }, [contacts, search, filterAccountId, filterRole, createdByFilter, sort]);
 
   // Properties filtered by selected account (show all if no account yet)
   const filteredProperties = useMemo(() => {
@@ -214,6 +220,7 @@ export default function ContactsClient({
         account_name: accountName,
         last_touch_at: null,
         updated_at: row.updated_at ?? new Date().toISOString(),
+        created_by: userId,
       };
       setContacts((prev) => [newContact, ...prev]);
       resetCreateForm();
@@ -426,6 +433,12 @@ export default function ContactsClient({
               </option>
             ))}
           </select>
+          <RepFilter
+            reps={reps}
+            value={createdByFilter}
+            onChange={setCreatedByFilter}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+          />
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}

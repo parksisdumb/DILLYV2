@@ -21,6 +21,7 @@ type PropertyRow = {
   website: string | null;
   notes: string | null;
   updated_at: string;
+  created_by: string | null;
 };
 
 export type AccountOption = { id: string; name: string | null };
@@ -29,11 +30,11 @@ export type ContactOption = { id: string; full_name: string | null };
 export default async function PropertiesPage() {
   const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  const [propsRes, accountsRes, contactsRes, oppsRes, meRes] = await Promise.all([
+  const [propsRes, accountsRes, contactsRes, oppsRes, meRes, orgUsersRes] = await Promise.all([
     supabase
       .from("properties")
       .select(
-        "id,name,address_line1,address_line2,city,state,postal_code,primary_account_id,primary_contact_id,roof_type,roof_age_years,sq_footage,building_type,website,notes,updated_at",
+        "id,name,address_line1,address_line2,city,state,postal_code,primary_account_id,primary_contact_id,roof_type,roof_age_years,sq_footage,building_type,website,notes,updated_at,created_by",
       )
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
@@ -42,6 +43,7 @@ export default async function PropertiesPage() {
     supabase.from("contacts").select("id,full_name").is("deleted_at", null).limit(500),
     supabase.from("opportunities").select("property_id").eq("status", "open"),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
+    supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
   ]);
 
   if (propsRes.error) throw new Error(propsRes.error.message);
@@ -87,6 +89,7 @@ export default async function PropertiesPage() {
     website: p.website as string | null,
     notes: p.notes as string | null,
     updated_at: p.updated_at as string,
+    created_by: p.created_by as string | null,
   }));
 
   const accounts: AccountOption[] = (accountsRes.data ?? []).map((a) => ({
@@ -99,9 +102,15 @@ export default async function PropertiesPage() {
     full_name: c.full_name as string | null,
   }));
 
+  const reps = (orgUsersRes.data ?? []).map((u) => ({
+    userId: u.user_id as string,
+    name: (u.full_name as string | null)?.trim() || (u.email as string | null)?.split("@")[0] || (u.user_id as string).slice(0, 8),
+  }));
+
   return (
     <PropertiesClient
       properties={rows}
+      reps={reps}
       accounts={accounts}
       contacts={contacts}
       orgId={orgId}

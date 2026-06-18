@@ -1,5 +1,6 @@
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import PropertiesClient from "@/app/app/properties/properties-client";
+import { propertyCompleteness, type CompletenessResult } from "@/lib/completeness";
 
 type PropertyRow = {
   id: string;
@@ -22,6 +23,7 @@ type PropertyRow = {
   notes: string | null;
   updated_at: string;
   created_by: string | null;
+  completeness: CompletenessResult;
 };
 
 export type AccountOption = { id: string; name: string | null };
@@ -30,7 +32,7 @@ export type ContactOption = { id: string; full_name: string | null };
 export default async function PropertiesPage() {
   const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  const [propsRes, accountsRes, contactsRes, oppsRes, meRes, orgUsersRes] = await Promise.all([
+  const [propsRes, accountsRes, contactsRes, oppsRes, meRes, orgUsersRes, pcRes] = await Promise.all([
     supabase
       .from("properties")
       .select(
@@ -44,9 +46,12 @@ export default async function PropertiesPage() {
     supabase.from("opportunities").select("property_id").eq("status", "open"),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
+    supabase.from("property_contacts").select("property_id").eq("active", true),
   ]);
 
   if (propsRes.error) throw new Error(propsRes.error.message);
+
+  const propIdsWithContact = new Set((pcRes.data ?? []).map((p) => p.property_id as string));
 
   // Build lookup maps
   const accountsById = new Map<string, string | null>();
@@ -90,6 +95,13 @@ export default async function PropertiesPage() {
     notes: p.notes as string | null,
     updated_at: p.updated_at as string,
     created_by: p.created_by as string | null,
+    completeness: propertyCompleteness({
+      roof_type: p.roof_type as string | null,
+      sq_footage: p.sq_footage as number | null,
+      roof_age_years: p.roof_age_years as number | null,
+      primary_account_id: p.primary_account_id as string | null,
+      hasContact: propIdsWithContact.has(p.id as string),
+    }),
   }));
 
   const accounts: AccountOption[] = (accountsRes.data ?? []).map((a) => ({

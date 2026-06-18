@@ -1,5 +1,6 @@
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import AccountsClient from "@/app/app/accounts/accounts-client";
+import { accountCompleteness, withinDays, type CompletenessResult } from "@/lib/completeness";
 
 type AccountRow = {
   id: string;
@@ -15,6 +16,7 @@ type AccountRow = {
   property_count: number;
   opportunity_count: number;
   last_touch_at: string | null;
+  completeness: CompletenessResult;
 };
 
 export default async function AccountsPage() {
@@ -83,6 +85,13 @@ export default async function AccountsPage() {
     property_count: propsByAccount.get(a.id as string) ?? 0,
     opportunity_count: oppsByAccount.get(a.id as string) ?? 0,
     last_touch_at: lastTouchByAccount.get(a.id as string) ?? null,
+    completeness: accountCompleteness({
+      account_type: a.account_type as string | null,
+      website: (a as Record<string, unknown>).website as string | null ?? null,
+      hasContact: (contactsByAccount.get(a.id as string) ?? 0) > 0,
+      hasProperty: (propsByAccount.get(a.id as string) ?? 0) > 0,
+      recentTouch: withinDays(lastTouchByAccount.get(a.id as string) ?? null, 90),
+    }),
   }));
 
   const userRole = meRes.data?.role ?? "rep";

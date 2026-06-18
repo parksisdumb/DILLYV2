@@ -4,6 +4,8 @@ import { useState, useMemo } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { AccountOption, PropertyOption } from "./page";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
+import CompletenessFilter from "@/app/app/_components/completeness-filter";
+import { contactCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
 
 type ContactRow = {
   id: string;
@@ -17,6 +19,7 @@ type ContactRow = {
   last_touch_at: string | null;
   updated_at: string;
   created_by: string | null;
+  completeness: CompletenessResult;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -84,6 +87,7 @@ export default function ContactsClient({
   const [filterAccountId, setFilterAccountId] = useState("");
   const [filterRole, setFilterRole] = useState("");
   const [createdByFilter, setCreatedByFilter] = useState("");
+  const [completenessFilter, setCompletenessFilter] = useState("");
   const [sort, setSort] = useState<"name" | "last_touch" | "newest">("name");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -113,6 +117,7 @@ export default function ContactsClient({
       if (filterAccountId && c.account_id !== filterAccountId) return false;
       if (filterRole && c.decision_role !== filterRole) return false;
       if (createdByFilter && c.created_by !== createdByFilter) return false;
+      if (completenessFilter && !matchesCompleteness(c.completeness.score, completenessFilter)) return false;
       return true;
     });
 
@@ -128,7 +133,7 @@ export default function ContactsClient({
     });
 
     return list;
-  }, [contacts, search, filterAccountId, filterRole, createdByFilter, sort]);
+  }, [contacts, search, filterAccountId, filterRole, createdByFilter, completenessFilter, sort]);
 
   // Properties filtered by selected account (show all if no account yet)
   const filteredProperties = useMemo(() => {
@@ -221,6 +226,14 @@ export default function ContactsClient({
         last_touch_at: null,
         updated_at: row.updated_at ?? new Date().toISOString(),
         created_by: userId,
+        completeness: contactCompleteness({
+          first_name: firstName.trim() || null,
+          last_name: lastName.trim() || null,
+          title: title.trim() || null,
+          phone: phone.trim() || null,
+          email: email.trim() || null,
+          hasProperty: Boolean(newPropertyId),
+        }),
       };
       setContacts((prev) => [newContact, ...prev]);
       resetCreateForm();
@@ -439,6 +452,11 @@ export default function ContactsClient({
             onChange={setCreatedByFilter}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
           />
+          <CompletenessFilter
+            value={completenessFilter}
+            onChange={setCompletenessFilter}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+          />
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
@@ -503,6 +521,12 @@ export default function ContactsClient({
                     <td className="px-4 py-3 font-medium text-slate-900">
                       <div className="flex items-center gap-2">
                         {c.full_name ?? "—"}
+                        <span
+                          className={`text-xs font-semibold tabular-nums ${scoreTone(c.completeness.score)}`}
+                          title={c.completeness.missing.length ? `Missing: ${c.completeness.missing.map((m) => m.label).join(", ")}` : "Complete"}
+                        >
+                          {c.completeness.score}%
+                        </span>
                         {c.decision_role && <RoleBadge role={c.decision_role} />}
                       </div>
                     </td>
@@ -527,7 +551,15 @@ export default function ContactsClient({
                 className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold text-slate-900">{c.full_name ?? "—"}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-slate-900">{c.full_name ?? "—"}</span>
+                    <span
+                      className={`shrink-0 text-xs font-semibold tabular-nums ${scoreTone(c.completeness.score)}`}
+                      title={c.completeness.missing.length ? `Missing: ${c.completeness.missing.map((m) => m.label).join(", ")}` : "Complete"}
+                    >
+                      {c.completeness.score}%
+                    </span>
+                  </span>
                   {c.decision_role && <RoleBadge role={c.decision_role} />}
                 </div>
                 {c.account_name && (

@@ -123,6 +123,20 @@ export function averageScore(results: CompletenessResult[]): number {
   return Math.round(results.reduce((s, r) => s + r.score, 0) / results.length);
 }
 
+/** List-page completeness filter: "" = all, "incomplete" = score < 100, "complete" = 100. */
+export function matchesCompleteness(score: number, filter: string): boolean {
+  if (filter === "incomplete") return score < 100;
+  if (filter === "complete") return score >= 100;
+  return true;
+}
+
+/** Tailwind text color for a completeness score (green/amber/red). */
+export function scoreTone(score: number): string {
+  if (score >= 80) return "text-green-600";
+  if (score >= 50) return "text-amber-600";
+  return "text-red-600";
+}
+
 /** Tally how often each missing field appears, sorted most-common first. */
 export function topMissing(results: CompletenessResult[]): { key: string; label: string; count: number }[] {
   const tally = new Map<string, { label: string; count: number }>();

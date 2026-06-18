@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { AccountOption, ContactOption } from "./page";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
+import CompletenessFilter from "@/app/app/_components/completeness-filter";
+import { propertyCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
 
 type PropertyRow = {
   id: string;
@@ -26,6 +28,7 @@ type PropertyRow = {
   notes: string | null;
   updated_at: string;
   created_by: string | null;
+  completeness: CompletenessResult;
 };
 
 const ROOF_TYPE_OPTIONS = [
@@ -90,6 +93,7 @@ export default function PropertiesClient({
   const [filterCity, setFilterCity] = useState("");
   const [filterState, setFilterState] = useState("");
   const [createdByFilter, setCreatedByFilter] = useState("");
+  const [completenessFilter, setCompletenessFilter] = useState("");
   const [sort, setSort] = useState<"updated" | "name" | "address" | "opportunities">("updated");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -141,6 +145,7 @@ export default function PropertiesClient({
       if (filterCity && p.city !== filterCity) return false;
       if (filterState && p.state !== filterState) return false;
       if (createdByFilter && p.created_by !== createdByFilter) return false;
+      if (completenessFilter && !matchesCompleteness(p.completeness.score, completenessFilter)) return false;
       return true;
     });
 
@@ -152,7 +157,7 @@ export default function PropertiesClient({
     });
 
     return list;
-  }, [properties, search, filterAccountId, filterCity, filterState, createdByFilter, sort]);
+  }, [properties, search, filterAccountId, filterCity, filterState, createdByFilter, completenessFilter, sort]);
 
   function resetCreateForm() {
     setPropName("");
@@ -235,6 +240,13 @@ export default function PropertiesClient({
         notes: notes.trim() || null,
         updated_at: new Date().toISOString(),
         created_by: userId,
+        completeness: propertyCompleteness({
+          roof_type: roofType || null,
+          sq_footage: sqFootage ? parseInt(sqFootage, 10) : null,
+          roof_age_years: roofAgeYears ? parseInt(roofAgeYears, 10) : null,
+          primary_account_id: accountId || null,
+          hasContact: Boolean(contactId),
+        }),
       };
 
       setProperties((prev) => [newProp, ...prev]);
@@ -502,6 +514,11 @@ export default function PropertiesClient({
           onChange={setCreatedByFilter}
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
         />
+        <CompletenessFilter
+          value={completenessFilter}
+          onChange={setCompletenessFilter}
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+        />
         {distinctCities.length > 0 && (
           <select
             value={filterCity}
@@ -586,6 +603,12 @@ export default function PropertiesClient({
                       <p className="text-xs text-slate-500">
                         {p.city}, {p.state} {p.postal_code}
                       </p>
+                      <p
+                        className={`mt-0.5 text-xs font-semibold tabular-nums ${scoreTone(p.completeness.score)}`}
+                        title={p.completeness.missing.length ? `Missing: ${p.completeness.missing.map((m) => m.label).join(", ")}` : "Complete"}
+                      >
+                        {p.completeness.score}% complete
+                      </p>
                       {p.website && (
                         <p className="mt-0.5 truncate text-xs text-blue-600 hover:underline" onClick={(e) => e.stopPropagation()}>
                           <a href={p.website} target="_blank" rel="noopener noreferrer">{p.website.replace(/^https?:\/\//, "")}</a>
@@ -657,6 +680,12 @@ export default function PropertiesClient({
                     )}
                     <p className="text-xs text-slate-500">
                       {p.city}, {p.state} {p.postal_code}
+                    </p>
+                    <p
+                      className={`mt-0.5 text-xs font-semibold tabular-nums ${scoreTone(p.completeness.score)}`}
+                      title={p.completeness.missing.length ? `Missing: ${p.completeness.missing.map((m) => m.label).join(", ")}` : "Complete"}
+                    >
+                      {p.completeness.score}% complete
                     </p>
                   </div>
                   {p.open_opportunity_count > 0 && (

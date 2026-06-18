@@ -2,6 +2,8 @@
 
 import { Fragment, useMemo, useState } from "react";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
+import CompletenessFilter from "@/app/app/_components/completeness-filter";
+import { accountCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -21,6 +23,7 @@ type AccountRow = {
   property_count: number;
   opportunity_count: number;
   last_touch_at: string | null;
+  completeness: CompletenessResult;
 };
 
 type PropertyOption = {
@@ -103,6 +106,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [createdByFilter, setCreatedByFilter] = useState("");
+  const [completenessFilter, setCompletenessFilter] = useState("");
   const [sort, setSort] = useState<Sort>("last_touched");
 
   // ── Create form state ──
@@ -135,6 +139,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
     if (q) rows = rows.filter((a) => (a.name ?? "").toLowerCase().includes(q));
     if (typeFilter) rows = rows.filter((a) => a.account_type === typeFilter);
     if (createdByFilter) rows = rows.filter((a) => a.created_by === createdByFilter);
+    if (completenessFilter) rows = rows.filter((a) => matchesCompleteness(a.completeness.score, completenessFilter));
 
     return [...rows].sort((a, b) => {
       if (sort === "name") return (a.name ?? "").localeCompare(b.name ?? "");
@@ -147,7 +152,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
       if (!b.last_touch_at) return -1;
       return b.last_touch_at.localeCompare(a.last_touch_at);
     });
-  }, [accounts, search, typeFilter, createdByFilter, sort]);
+  }, [accounts, search, typeFilter, createdByFilter, completenessFilter, sort]);
 
   // ── Can user delete this row? ──
   function canDelete(row: AccountRow): boolean {
@@ -193,6 +198,13 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
       property_count: 0,
       opportunity_count: 0,
       last_touch_at: null,
+      completeness: accountCompleteness({
+        account_type: formType || null,
+        website: formWebsite.trim() || null,
+        hasContact: false,
+        hasProperty: Boolean(formPropertyId),
+        recentTouch: false,
+      }),
     };
 
     // Link property if selected
@@ -369,6 +381,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
           <option value="most_opportunities">Most Opps</option>
         </select>
         <RepFilter reps={reps} value={createdByFilter} onChange={setCreatedByFilter} />
+        <CompletenessFilter value={completenessFilter} onChange={setCompletenessFilter} />
       </div>
 
       {/* ── Type filter chips ── */}
@@ -425,7 +438,17 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                       className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
                       onClick={() => { window.location.href = `/app/accounts/${row.id}`; }}
                     >
-                      <td className="px-4 py-3 font-medium text-slate-900">{row.name ?? "—"}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        <span className="inline-flex items-center gap-2">
+                          {row.name ?? "—"}
+                          <span
+                            className={`text-xs font-semibold tabular-nums ${scoreTone(row.completeness.score)}`}
+                            title={row.completeness.missing.length ? `Missing: ${row.completeness.missing.map((m) => m.label).join(", ")}` : "Complete"}
+                          >
+                            {row.completeness.score}%
+                          </span>
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         <TypeBadge type={row.account_type} />
                       </td>
@@ -493,6 +516,12 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-semibold text-slate-900">{row.name ?? "—"}</span>
                       <TypeBadge type={row.account_type} />
+                      <span
+                        className={`text-xs font-semibold tabular-nums ${scoreTone(row.completeness.score)}`}
+                        title={row.completeness.missing.length ? `Missing: ${row.completeness.missing.map((m) => m.label).join(", ")}` : "Complete"}
+                      >
+                        {row.completeness.score}%
+                      </span>
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
                       {row.contact_count} contact{row.contact_count !== 1 ? "s" : ""}

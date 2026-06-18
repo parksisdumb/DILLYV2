@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import OpportunityDetailClient from "@/app/app/opportunities/[id]/opportunity-detail-client";
+import { opportunityCompleteness } from "@/lib/completeness";
 
 export type OppMilestone = {
   id: string;
@@ -101,8 +102,25 @@ export default async function OpportunityDetailPage({
     milestone_types: m.milestone_types as unknown as { id: string; name: string; key: string } | null,
   }));
 
+  // "Has a touchpoint" = a touchpoint on this opportunity or its property.
+  const tpCountRes = opp.property_id
+    ? await supabase
+        .from("touchpoints")
+        .select("id", { count: "exact", head: true })
+        .or(`opportunity_id.eq.${id},property_id.eq.${opp.property_id as string}`)
+    : await supabase.from("touchpoints").select("id", { count: "exact", head: true }).eq("opportunity_id", id);
+
+  const completeness = opportunityCompleteness({
+    stage_id: opp.stage_id as string | null,
+    scope_type_id: opp.scope_type_id as string | null,
+    estimated_value: opp.estimated_value as number | null,
+    account_id: opp.account_id as string | null,
+    hasTouchpoint: (tpCountRes.count ?? 0) > 0,
+  });
+
   return (
     <OpportunityDetailClient
+      completeness={completeness}
       opportunity={opp as any}
       property={(propRes.data ?? null) as any}
       account={(accountRes.data ?? null) as any}

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import ContactDetailClient from "@/app/app/contacts/[id]/contact-detail-client";
+import { contactCompleteness } from "@/lib/completeness";
 
 export default async function ContactDetailPage({
   params,
@@ -13,7 +14,7 @@ export default async function ContactDetailPage({
   // 1. Contact
   const contactRes = await supabase
     .from("contacts")
-    .select("id,full_name,title,phone,email,decision_role,account_id,updated_at")
+    .select("id,full_name,first_name,last_name,title,phone,email,decision_role,account_id,updated_at")
     .eq("id", id)
     .is("deleted_at", null)
     .single();
@@ -74,8 +75,18 @@ export default async function ContactDetailPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cast = <T,>(v: unknown) => (v ?? []) as T[];
 
+  const completeness = contactCompleteness({
+    first_name: (contactRes.data as { first_name: string | null }).first_name,
+    last_name: (contactRes.data as { last_name: string | null }).last_name,
+    title: contactRes.data.title as string | null,
+    phone: contactRes.data.phone as string | null,
+    email: contactRes.data.email as string | null,
+    hasProperty: properties.length > 0,
+  });
+
   return (
     <ContactDetailClient
+      completeness={completeness}
       contact={contactRes.data as any}
       account={(accountRes.data ?? { id: "", name: null, account_type: null }) as any}
       properties={properties}

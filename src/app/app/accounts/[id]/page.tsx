@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import AccountDetailClient from "@/app/app/accounts/[id]/account-detail-client";
 import { scoreAccount, type IcpScoreResult, type IcpCriteria } from "@/lib/scoring/icp-score";
+import { accountCompleteness, withinDays } from "@/lib/completeness";
 
 export default async function AccountDetailPage({
   params,
@@ -132,8 +133,17 @@ export default async function AccountDetailPage({
     title: c.title as string | null,
   }));
 
+  const completeness = accountCompleteness({
+    account_type: accountRes.data.account_type as string | null,
+    website: accountRes.data.website as string | null,
+    hasContact: (contactsRes.data ?? []).length > 0,
+    hasProperty: (propertiesRes.data ?? []).length > 0,
+    recentTouch: withinDays((tpRes.data?.[0]?.happened_at as string | undefined) ?? null, 90),
+  });
+
   return (
     <AccountDetailClient
+      completeness={completeness}
       account={accountRes.data as any}
       contacts={cast(contactsRes.data)}
       properties={cast(propertiesRes.data)}

@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
 import { PRIORITY_COLORS, type IcpScoreResult } from "@/lib/scoring/icp-score";
+import CompletenessChip from "@/app/app/_components/completeness-chip";
+import type { CompletenessResult } from "@/lib/completeness";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -90,6 +92,7 @@ type AvailableContact = {
 };
 
 type Props = {
+  completeness: CompletenessResult;
   account: Account;
   contacts: Contact[];
   properties: Property[];
@@ -194,6 +197,7 @@ function propertyLabel(p: { name?: string | null; address_line1: string; city: s
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function AccountDetailClient({
+  completeness,
   account,
   contacts: initialContacts,
   properties: initialProperties,
@@ -668,6 +672,11 @@ export default function AccountDetailClient({
         </svg>
         Accounts
       </a>
+
+      {/* Completeness */}
+      {!editing && (
+        <CompletenessChip score={completeness.score} missing={completeness.missing} onFix={() => setEditing(true)} />
+      )}
 
       {/* ── Header card ── */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">

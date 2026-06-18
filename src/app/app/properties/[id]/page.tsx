@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import PropertyDetailClient from "@/app/app/properties/[id]/property-detail-client";
+import { propertyCompleteness } from "@/lib/completeness";
 
 export type PropContact = {
   contact_id: string;
@@ -123,8 +124,17 @@ export default async function PropertyDetailPage({
     account_type: a.account_type as string | null,
   }));
 
+  const completeness = propertyCompleteness({
+    roof_type: prop.roof_type as string | null,
+    sq_footage: prop.sq_footage as number | null,
+    roof_age_years: prop.roof_age_years as number | null,
+    primary_account_id: prop.primary_account_id as string | null,
+    hasContact: propContacts.length > 0,
+  });
+
   return (
     <PropertyDetailClient
+      completeness={completeness}
       property={prop as any}
       account={(accountRes.data ?? null) as any}
       propContacts={propContacts}

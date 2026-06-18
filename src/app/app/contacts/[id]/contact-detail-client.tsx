@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
 import { BUILDING_TYPE_LABELS } from "@/app/app/properties/properties-client";
+import CompletenessChip from "@/app/app/_components/completeness-chip";
+import type { CompletenessResult } from "@/lib/completeness";
 
 type Contact = {
   id: string;
@@ -131,6 +133,7 @@ function sanitizeSearch(q: string) {
 }
 
 export default function ContactDetailClient({
+  completeness,
   contact,
   account,
   properties: initialProperties,
@@ -142,6 +145,7 @@ export default function ContactDetailClient({
   orgId,
   userRole,
 }: {
+  completeness: CompletenessResult;
   contact: Contact;
   account: Account;
   properties: Property[];
@@ -451,6 +455,11 @@ export default function ContactDetailClient({
       >
         ← Contacts
       </a>
+
+      {/* Completeness */}
+      {!editing && (
+        <CompletenessChip score={completeness.score} missing={completeness.missing} onFix={() => setEditing(true)} />
+      )}
 
       {/* Header card */}
       {editing ? (

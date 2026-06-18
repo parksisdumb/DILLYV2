@@ -4,6 +4,8 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { OppMilestone, OppAssignment } from "@/app/app/opportunities/[id]/page";
+import CompletenessChip from "@/app/app/_components/completeness-chip";
+import type { CompletenessResult } from "@/lib/completeness";
 
 type Opportunity = {
   id: string;
@@ -50,6 +52,7 @@ type MilestoneType = { id: string; name: string; key: string };
 type OrgUser = { user_id: string; role: string };
 
 type Props = {
+  completeness: CompletenessResult;
   opportunity: Opportunity;
   property: Property;
   account: Account;
@@ -85,6 +88,7 @@ function daysOpen(openedAt: string) {
 }
 
 export default function OpportunityDetailClient({
+  completeness,
   opportunity: initOpp,
   property,
   account,
@@ -299,6 +303,11 @@ export default function OpportunityDetailClient({
       <Link href="/app/opportunities" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
         ← Opportunities
       </Link>
+
+      {/* Completeness */}
+      {!editing && (
+        <CompletenessChip score={completeness.score} missing={completeness.missing} onFix={() => setEditing(true)} />
+      )}
 
       {/* Header card */}
       {editing ? (

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { PropContact } from "./page";
+import CompletenessChip from "@/app/app/_components/completeness-chip";
+import type { CompletenessResult } from "@/lib/completeness";
 
 type Property = {
   id: string;
@@ -94,6 +96,7 @@ function formatCurrency(value: number | null) {
 }
 
 export default function PropertyDetailClient({
+  completeness,
   property,
   account,
   propContacts,
@@ -109,6 +112,7 @@ export default function PropertyDetailClient({
   availableContacts,
   allAccounts,
 }: {
+  completeness: CompletenessResult;
   property: Property;
   account: Account;
   propContacts: PropContact[];
@@ -626,6 +630,11 @@ export default function PropertyDetailClient({
       >
         ← Properties
       </a>
+
+      {/* Completeness */}
+      {!editing && (
+        <CompletenessChip score={completeness.score} missing={completeness.missing} onFix={() => setEditing(true)} />
+      )}
 
       {/* Header card */}
       {editing ? (

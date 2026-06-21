@@ -1350,6 +1350,7 @@ export default function AccountDetailClient({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th className="px-4 py-3 font-medium">Name</th>
                         <th className="px-4 py-3 font-medium">Address</th>
                         <th className="px-4 py-3 font-medium">City</th>
                         <th className="px-4 py-3 font-medium">State</th>
@@ -1359,7 +1360,8 @@ export default function AccountDetailClient({
                     <tbody>
                       {properties.map((p) => (
                         <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer" onClick={() => window.location.href = `/app/properties/${p.id}`}>
-                          <td className="px-4 py-3 font-medium text-blue-600 hover:underline">{p.address_line1}</td>
+                          <td className="px-4 py-3 font-medium text-blue-600 hover:underline">{p.name ?? "—"}</td>
+                          <td className="px-4 py-3 text-slate-600">{p.address_line1}</td>
                           <td className="px-4 py-3 text-slate-600">{p.city ?? "—"}</td>
                           <td className="px-4 py-3 text-slate-600">{p.state ?? "—"}</td>
                           <td className="px-4 py-3 text-slate-500">{p.postal_code ?? "—"}</td>
@@ -1372,8 +1374,8 @@ export default function AccountDetailClient({
                 <div className="md:hidden divide-y divide-slate-100">
                   {properties.map((p) => (
                     <a key={p.id} href={`/app/properties/${p.id}`} className="block px-4 py-3.5 hover:bg-slate-50">
-                      <div className="text-sm font-semibold text-blue-600">{p.address_line1}</div>
-                      <div className="text-xs text-slate-500">{[p.city, p.state, p.postal_code].filter(Boolean).join(", ")}</div>
+                      <div className="text-sm font-semibold text-blue-600">{p.name ?? p.address_line1}</div>
+                      <div className="text-xs text-slate-500">{[p.name ? p.address_line1 : null, p.city, p.state, p.postal_code].filter(Boolean).join(", ")}</div>
                     </a>
                   ))}
                 </div>

@@ -28,6 +28,7 @@ type AccountRow = {
 
 type PropertyOption = {
   id: string;
+  name: string | null;
   address_line1: string;
   city: string | null;
   state: string | null;
@@ -328,7 +329,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                   <option value="">None</option>
                   {allProperties.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.address_line1}{p.city ? `, ${p.city}` : ""}{p.state ? ` ${p.state}` : ""}
+                      {p.name ? `${p.name} — ` : ""}{p.address_line1}{p.city ? `, ${p.city}` : ""}{p.state ? ` ${p.state}` : ""}
                     </option>
                   ))}
                 </select>

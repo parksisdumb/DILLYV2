@@ -36,7 +36,7 @@ export default async function AccountsPage() {
       .not("account_id", "is", null),
     supabase.from("opportunities").select("account_id").not("account_id", "is", null),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
-    supabase.from("properties").select("id,address_line1,city,state,postal_code").is("deleted_at", null).order("address_line1"),
+    supabase.from("properties").select("id,name,address_line1,city,state,postal_code").is("deleted_at", null).order("address_line1"),
     supabase.from("properties").select("primary_account_id").is("deleted_at", null).not("primary_account_id", "is", null),
     supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
   ]);
@@ -98,6 +98,7 @@ export default async function AccountsPage() {
 
   const allProperties = (propsRes.data ?? []).map((p) => ({
     id: p.id as string,
+    name: p.name as string | null,
     address_line1: p.address_line1 as string,
     city: p.city as string | null,
     state: p.state as string | null,

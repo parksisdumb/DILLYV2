@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { PropContact } from "./page";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
+import PropertyAssignments from "@/app/app/properties/[id]/property-assignments";
 import type { CompletenessResult } from "@/lib/completeness";
 
 type Property = {
@@ -1238,6 +1239,14 @@ export default function PropertyDetailClient({
           </form>
         </div>
       )}
+
+      {/* Assigned Reps — operational dispatch label (does not change read access) */}
+      <PropertyAssignments
+        propertyId={property.id}
+        orgId={orgId}
+        canManage={userRole === "manager" || userRole === "admin"}
+        currentUserId={userId}
+      />
 
       {/* Tabs */}
       <div className="border-b border-slate-200">

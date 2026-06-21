@@ -24,6 +24,7 @@ type PropertyRow = {
   updated_at: string;
   created_by: string | null;
   completeness: CompletenessResult;
+  assignments: { userId: string; name: string }[];
 };
 
 export type AccountOption = { id: string; name: string | null };
@@ -32,7 +33,7 @@ export type ContactOption = { id: string; full_name: string | null };
 export default async function PropertiesPage() {
   const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  const [propsRes, accountsRes, contactsRes, oppsRes, meRes, orgUsersRes, pcRes] = await Promise.all([
+  const [propsRes, accountsRes, contactsRes, oppsRes, meRes, orgUsersRes, pcRes, paRes] = await Promise.all([
     supabase
       .from("properties")
       .select(
@@ -47,11 +48,26 @@ export default async function PropertiesPage() {
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
     supabase.from("property_contacts").select("property_id").eq("active", true),
+    supabase.from("property_assignments").select("property_id,user_id"),
   ]);
 
   if (propsRes.error) throw new Error(propsRes.error.message);
 
   const propIdsWithContact = new Set((pcRes.data ?? []).map((p) => p.property_id as string));
+
+  // Dispatch assignments: property_id -> assigned reps (batch-mapped, no N+1).
+  const repNameById = new Map<string, string>();
+  for (const u of orgUsersRes.data ?? []) {
+    repNameById.set(
+      u.user_id as string,
+      (u.full_name as string | null)?.trim() || (u.email as string | null)?.split("@")[0] || (u.user_id as string).slice(0, 8),
+    );
+  }
+  const assignmentsByProperty = new Map<string, { userId: string; name: string }[]>();
+  for (const a of (paRes.data ?? []) as { property_id: string; user_id: string }[]) {
+    if (!assignmentsByProperty.has(a.property_id)) assignmentsByProperty.set(a.property_id, []);
+    assignmentsByProperty.get(a.property_id)!.push({ userId: a.user_id, name: repNameById.get(a.user_id) ?? a.user_id.slice(0, 8) });
+  }
 
   // Build lookup maps
   const accountsById = new Map<string, string | null>();
@@ -102,6 +118,7 @@ export default async function PropertiesPage() {
       primary_account_id: p.primary_account_id as string | null,
       hasContact: propIdsWithContact.has(p.id as string),
     }),
+    assignments: assignmentsByProperty.get(p.id as string) ?? [],
   }));
 
   const accounts: AccountOption[] = (accountsRes.data ?? []).map((a) => ({

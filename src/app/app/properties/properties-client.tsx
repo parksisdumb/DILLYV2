@@ -29,6 +29,7 @@ type PropertyRow = {
   updated_at: string;
   created_by: string | null;
   completeness: CompletenessResult;
+  assignments: { userId: string; name: string }[];
 };
 
 const ROOF_TYPE_OPTIONS = [
@@ -68,6 +69,12 @@ function formatAddress(p: PropertyRow) {
   return `${p.address_line1}, ${p.city} ${p.state}`;
 }
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
 export default function PropertiesClient({
   properties: initialProperties,
   reps,
@@ -94,6 +101,11 @@ export default function PropertiesClient({
   const [filterState, setFilterState] = useState("");
   const [createdByFilter, setCreatedByFilter] = useState("");
   const [completenessFilter, setCompletenessFilter] = useState("");
+  const [myAssignedOnly, setMyAssignedOnly] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRepId, setBulkRepId] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const canManage = userRole === "manager" || userRole === "admin";
   const [sort, setSort] = useState<"updated" | "name" | "address" | "opportunities">("updated");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -146,6 +158,7 @@ export default function PropertiesClient({
       if (filterState && p.state !== filterState) return false;
       if (createdByFilter && p.created_by !== createdByFilter) return false;
       if (completenessFilter && !matchesCompleteness(p.completeness.score, completenessFilter)) return false;
+      if (myAssignedOnly && !p.assignments.some((a) => a.userId === userId)) return false;
       return true;
     });
 
@@ -157,7 +170,66 @@ export default function PropertiesClient({
     });
 
     return list;
-  }, [properties, search, filterAccountId, filterCity, filterState, createdByFilter, completenessFilter, sort]);
+  }, [properties, search, filterAccountId, filterCity, filterState, createdByFilter, completenessFilter, myAssignedOnly, userId, sort]);
+
+  // ── Dispatch assignment (bulk, managers/admins) ──
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function applyAssignmentLocally(ids: Set<string>, rep: { userId: string; name: string }, add: boolean) {
+    setProperties((prev) =>
+      prev.map((p) => {
+        if (!ids.has(p.id)) return p;
+        const has = p.assignments.some((a) => a.userId === rep.userId);
+        if (add && !has) return { ...p, assignments: [...p.assignments, rep] };
+        if (!add && has) return { ...p, assignments: p.assignments.filter((a) => a.userId !== rep.userId) };
+        return p;
+      }),
+    );
+  }
+
+  async function bulkAssign() {
+    const rep = reps.find((r) => r.userId === bulkRepId);
+    if (!rep || selectedIds.size === 0) return;
+    setBulkBusy(true);
+    const rows = [...selectedIds].map((pid) => ({
+      property_id: pid,
+      user_id: rep.userId,
+      org_id: orgId,
+      assignment_role: "assigned_rep",
+      created_by: userId,
+    }));
+    const { error } = await supabase
+      .from("property_assignments")
+      .upsert(rows, { onConflict: "property_id,user_id", ignoreDuplicates: true });
+    setBulkBusy(false);
+    if (!error) {
+      applyAssignmentLocally(selectedIds, { userId: rep.userId, name: rep.name }, true);
+      setSelectedIds(new Set());
+    }
+  }
+
+  async function bulkUnassign() {
+    const rep = reps.find((r) => r.userId === bulkRepId);
+    if (!rep || selectedIds.size === 0) return;
+    setBulkBusy(true);
+    const { error } = await supabase
+      .from("property_assignments")
+      .delete()
+      .eq("user_id", rep.userId)
+      .in("property_id", [...selectedIds]);
+    setBulkBusy(false);
+    if (!error) {
+      applyAssignmentLocally(selectedIds, { userId: rep.userId, name: rep.name }, false);
+      setSelectedIds(new Set());
+    }
+  }
 
   function resetCreateForm() {
     setPropName("");
@@ -247,6 +319,7 @@ export default function PropertiesClient({
           primary_account_id: accountId || null,
           hasContact: Boolean(contactId),
         }),
+        assignments: [],
       };
 
       setProperties((prev) => [newProp, ...prev]);
@@ -489,6 +562,23 @@ export default function PropertiesClient({
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
+        {/* My Assigned vs All — visible to all roles */}
+        <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+          <button
+            type="button"
+            onClick={() => setMyAssignedOnly(false)}
+            className={`px-3 py-2 text-sm font-medium ${!myAssignedOnly ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+          >
+            All Properties
+          </button>
+          <button
+            type="button"
+            onClick={() => setMyAssignedOnly(true)}
+            className={`px-3 py-2 text-sm font-medium ${myAssignedOnly ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+          >
+            My Assigned
+          </button>
+        </div>
         <input
           type="text"
           placeholder="Search name, address, city, or account…"
@@ -564,6 +654,44 @@ export default function PropertiesClient({
         {filtered.length} propert{filtered.length !== 1 ? "ies" : "y"}
       </p>
 
+      {/* Bulk assignment bar (managers/admins) */}
+      {canManage && selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3">
+          <span className="text-sm font-medium text-slate-700">{selectedIds.size} selected</span>
+          <select
+            value={bulkRepId}
+            onChange={(e) => setBulkRepId(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 focus:outline-none"
+          >
+            <option value="">Select rep…</option>
+            {reps.map((r) => (
+              <option key={r.userId} value={r.userId}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!bulkRepId || bulkBusy}
+            onClick={() => void bulkAssign()}
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            Assign
+          </button>
+          <button
+            type="button"
+            disabled={!bulkRepId || bulkBusy}
+            onClick={() => void bulkUnassign()}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Remove
+          </button>
+          <button type="button" onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-slate-500 hover:text-slate-800">
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* Empty state */}
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
@@ -576,10 +704,12 @@ export default function PropertiesClient({
             <table className="w-full min-w-[700px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                  {canManage && <th className="w-10 px-4 py-3" />}
                   <th className="px-4 py-3 font-medium">Property</th>
                   <th className="px-4 py-3 font-medium">Account</th>
                   <th className="px-4 py-3 font-medium">Roof</th>
                   <th className="px-4 py-3 font-medium">Opps</th>
+                  <th className="px-4 py-3 font-medium">Assigned</th>
                 </tr>
               </thead>
               <tbody>
@@ -591,6 +721,17 @@ export default function PropertiesClient({
                     }}
                     className="cursor-pointer border-b border-slate-100 text-slate-700 last:border-0 hover:bg-slate-50"
                   >
+                    {canManage && (
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(p.id)}
+                          onChange={() => toggleSelect(p.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          aria-label="Select property"
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       {p.name ? (
                         <>
@@ -652,6 +793,23 @@ export default function PropertiesClient({
                         <span className="text-slate-400">—</span>
                       )}
                     </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {p.assignments.length === 0 ? (
+                          <span className="text-xs text-slate-400">—</span>
+                        ) : (
+                          p.assignments.map((a) => (
+                            <span
+                              key={a.userId}
+                              title={a.name}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600"
+                            >
+                              {initials(a.name)}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -696,6 +854,9 @@ export default function PropertiesClient({
                 </div>
                 {p.primary_account_name && (
                   <p className="mt-1 text-xs text-slate-500">{p.primary_account_name}</p>
+                )}
+                {p.assignments.length > 0 && (
+                  <p className="mt-1 text-xs text-slate-500">Assigned: {p.assignments.map((a) => a.name).join(", ")}</p>
                 )}
                 {p.website && (
                   <p className="mt-1 truncate text-xs text-blue-600 hover:underline" onClick={(e) => e.stopPropagation()}>

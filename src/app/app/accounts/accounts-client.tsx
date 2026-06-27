@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 import CompletenessFilter from "@/app/app/_components/completeness-filter";
 import { accountCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
+import { scoreAccount, PRIORITY_COLORS, PRIORITY_LABELS_SHORT, type IcpScoreResult } from "@/lib/scoring/icp-score";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -24,6 +25,7 @@ type AccountRow = {
   opportunity_count: number;
   last_touch_at: string | null;
   completeness: CompletenessResult;
+  icp: IcpScoreResult;
 };
 
 type PropertyOption = {
@@ -44,7 +46,7 @@ type Props = {
   allProperties: PropertyOption[];
 };
 
-type Sort = "last_touched" | "name" | "most_contacts" | "most_properties" | "most_opportunities";
+type Sort = "priority" | "last_touched" | "name" | "most_contacts" | "most_properties" | "most_opportunities";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -108,7 +110,8 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
   const [typeFilter, setTypeFilter] = useState("");
   const [createdByFilter, setCreatedByFilter] = useState("");
   const [completenessFilter, setCompletenessFilter] = useState("");
-  const [sort, setSort] = useState<Sort>("last_touched");
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [sort, setSort] = useState<Sort>("priority");
 
   // ── Create form state ──
   const [showCreate, setShowCreate] = useState(false);
@@ -141,8 +144,10 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
     if (typeFilter) rows = rows.filter((a) => a.account_type === typeFilter);
     if (createdByFilter) rows = rows.filter((a) => a.created_by === createdByFilter);
     if (completenessFilter) rows = rows.filter((a) => matchesCompleteness(a.completeness.score, completenessFilter));
+    if (priorityFilter) rows = rows.filter((a) => String(a.icp.priority) === priorityFilter);
 
     return [...rows].sort((a, b) => {
+      if (sort === "priority") return a.icp.priority - b.icp.priority || b.icp.score - a.icp.score;
       if (sort === "name") return (a.name ?? "").localeCompare(b.name ?? "");
       if (sort === "most_contacts") return b.contact_count - a.contact_count;
       if (sort === "most_properties") return b.property_count - a.property_count;
@@ -153,7 +158,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
       if (!b.last_touch_at) return -1;
       return b.last_touch_at.localeCompare(a.last_touch_at);
     });
-  }, [accounts, search, typeFilter, createdByFilter, completenessFilter, sort]);
+  }, [accounts, search, typeFilter, createdByFilter, completenessFilter, priorityFilter, sort]);
 
   // ── Can user delete this row? ──
   function canDelete(row: AccountRow): boolean {
@@ -205,6 +210,12 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
         hasContact: false,
         hasProperty: Boolean(formPropertyId),
         recentTouch: false,
+      }),
+      icp: scoreAccount({
+        account_type: formType || null,
+        property_count: formPropertyId ? 1 : 0,
+        contact_count: 0,
+        last_touch_at: null,
       }),
     };
 
@@ -375,6 +386,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
           value={sort}
           onChange={(e) => setSort(e.target.value as Sort)}
         >
+          <option value="priority">Priority (ICP)</option>
           <option value="last_touched">Last Touched</option>
           <option value="name">Name A–Z</option>
           <option value="most_contacts">Most Contacts</option>
@@ -383,6 +395,18 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
         </select>
         <RepFilter reps={reps} value={createdByFilter} onChange={setCreatedByFilter} />
         <CompletenessFilter value={completenessFilter} onChange={setCompletenessFilter} />
+        <select
+          aria-label="Filter by ICP priority"
+          className="h-10 rounded-xl border border-slate-200 bg-white px-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none"
+          value={priorityFilter}
+          onChange={(e) => setPriorityFilter(e.target.value)}
+        >
+          <option value="">All priorities</option>
+          <option value="1">P1 only</option>
+          <option value="2">P2 only</option>
+          <option value="3">P3 only</option>
+          <option value="4">P4 only</option>
+        </select>
       </div>
 
       {/* ── Type filter chips ── */}
@@ -441,6 +465,12 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                     >
                       <td className="px-4 py-3 font-medium text-slate-900">
                         <span className="inline-flex items-center gap-2">
+                          <span
+                            className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-bold ${PRIORITY_COLORS[row.icp.priority]}`}
+                            title={`${PRIORITY_LABELS_SHORT[row.icp.priority]} — ${row.icp.label} (${row.icp.score}/100)`}
+                          >
+                            {PRIORITY_LABELS_SHORT[row.icp.priority]}
+                          </span>
                           {row.name ?? "—"}
                           <span
                             className={`text-xs font-semibold tabular-nums ${scoreTone(row.completeness.score)}`}
@@ -515,6 +545,12 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded-full border px-1.5 py-0.5 text-[10px] font-bold ${PRIORITY_COLORS[row.icp.priority]}`}
+                        title={`${PRIORITY_LABELS_SHORT[row.icp.priority]} — ${row.icp.label} (${row.icp.score}/100)`}
+                      >
+                        {PRIORITY_LABELS_SHORT[row.icp.priority]}
+                      </span>
                       <span className="text-sm font-semibold text-slate-900">{row.name ?? "—"}</span>
                       <TypeBadge type={row.account_type} />
                       <span

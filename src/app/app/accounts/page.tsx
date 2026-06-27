@@ -1,6 +1,7 @@
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import AccountsClient from "@/app/app/accounts/accounts-client";
 import { accountCompleteness, withinDays, type CompletenessResult } from "@/lib/completeness";
+import { scoreAccount, type IcpScoreResult } from "@/lib/scoring/icp-score";
 
 type AccountRow = {
   id: string;
@@ -17,6 +18,7 @@ type AccountRow = {
   opportunity_count: number;
   last_touch_at: string | null;
   completeness: CompletenessResult;
+  icp: IcpScoreResult;
 };
 
 export default async function AccountsPage() {
@@ -91,6 +93,12 @@ export default async function AccountsPage() {
       hasContact: (contactsByAccount.get(a.id as string) ?? 0) > 0,
       hasProperty: (propsByAccount.get(a.id as string) ?? 0) > 0,
       recentTouch: withinDays(lastTouchByAccount.get(a.id as string) ?? null, 90),
+    }),
+    icp: scoreAccount({
+      account_type: a.account_type as string | null,
+      property_count: propsByAccount.get(a.id as string) ?? 0,
+      contact_count: contactsByAccount.get(a.id as string) ?? 0,
+      last_touch_at: lastTouchByAccount.get(a.id as string) ?? null,
     }),
   }));
 

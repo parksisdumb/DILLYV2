@@ -8,6 +8,7 @@ import GrowForm from "@/app/app/today/grow-form";
 import AdvanceList from "@/app/app/today/advance-list";
 import SuggestedOutreach from "@/app/app/today/suggested-outreach";
 import type { SuggestionRow } from "@/app/app/today/suggested-outreach";
+import EmailSignals from "@/app/app/today/email-signals";
 import TeamLeaderboard from "@/app/app/today/team-leaderboard";
 import type { LeaderboardEntry } from "@/app/app/today/team-leaderboard";
 
@@ -517,6 +518,9 @@ export default function TodayClient({ userId }: { userId: string }) {
         onAccept={(s) => void handleAcceptSuggestion(s)}
         onDismiss={handleDismissSuggestion}
       />
+
+      {/* Email follow-up signals from synced Gmail (awaiting reply / they replied) */}
+      <EmailSignals />
 
       {tab === "advance" && (
         <AdvanceList

@@ -14,6 +14,9 @@ import { publicBidAgent } from "@/inngest/agents/public-bid-agent";
 import { corporateCampusAgent } from "@/inngest/agents/corporate-campus-agent";
 import { privateReitAgent } from "@/inngest/agents/private-reit-agent";
 
+// Email tracking (phase 1)
+import { gmailSyncScheduler, gmailSyncUser } from "@/inngest/email/gmail-sync";
+
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
@@ -28,5 +31,8 @@ export const { GET, POST, PUT } = serve({
     publicBidAgent,
     corporateCampusAgent,
     privateReitAgent,
+    // Email tracking
+    gmailSyncScheduler,
+    gmailSyncUser,
   ],
 });

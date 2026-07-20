@@ -271,6 +271,13 @@ export default function AppShell({
               <div className="absolute bottom-full left-0 mb-1 w-52 rounded-xl border border-slate-700 bg-slate-800 p-2 shadow-xl">
                 <div className="px-3 py-1.5 text-xs text-slate-400">{email}</div>
                 <div className="my-1 border-t border-slate-700" />
+                <Link
+                  href="/app/settings"
+                  onClick={() => setProfileOpen(false)}
+                  className="block rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
+                >
+                  Settings
+                </Link>
                 <form action={signOutAction}>
                   <button
                     type="submit"
@@ -318,6 +325,13 @@ export default function AppShell({
                 <div className="px-3 py-1.5 text-xs text-slate-400">{fullName || email}</div>
                 <div className="px-3 py-1 text-xs capitalize text-slate-500">{orgRole ?? "member"}</div>
                 <div className="my-1 border-t border-slate-700" />
+                <Link
+                  href="/app/settings"
+                  onClick={() => setProfileOpen(false)}
+                  className="block rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
+                >
+                  Settings
+                </Link>
                 <form action={signOutAction}>
                   <button
                     type="submit"

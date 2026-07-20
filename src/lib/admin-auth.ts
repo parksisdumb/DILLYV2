@@ -16,3 +16,11 @@ export async function requireAdmin() {
     redirect("/admin/login");
   }
 }
+
+/** Non-redirecting platform-admin session check for API route handlers. */
+export async function isAdminSession(): Promise<boolean> {
+  const cookieStore = await cookies();
+  const session = cookieStore.get("admin_session")?.value;
+  const adminSecret = process.env.ADMIN_SECRET_KEY;
+  return Boolean(adminSecret && session === adminToken(adminSecret));
+}

@@ -1,18 +1,11 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
 
-// Implemented agents
+// Intel pipeline agents (external data discovery/enrichment)
 import { edgarIntelligenceAgent } from "@/inngest/agents/edgar-intelligence-agent";
 import { prospectDiscoveryAgent } from "@/inngest/agents/prospect-discovery-agent";
 import { intelDistributor } from "@/inngest/agents/intel-distributor";
 import { enrichmentAgent } from "@/inngest/agents/enrichment-agent";
-
-// Scaffold agents (enabled=false, not yet implemented)
-import { carDealershipAgent } from "@/inngest/agents/car-dealership-agent";
-import { selfStorageAgent } from "@/inngest/agents/self-storage-agent";
-import { publicBidAgent } from "@/inngest/agents/public-bid-agent";
-import { corporateCampusAgent } from "@/inngest/agents/corporate-campus-agent";
-import { privateReitAgent } from "@/inngest/agents/private-reit-agent";
 
 // Email tracking (phase 1)
 import { gmailSyncScheduler, gmailSyncUser } from "@/inngest/email/gmail-sync";
@@ -20,17 +13,11 @@ import { gmailSyncScheduler, gmailSyncUser } from "@/inngest/email/gmail-sync";
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
-    // Active
+    // Intel pipeline
     edgarIntelligenceAgent,
     prospectDiscoveryAgent,
     intelDistributor,
     enrichmentAgent,
-    // Scaffolded
-    carDealershipAgent,
-    selfStorageAgent,
-    publicBidAgent,
-    corporateCampusAgent,
-    privateReitAgent,
     // Email tracking
     gmailSyncScheduler,
     gmailSyncUser,

@@ -48,6 +48,30 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = createAdminClient();
+
+    // Prevent cross-tenant writes: the body-supplied user MUST be a real member
+    // of the body-supplied org. Without this, a holder of the shared secret could
+    // write into ANY org by naming its id.
+    const { data: membership, error: membershipErr } = await supabase
+      .from("org_users")
+      .select("user_id")
+      .eq("org_id", dilly_org_id)
+      .eq("user_id", dilly_user_id)
+      .maybeSingle();
+
+    if (membershipErr) {
+      return NextResponse.json(
+        { error: `Membership check failed: ${membershipErr.message}` },
+        { status: 500 },
+      );
+    }
+    if (!membership) {
+      return NextResponse.json(
+        { error: "dilly_user_id is not a member of dilly_org_id" },
+        { status: 403 },
+      );
+    }
+
     let accountId: string | null = null;
     let propertyId: string | null = null;
     let prospectId: string | null = null;

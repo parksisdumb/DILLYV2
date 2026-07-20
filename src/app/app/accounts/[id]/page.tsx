@@ -15,7 +15,7 @@ export default async function AccountDetailPage({
   // 1. Account — RLS ensures it belongs to org
   const accountRes = await supabase
     .from("accounts")
-    .select("id,name,account_type,status,notes,website,phone,created_by,updated_at")
+    .select("id,name,account_type,status,onboarding_status,notes,website,phone,created_by,updated_at")
     .eq("id", id)
     .is("deleted_at", null)
     .single();
@@ -109,6 +109,8 @@ export default async function AccountDetailPage({
     hasContact: (contactsRes.data ?? []).length > 0,
     hasProperty: (propertiesRes.data ?? []).length > 0,
     recentTouch: withinDays((tpRes.data?.[0]?.happened_at as string | undefined) ?? null, 90),
+    onboarding_status: (accountRes.data as Record<string, unknown>).onboarding_status as string | null ?? "initial_touch",
+    hasWonOpportunity: oppsData.some((o) => (o as { status?: string }).status === "won"),
   });
 
   return (

@@ -8,6 +8,7 @@ type AccountRow = {
   name: string | null;
   account_type: string | null;
   status: string;
+  onboarding_status: string | null;
   notes: string | null;
   website: string | null;
   phone: string | null;
@@ -27,7 +28,7 @@ export default async function AccountsPage() {
   const [acctRes, contactRes, tpRes, oppRes, meRes, propCountRes, orgUsersRes] = await Promise.all([
     supabase
       .from("accounts")
-      .select("id,name,account_type,status,notes,website,phone,updated_at,created_by")
+      .select("id,name,account_type,status,onboarding_status,notes,website,phone,updated_at,created_by")
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
       .limit(200),
@@ -36,7 +37,7 @@ export default async function AccountsPage() {
       .from("touchpoints")
       .select("account_id,happened_at")
       .not("account_id", "is", null),
-    supabase.from("opportunities").select("account_id").not("account_id", "is", null),
+    supabase.from("opportunities").select("account_id,status").not("account_id", "is", null),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     supabase.from("properties").select("primary_account_id").is("deleted_at", null).not("primary_account_id", "is", null),
     supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
@@ -61,9 +62,11 @@ export default async function AccountsPage() {
   }
 
   const oppsByAccount = new Map<string, number>();
+  const wonByAccount = new Set<string>();
   for (const o of oppRes.data ?? []) {
     const id = o.account_id as string;
     if (id) oppsByAccount.set(id, (oppsByAccount.get(id) ?? 0) + 1);
+    if (id && (o as { status?: string }).status === "won") wonByAccount.add(id);
   }
 
   const propsByAccount = new Map<string, number>();
@@ -77,6 +80,7 @@ export default async function AccountsPage() {
     name: a.name as string | null,
     account_type: a.account_type as string | null,
     status: (a.status as string) ?? "active",
+    onboarding_status: (a as Record<string, unknown>).onboarding_status as string | null ?? "initial_touch",
     notes: a.notes as string | null,
     website: (a as Record<string, unknown>).website as string | null ?? null,
     phone: (a as Record<string, unknown>).phone as string | null ?? null,
@@ -92,6 +96,8 @@ export default async function AccountsPage() {
       hasContact: (contactsByAccount.get(a.id as string) ?? 0) > 0,
       hasProperty: (propsByAccount.get(a.id as string) ?? 0) > 0,
       recentTouch: withinDays(lastTouchByAccount.get(a.id as string) ?? null, 90),
+      onboarding_status: (a as Record<string, unknown>).onboarding_status as string | null ?? "initial_touch",
+      hasWonOpportunity: wonByAccount.has(a.id as string),
     }),
     icp: scoreAccount({
       account_type: a.account_type as string | null,

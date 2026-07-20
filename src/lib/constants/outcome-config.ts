@@ -41,6 +41,12 @@ export const OUTCOMES_BY_TYPE: Record<string, OutcomeConfig[]> = {
     { key: "not_available", label: "Not There", shortLabel: "Not There", autoNextDays: 2, createsMilestone: false },
     { key: "inspection_scheduled", label: "Scheduled Follow-up", shortLabel: "Scheduled", autoNextDays: null, createsMilestone: true },
   ],
+  inspection: [
+    { key: "inspection_scheduled", label: "Inspection completed", shortLabel: "Inspected", autoNextDays: 3, createsMilestone: true },
+    { key: "met_in_person", label: "Walked the roof with them", shortLabel: "Walked", autoNextDays: 3, createsMilestone: false },
+    { key: "bid_submitted", label: "Bid Submitted", shortLabel: "Bid", autoNextDays: null, createsMilestone: true },
+    { key: "not_interested", label: "Not Interested", shortLabel: "Not Interested", autoNextDays: null, createsMilestone: false },
+  ],
 };
 
 // Fallback for types not in the map

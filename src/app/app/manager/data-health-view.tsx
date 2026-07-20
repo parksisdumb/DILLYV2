@@ -65,7 +65,7 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
     try {
       // 7 batched queries — no per-record round trips. RLS scopes to org.
       const [accRes, conRes, propRes, oppRes, pcRes, tpRes] = await Promise.all([
-        supabase.from("accounts").select("id,name,account_type,website,created_by").is("deleted_at", null).limit(FETCH_CAP),
+        supabase.from("accounts").select("id,name,account_type,website,onboarding_status,created_by").is("deleted_at", null).limit(FETCH_CAP),
         supabase
           .from("contacts")
           .select("id,first_name,last_name,full_name,title,phone,email,created_by")
@@ -78,7 +78,7 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
           .limit(FETCH_CAP),
         supabase
           .from("opportunities")
-          .select("id,title,stage_id,scope_type_id,estimated_value,account_id,property_id,created_by")
+          .select("id,title,stage_id,scope_type_id,estimated_value,status,account_id,property_id,created_by")
           .is("deleted_at", null)
           .limit(FETCH_CAP),
         supabase.from("property_contacts").select("property_id,contact_id").eq("active", true),
@@ -102,6 +102,10 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
       for (const p of (propRes.data ?? []) as { primary_account_id: string | null }[]) {
         if (p.primary_account_id) propCountByAccount.set(p.primary_account_id, (propCountByAccount.get(p.primary_account_id) ?? 0) + 1);
       }
+      const wonByAccount = new Set<string>();
+      for (const o of (oppRes.data ?? []) as { account_id: string | null; status?: string | null }[]) {
+        if (o.account_id && o.status === "won") wonByAccount.add(o.account_id);
+      }
       const lastTouchByAccount = new Map<string, string>();
       const propIdsWithTouch = new Set<string>();
       const oppIdsWithTouch = new Set<string>();
@@ -119,7 +123,7 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
 
       const out: Scored[] = [];
 
-      for (const a of (accRes.data ?? []) as { id: string; name: string | null; account_type: string | null; website: string | null; created_by: string | null }[]) {
+      for (const a of (accRes.data ?? []) as { id: string; name: string | null; account_type: string | null; website: string | null; onboarding_status: string | null; created_by: string | null }[]) {
         out.push({
           id: a.id,
           type: "account",
@@ -132,6 +136,8 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
             hasContact: (contactCountByAccount.get(a.id) ?? 0) > 0,
             hasProperty: (propCountByAccount.get(a.id) ?? 0) > 0,
             recentTouch: withinDays(lastTouchByAccount.get(a.id) ?? null, 90),
+            onboarding_status: a.onboarding_status ?? "initial_touch",
+            hasWonOpportunity: wonByAccount.has(a.id),
           }),
         });
       }

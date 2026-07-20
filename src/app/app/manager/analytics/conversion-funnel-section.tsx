@@ -39,12 +39,13 @@ export default function ConversionFunnelSection({ reps }: { reps: RepInfo[] }) {
       try {
         const periodStart = new Date(Date.now() - PERIOD_DAYS[period] * 86400000).toISOString();
 
-        const [tpsRes, outcomesRes, oppsRes, assignsRes, stagesRes] = await Promise.all([
+        const [tpsRes, outcomesRes, typesRes, oppsRes, assignsRes, stagesRes] = await Promise.all([
           supabase
             .from("touchpoints")
-            .select("rep_user_id,contact_id,outcome_id,engagement_phase,happened_at")
+            .select("rep_user_id,contact_id,outcome_id,touchpoint_type_id,engagement_phase,happened_at")
             .gte("happened_at", periodStart),
           supabase.from("touchpoint_outcomes").select("id,key"),
+          supabase.from("touchpoint_types").select("id,key"),
           supabase
             .from("opportunities")
             .select("id,primary_contact_id,stage_id,status,closed_at")
@@ -55,13 +56,17 @@ export default function ConversionFunnelSection({ reps }: { reps: RepInfo[] }) {
 
         if (cancelled) return;
 
-        const firstError = [tpsRes.error, outcomesRes.error, oppsRes.error, assignsRes.error, stagesRes.error].find(Boolean);
+        const firstError = [tpsRes.error, outcomesRes.error, typesRes.error, oppsRes.error, assignsRes.error, stagesRes.error].find(Boolean);
         if (firstError) throw new Error(firstError.message);
 
         // Lookups
         const outcomeKeyById = new Map<string, string>();
         for (const o of (outcomesRes.data ?? []) as { id: string; key: string }[]) {
           outcomeKeyById.set(o.id, o.key);
+        }
+        const typeKeyById = new Map<string, string>();
+        for (const t of (typesRes.data ?? []) as { id: string; key: string }[]) {
+          typeKeyById.set(t.id, t.key);
         }
 
         const stageOrderById = new Map<string, number>();
@@ -101,15 +106,17 @@ export default function ConversionFunnelSection({ reps }: { reps: RepInfo[] }) {
           rep_user_id: string;
           contact_id: string | null;
           outcome_id: string | null;
+          touchpoint_type_id: string | null;
           engagement_phase: string | null;
           happened_at: string;
         };
-        type TpEnriched = Tp & { outcomeKey: string | null };
+        type TpEnriched = Tp & { outcomeKey: string | null; typeKey: string | null };
         const tpsByRep = new Map<string, TpEnriched[]>();
         for (const tp of (tpsRes.data ?? []) as Tp[]) {
           const enriched: TpEnriched = {
             ...tp,
             outcomeKey: tp.outcome_id ? outcomeKeyById.get(tp.outcome_id) ?? null : null,
+            typeKey: tp.touchpoint_type_id ? typeKeyById.get(tp.touchpoint_type_id) ?? null : null,
           };
           if (!tpsByRep.has(tp.rep_user_id)) tpsByRep.set(tp.rep_user_id, []);
           tpsByRep.get(tp.rep_user_id)!.push(enriched);
@@ -138,10 +145,13 @@ export default function ConversionFunnelSection({ reps }: { reps: RepInfo[] }) {
           }
           const connectedContacts = new Set(firstConnectedAtByContact.keys());
 
-          // S2 numerator: contacts with inspection_scheduled outcome AFTER their first connected_conversation
+          // S2 numerator: contacts with an inspection signal AFTER their first
+          // connected_conversation — either the inspection_scheduled outcome OR a
+          // first-class inspection-type touchpoint (inspection is now a real type).
           const inspectedContacts = new Set<string>();
           for (const t of repTps) {
-            if (t.outcomeKey !== "inspection_scheduled" || !t.contact_id) continue;
+            const isInspection = t.outcomeKey === "inspection_scheduled" || t.typeKey === "inspection";
+            if (!isInspection || !t.contact_id) continue;
             const firstConnectedAt = firstConnectedAtByContact.get(t.contact_id);
             if (firstConnectedAt && t.happened_at > firstConnectedAt) {
               inspectedContacts.add(t.contact_id);

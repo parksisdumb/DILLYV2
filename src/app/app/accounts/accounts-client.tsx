@@ -6,6 +6,11 @@ import CompletenessFilter from "@/app/app/_components/completeness-filter";
 import EntityPicker from "@/app/app/_components/entity-picker";
 import { accountCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
 import { scoreAccount, PRIORITY_COLORS, PRIORITY_LABELS_SHORT, type IcpScoreResult } from "@/lib/scoring/icp-score";
+import {
+  ONBOARDING_STATUS_SHORT,
+  ONBOARDING_STATUS_COLORS,
+  ONBOARDING_STATUS_OPTIONS,
+} from "@/lib/constants/onboarding-status";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -16,6 +21,7 @@ type AccountRow = {
   name: string | null;
   account_type: string | null;
   status: string;
+  onboarding_status: string | null;
   notes: string | null;
   website: string | null;
   phone: string | null;
@@ -90,6 +96,15 @@ function TypeBadge({ type }: { type: string | null }) {
   );
 }
 
+function OnboardingBadge({ status }: { status: string | null }) {
+  const s = status ?? "initial_touch";
+  const label = ONBOARDING_STATUS_SHORT[s] ?? s;
+  const color = ONBOARDING_STATUS_COLORS[s] ?? "bg-slate-100 text-slate-600";
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${color}`}>{label}</span>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function AccountsClient({ accounts: initialAccounts, reps, orgId, userId, userRole }: Props) {
@@ -102,6 +117,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
   const [createdByFilter, setCreatedByFilter] = useState("");
   const [completenessFilter, setCompletenessFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
+  const [onboardingFilter, setOnboardingFilter] = useState("");
   const [sort, setSort] = useState<Sort>("priority");
 
   // ── Create form state ──
@@ -136,6 +152,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
     if (createdByFilter) rows = rows.filter((a) => a.created_by === createdByFilter);
     if (completenessFilter) rows = rows.filter((a) => matchesCompleteness(a.completeness.score, completenessFilter));
     if (priorityFilter) rows = rows.filter((a) => String(a.icp.priority) === priorityFilter);
+    if (onboardingFilter) rows = rows.filter((a) => (a.onboarding_status ?? "initial_touch") === onboardingFilter);
 
     return [...rows].sort((a, b) => {
       if (sort === "priority") return a.icp.priority - b.icp.priority || b.icp.score - a.icp.score;
@@ -149,7 +166,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
       if (!b.last_touch_at) return -1;
       return b.last_touch_at.localeCompare(a.last_touch_at);
     });
-  }, [accounts, search, typeFilter, createdByFilter, completenessFilter, priorityFilter, sort]);
+  }, [accounts, search, typeFilter, createdByFilter, completenessFilter, priorityFilter, onboardingFilter, sort]);
 
   // ── Can user delete this row? ──
   function canDelete(row: AccountRow): boolean {
@@ -174,7 +191,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
         phone: formPhone.trim() || null,
         notes: formNotes.trim() || null,
       })
-      .select("id,name,account_type,status,notes,website,phone,updated_at,created_by")
+      .select("id,name,account_type,status,onboarding_status,notes,website,phone,updated_at,created_by")
       .single();
 
     setCreateBusy(false);
@@ -186,6 +203,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
       name: (data as Record<string, unknown>).name as string | null,
       account_type: (data as Record<string, unknown>).account_type as string | null,
       status: ((data as Record<string, unknown>).status as string) ?? "active",
+      onboarding_status: ((data as Record<string, unknown>).onboarding_status as string | null) ?? "initial_touch",
       notes: (data as Record<string, unknown>).notes as string | null,
       website: (data as Record<string, unknown>).website as string | null ?? null,
       phone: (data as Record<string, unknown>).phone as string | null ?? null,
@@ -201,6 +219,8 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
         hasContact: false,
         hasProperty: Boolean(formPropertyId),
         recentTouch: false,
+        onboarding_status: "initial_touch",
+        hasWonOpportunity: false,
       }),
       icp: scoreAccount({
         account_type: formType || null,
@@ -390,6 +410,17 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
           <option value="3">P3 only</option>
           <option value="4">P4 only</option>
         </select>
+        <select
+          aria-label="Filter by onboarding status"
+          className="h-10 rounded-xl border border-slate-200 bg-white px-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none"
+          value={onboardingFilter}
+          onChange={(e) => setOnboardingFilter(e.target.value)}
+        >
+          <option value="">All onboarding</option>
+          {ONBOARDING_STATUS_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
       </div>
 
       {/* ── Type filter chips ── */}
@@ -432,6 +463,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Onboarding</th>
                   <th className="px-4 py-3 font-medium">Contacts</th>
                   <th className="px-4 py-3 font-medium">Properties</th>
                   <th className="px-4 py-3 font-medium">Opps</th>
@@ -466,6 +498,9 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                       <td className="px-4 py-3">
                         <TypeBadge type={row.account_type} />
                       </td>
+                      <td className="px-4 py-3">
+                        <OnboardingBadge status={row.onboarding_status} />
+                      </td>
                       <td className="px-4 py-3 text-slate-600">{row.contact_count}</td>
                       <td className="px-4 py-3 text-slate-600">{row.property_count}</td>
                       <td className="px-4 py-3 text-slate-600">{row.opportunity_count}</td>
@@ -487,7 +522,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                     </tr>
                     {deleteConfirmId === row.id && (
                       <tr className="bg-red-50">
-                        <td colSpan={7} className="px-4 py-3">
+                        <td colSpan={8} className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <span className="text-sm text-slate-700">
                               Delete <strong>{row.name}</strong>?
@@ -536,6 +571,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                       </span>
                       <span className="text-sm font-semibold text-slate-900">{row.name ?? "—"}</span>
                       <TypeBadge type={row.account_type} />
+                      <OnboardingBadge status={row.onboarding_status} />
                       <span
                         className={`text-xs font-semibold tabular-nums ${scoreTone(row.completeness.score)}`}
                         title={row.completeness.missing.length ? `Missing: ${row.completeness.missing.map((m) => m.label).join(", ")}` : "Complete"}

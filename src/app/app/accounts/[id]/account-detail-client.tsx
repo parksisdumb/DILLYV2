@@ -6,6 +6,11 @@ import { formatPhone } from "@/lib/utils/format";
 import { PRIORITY_COLORS, type IcpScoreResult } from "@/lib/scoring/icp-score";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
 import EntityPicker, { type PickerRow } from "@/app/app/_components/entity-picker";
+import {
+  ONBOARDING_STATUS_SHORT,
+  ONBOARDING_STATUS_COLORS,
+  ONBOARDING_STATUS_OPTIONS,
+} from "@/lib/constants/onboarding-status";
 import type { CompletenessResult } from "@/lib/completeness";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -15,6 +20,7 @@ type Account = {
   name: string | null;
   account_type: string | null;
   status: string;
+  onboarding_status: string | null;
   notes: string | null;
   website: string | null;
   phone: string | null;
@@ -340,6 +346,23 @@ export default function AccountDetailClient({
   function showToast(tone: "success" | "error", text: string) {
     setToast({ tone, text });
     setTimeout(() => setToast((prev) => (prev?.text === text ? null : prev)), 2500);
+  }
+
+  // ── Onboarding status pill (reps + managers) ──
+  const [onbOpen, setOnbOpen] = useState(false);
+  const [onbBusy, setOnbBusy] = useState(false);
+
+  async function setOnboarding(value: string) {
+    setOnbBusy(true);
+    const { error } = await supabase.rpc("rpc_set_account_onboarding_status", {
+      p_account_id: account.id,
+      p_status: value,
+    });
+    setOnbBusy(false);
+    setOnbOpen(false);
+    if (error) { showToast("error", error.message); return; }
+    setLocalAccount((prev) => ({ ...prev, onboarding_status: value }));
+    showToast("success", "Onboarding status updated.");
   }
 
   // ── Derived lookups ──
@@ -779,6 +802,42 @@ export default function AccountDetailClient({
                   {TYPE_LABELS[localAccount.account_type] ?? localAccount.account_type}
                 </span>
               )}
+              {/* Editable onboarding-status pill (reps + managers) */}
+              <div className="relative">
+                <button
+                  type="button"
+                  disabled={onbBusy}
+                  onClick={() => setOnbOpen((v) => !v)}
+                  title="Vendor onboarding status"
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold disabled:opacity-50 ${
+                    ONBOARDING_STATUS_COLORS[localAccount.onboarding_status ?? "initial_touch"] ?? "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {ONBOARDING_STATUS_SHORT[localAccount.onboarding_status ?? "initial_touch"] ?? localAccount.onboarding_status}
+                  <span aria-hidden className="text-[9px] opacity-70">▾</span>
+                </button>
+                {onbOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setOnbOpen(false)} />
+                    <div className="absolute right-0 z-20 mt-1 w-60 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                      {ONBOARDING_STATUS_OPTIONS.map((o) => {
+                        const active = (localAccount.onboarding_status ?? "initial_touch") === o.value;
+                        return (
+                          <button
+                            key={o.value}
+                            type="button"
+                            onClick={() => void setOnboarding(o.value)}
+                            className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-slate-50 ${active ? "font-semibold text-blue-700" : "text-slate-700"}`}
+                          >
+                            {o.label}
+                            {active && <span aria-hidden>✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={startEdit}

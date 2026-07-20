@@ -77,7 +77,7 @@ const toNumber = (value: unknown, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
-const OUTREACH_TYPE_KEYS = new Set(["call", "email", "text", "door_knock", "site_visit"]);
+const OUTREACH_TYPE_KEYS = new Set(["call", "email", "text", "door_knock", "site_visit", "inspection"]);
 
 /** Deduplicate rows by `key`, preferring org-specific (org_id != null) over global. */
 function dedupeByKey<T extends { key?: string | null; org_id?: string | null }>(

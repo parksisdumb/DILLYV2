@@ -39,6 +39,8 @@ export type AccountCompletenessInput = {
   hasContact: boolean;
   hasProperty: boolean;
   recentTouch: boolean; // a touchpoint within 90 days — caller resolves via withinDays(lastTouchAt, 90)
+  onboarding_status?: string | null;
+  hasWonOpportunity?: boolean; // a won opp on this account
 };
 
 export const ACCOUNT_FIELDS: FieldSpec<AccountCompletenessInput>[] = [
@@ -49,7 +51,19 @@ export const ACCOUNT_FIELDS: FieldSpec<AccountCompletenessInput>[] = [
   { key: "recent_touch", label: "recent activity (90d)", present: (r) => r.recentTouch },
 ];
 
-export const accountCompleteness = (r: AccountCompletenessInput): CompletenessResult => evaluate(r, ACCOUNT_FIELDS);
+// Only applied when the account has a won opportunity: a won deal on an account
+// that hasn't reached 'compliant' vendor onboarding is a real gap — the vendor
+// isn't cleared to actually do the work.
+const ACCOUNT_ONBOARDING_FIELD: FieldSpec<AccountCompletenessInput> = {
+  key: "onboarding",
+  label: "onboarding incomplete",
+  present: (r) => r.onboarding_status === "compliant",
+};
+
+export const accountCompleteness = (r: AccountCompletenessInput): CompletenessResult => {
+  const specs = r.hasWonOpportunity ? [...ACCOUNT_FIELDS, ACCOUNT_ONBOARDING_FIELD] : ACCOUNT_FIELDS;
+  return evaluate(r, specs);
+};
 
 // ── Contact ─────────────────────────────────────────────────────────────────
 

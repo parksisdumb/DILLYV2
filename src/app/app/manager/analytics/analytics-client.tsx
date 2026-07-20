@@ -255,7 +255,7 @@ export default function AnalyticsClient({ data }: { data: AnalyticsData }) {
         .map((t) => t.contact_id)
     ).size;
     const inspScheduled = tp.filter(
-      (t) => t.outcome_key === "inspection_scheduled"
+      (t) => t.outcome_key === "inspection_scheduled" || t.type_key === "inspection"
     ).length;
     const bidSubmitted = tp.filter(
       (t) => t.outcome_key === "bid_submitted"

@@ -5,6 +5,7 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { PropContact } from "./page";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
 import PropertyAssignments from "@/app/app/properties/[id]/property-assignments";
+import EntityPicker, { type PickerRow } from "@/app/app/_components/entity-picker";
 import type { CompletenessResult } from "@/lib/completeness";
 
 type Property = {
@@ -248,6 +249,7 @@ export default function PropertyDetailClient({
   // Link account state
   const [localAccount, setLocalAccount] = useState(account);
   const [linkAccountId, setLinkAccountId] = useState("");
+  const [linkAccountRow, setLinkAccountRow] = useState<PickerRow | null>(null);
   const [linkAccountBusy, setLinkAccountBusy] = useState(false);
   const [linkAccountError, setLinkAccountError] = useState<string | null>(null);
   const [showLinkAccount, setShowLinkAccount] = useState(false);
@@ -271,6 +273,38 @@ export default function PropertyDetailClient({
   const [oppContactId, setOppContactId] = useState("");
   const [oppBusy, setOppBusy] = useState(false);
   const [oppError, setOppError] = useState<string | null>(null);
+
+  const canManage = userRole === "manager" || userRole === "admin";
+
+  // ── Merge duplicate property (managers/admins) ──
+  const [showMerge, setShowMerge] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [mergeTargetRow, setMergeTargetRow] = useState<PickerRow | null>(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
+  async function handleMerge() {
+    if (!mergeTargetId) {
+      setMergeError("Pick the property to keep.");
+      return;
+    }
+    setMergeBusy(true);
+    setMergeError(null);
+    try {
+      const { error } = await supabase.rpc("rpc_merge_property", {
+        p_source_id: property.id,
+        p_survivor_id: mergeTargetId,
+      });
+      if (error) {
+        setMergeError(error.message);
+        return;
+      }
+      // Everything now lives on the survivor — navigate there.
+      window.location.href = `/app/properties/${mergeTargetId}`;
+    } finally {
+      setMergeBusy(false);
+    }
+  }
 
   function showToast(tone: "success" | "error", text: string) {
     setToast({ tone, text });
@@ -473,8 +507,15 @@ export default function PropertyDetailClient({
       const linked = allAccounts.find((a) => a.id === linkAccountId);
       if (linked) {
         setLocalAccount({ id: linked.id, name: linked.name, account_type: linked.account_type });
+      } else if (linkAccountRow) {
+        setLocalAccount({
+          id: linkAccountRow.id,
+          name: linkAccountRow.primary,
+          account_type: (linkAccountRow.raw.account_type as string | null) ?? null,
+        });
       }
       setLinkAccountId("");
+      setLinkAccountRow(null);
       setShowLinkAccount(false);
       showToast("success", wasLinked ? "Account changed." : "Account linked.");
     } finally {
@@ -874,18 +915,15 @@ export default function PropertyDetailClient({
             {localAccount ? `Change the account for this property (currently ${localAccount.name ?? "linked"})` : "Link an account to this property"}
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <select
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+            <EntityPicker
+              kind="account"
               value={linkAccountId}
-              onChange={(e) => setLinkAccountId(e.target.value)}
-            >
-              <option value="">Select account...</option>
-              {allAccounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name ?? "Unnamed"}{a.account_type ? ` (${a.account_type})` : ""}
-                </option>
-              ))}
-            </select>
+              onChange={(row) => {
+                setLinkAccountId(row?.id ?? "");
+                setLinkAccountRow(row);
+              }}
+              placeholder="Search accounts by name…"
+            />
             <div className="flex items-center gap-2">
               <button
                 type="submit"
@@ -1244,9 +1282,85 @@ export default function PropertyDetailClient({
       <PropertyAssignments
         propertyId={property.id}
         orgId={orgId}
-        canManage={userRole === "manager" || userRole === "admin"}
+        canManage={canManage}
         currentUserId={userId}
       />
+
+      {/* Merge duplicate (managers/admins only) */}
+      {canManage && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          {!showMerge ? (
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Duplicate of another property?</p>
+                <p className="text-xs text-slate-500">
+                  Merge this record into the one you want to keep — contacts, touchpoints,
+                  opportunities and follow-ups move over.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMerge(true);
+                  setMergeError(null);
+                }}
+                className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Merge…
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Merge into another property</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Pick the property to <span className="font-medium">keep</span>. This one (
+                  {property.name ?? property.address_line1}) will be closed out and all its
+                  activity re-pointed to the survivor. This can’t be undone.
+                </p>
+              </div>
+              <EntityPicker
+                kind="property"
+                value={mergeTargetId}
+                excludeIds={[property.id]}
+                onChange={(row) => {
+                  setMergeTargetId(row?.id ?? "");
+                  setMergeTargetRow(row);
+                  setMergeError(null);
+                }}
+                placeholder="Search the property to keep…"
+              />
+              {mergeError && <p className="text-xs text-red-600">{mergeError}</p>}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={mergeBusy || !mergeTargetId}
+                  onClick={() => void handleMerge()}
+                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {mergeBusy
+                    ? "Merging…"
+                    : mergeTargetRow
+                      ? `Merge into ${mergeTargetRow.primary}`
+                      : "Merge"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMerge(false);
+                    setMergeTargetId("");
+                    setMergeTargetRow(null);
+                    setMergeError(null);
+                  }}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="border-b border-slate-200">

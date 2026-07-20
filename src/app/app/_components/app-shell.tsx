@@ -159,7 +159,7 @@ export default function AppShell({
   const settingsItems = canSeeAdmin
     ? [
         { href: "/app/manager/territories", label: "Territories" },
-        { href: "/app/manager/icp", label: "ICP Profile" },
+        { href: "/app/manager/icp", label: "ICP Targeting (optional)" },
         { href: "/app/admin/team", label: "Team Members" },
         { href: "/app/admin/kpis", label: "KPI Targets" },
         { href: "/app/manager/agent", label: "Agents" },

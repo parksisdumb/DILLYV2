@@ -23,13 +23,13 @@ export type PropertyOption = { id: string; address_line1: string; city: string |
 export default async function ContactsPage() {
   const { supabase, userId } = await requireServerOrgContext();
 
-  const [contactsRes, accountsRes, tpRes, meRes, propsRes, orgUsersRes, pcRes] = await Promise.all([
+  const [contactsRes, accountsRes, tpRes, meRes, orgUsersRes, pcRes] = await Promise.all([
     supabase
       .from("contacts")
       .select("id,full_name,first_name,last_name,title,phone,email,decision_role,account_id,updated_at,created_by")
       .is("deleted_at", null)
       .order("full_name")
-      .limit(500),
+      .limit(200),
     supabase
       .from("accounts")
       .select("id,name")
@@ -41,12 +41,6 @@ export default async function ContactsPage() {
       .select("contact_id,happened_at")
       .not("contact_id", "is", null),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
-    supabase
-      .from("properties")
-      .select("id,address_line1,city,state,primary_account_id")
-      .is("deleted_at", null)
-      .order("address_line1")
-      .limit(500),
     supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
     supabase.from("property_contacts").select("contact_id").eq("active", true),
   ]);
@@ -97,14 +91,6 @@ export default async function ContactsPage() {
     name: a.name as string | null,
   }));
 
-  const properties: PropertyOption[] = (propsRes.data ?? []).map((p) => ({
-    id: p.id as string,
-    address_line1: p.address_line1 as string,
-    city: p.city as string | null,
-    state: p.state as string | null,
-    primary_account_id: p.primary_account_id as string | null,
-  }));
-
   const reps = (orgUsersRes.data ?? []).map((u) => ({
     userId: u.user_id as string,
     name: (u.full_name as string | null)?.trim() || (u.email as string | null)?.split("@")[0] || (u.user_id as string).slice(0, 8),
@@ -115,7 +101,6 @@ export default async function ContactsPage() {
       contacts={rows}
       reps={reps}
       accounts={accounts}
-      properties={properties}
       userId={userId}
       userRole={meRes.data?.role ?? "rep"}
     />

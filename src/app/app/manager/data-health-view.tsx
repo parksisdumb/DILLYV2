@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import { propertyDuplicateKey } from "@/lib/address";
 import {
   accountCompleteness,
   contactCompleteness,
@@ -49,6 +50,9 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
   void orgId; // RLS scopes everything to the manager's org.
 
   const [scored, setScored] = useState<Scored[]>([]);
+  const [propRows, setPropRows] = useState<
+    { id: string; name: string | null; address_line1: string; city: string | null; state: string | null }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<RecordType>("property");
@@ -69,7 +73,7 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
           .limit(FETCH_CAP),
         supabase
           .from("properties")
-          .select("id,name,address_line1,roof_type,sq_footage,roof_age_years,primary_account_id,created_by")
+          .select("id,name,address_line1,city,state,roof_type,sq_footage,roof_age_years,primary_account_id,created_by")
           .is("deleted_at", null)
           .limit(FETCH_CAP),
         supabase
@@ -150,7 +154,8 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
         });
       }
 
-      for (const p of (propRes.data ?? []) as { id: string; name: string | null; address_line1: string; roof_type: string | null; sq_footage: number | null; roof_age_years: number | null; primary_account_id: string | null; created_by: string | null }[]) {
+      const propList = (propRes.data ?? []) as { id: string; name: string | null; address_line1: string; city: string | null; state: string | null; roof_type: string | null; sq_footage: number | null; roof_age_years: number | null; primary_account_id: string | null; created_by: string | null }[];
+      for (const p of propList) {
         out.push({
           id: p.id,
           type: "property",
@@ -166,6 +171,15 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
           }),
         });
       }
+      setPropRows(
+        propList.map((p) => ({
+          id: p.id,
+          name: p.name,
+          address_line1: p.address_line1,
+          city: p.city,
+          state: p.state,
+        })),
+      );
 
       for (const o of (oppRes.data ?? []) as { id: string; title: string | null; stage_id: string | null; scope_type_id: string | null; estimated_value: number | null; account_id: string | null; property_id: string | null; created_by: string | null }[]) {
         out.push({
@@ -213,6 +227,23 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
       .sort((a, b) => a.result.score - b.result.score)
       .slice(0, 15);
   }, [byType, activeType]);
+
+  // Possible duplicate properties — normalized address_line1 + city collisions.
+  const dupGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { id: string; name: string | null; address_line1: string; city: string | null; state: string | null }[]
+    >();
+    for (const p of propRows) {
+      const key = propertyDuplicateKey(p.address_line1, p.city);
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(p);
+    }
+    return Array.from(groups.values())
+      .filter((g) => g.length > 1)
+      .sort((a, b) => b.length - a.length);
+  }, [propRows]);
 
   // Completeness by rep (across all record types) — worst first.
   const byRep = useMemo(() => {
@@ -288,6 +319,48 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
                   {s.result.missing.map((m) => m.label).join(", ")}
                 </span>
               </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Possible duplicate properties */}
+      <div>
+        <h3 className="mb-2 text-sm font-semibold text-slate-800">
+          Possible duplicate properties{dupGroups.length > 0 ? ` — ${dupGroups.length}` : ""}
+        </h3>
+        {dupGroups.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+            No duplicate addresses detected. 🎉
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Same normalized street address + city (ignores case, punctuation, and St/Street,
+              Dr/Drive, etc.). Open a record and use “Merge…” to fold duplicates together.
+            </p>
+            {dupGroups.map((g) => (
+              <div key={g[0].id} className="overflow-hidden rounded-2xl border border-amber-200 bg-white">
+                <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">
+                  {g.length} records · {g[0].address_line1}
+                  {g[0].city ? `, ${g[0].city}` : ""}
+                  {g[0].state ? ` ${g[0].state}` : ""}
+                </div>
+                {g.map((p) => (
+                  <Link
+                    key={p.id}
+                    href={`/app/properties/${p.id}`}
+                    className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0 hover:bg-slate-50"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">
+                      {p.name?.trim() || p.address_line1}
+                    </span>
+                    <span className="hidden min-w-0 max-w-[55%] truncate text-xs text-slate-500 sm:block">
+                      {[p.address_line1, p.city, p.state].filter(Boolean).join(", ")}
+                    </span>
+                  </Link>
+                ))}
+              </div>
             ))}
           </div>
         )}

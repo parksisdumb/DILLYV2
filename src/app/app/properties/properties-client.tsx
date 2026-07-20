@@ -5,6 +5,8 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { AccountOption, ContactOption } from "./page";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 import CompletenessFilter from "@/app/app/_components/completeness-filter";
+import EntityPicker from "@/app/app/_components/entity-picker";
+import { propertyDuplicateKey } from "@/lib/address";
 import { propertyCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
 
 type PropertyRow = {
@@ -117,8 +119,13 @@ export default function PropertiesClient({
   const [state, setState] = useState("");
   const [postal, setPostal] = useState("");
   const [accountId, setAccountId] = useState("");
+  const [accountName, setAccountName] = useState<string | null>(null);
   const [contactId, setContactId] = useState("");
+  const [contactName, setContactName] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  // Possible-duplicate gate: populated when a normalized address+city match is found.
+  const [dupMatches, setDupMatches] = useState<{ id: string; label: string; sub: string }[]>([]);
+  const [dupChecking, setDupChecking] = useState(false);
   const [website, setWebsite] = useState("");
   const [buildingType, setBuildingType] = useState("");
   const [roofType, setRoofType] = useState("");
@@ -239,7 +246,9 @@ export default function PropertiesClient({
     setState("");
     setPostal("");
     setAccountId("");
+    setAccountName(null);
     setContactId("");
+    setContactName(null);
     setNotes("");
     setWebsite("");
     setBuildingType("");
@@ -247,6 +256,29 @@ export default function PropertiesClient({
     setRoofAgeYears("");
     setSqFootage("");
     setError(null);
+    setDupMatches([]);
+  }
+
+  // Look for an existing property in the org with a matching normalized
+  // address_line1 + city. Query is scoped to the same city (bounded), then
+  // compared with the shared normalizer so "Dr" == "Drive", punctuation/case
+  // are ignored. Returns matches; empty = clear to create.
+  async function findDuplicates() {
+    const targetKey = propertyDuplicateKey(addr1, city);
+    if (!targetKey) return [] as { id: string; label: string; sub: string }[];
+    const { data } = await supabase
+      .from("properties")
+      .select("id,name,address_line1,city,state")
+      .is("deleted_at", null)
+      .ilike("city", city.trim())
+      .limit(200);
+    return (data ?? [])
+      .filter((p) => propertyDuplicateKey(p.address_line1 as string, p.city as string) === targetKey)
+      .map((p) => ({
+        id: p.id as string,
+        label: (p.name as string | null) || (p.address_line1 as string),
+        sub: [p.address_line1, p.city, p.state].filter(Boolean).join(", "),
+      }));
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -254,6 +286,21 @@ export default function PropertiesClient({
     if (!propName.trim() || !addr1.trim() || !city.trim() || !state.trim() || !postal.trim() || !accountId) {
       setError("Property name, address, city, state, postal code, and account are required.");
       return;
+    }
+    // Duplicate gate: on the first submit, check for a normalized-address match.
+    // If found, surface it and stop; the user then picks "Use existing" or
+    // "Create anyway" (which re-submits with dupMatches already shown).
+    if (dupMatches.length === 0) {
+      setDupChecking(true);
+      try {
+        const matches = await findDuplicates();
+        if (matches.length > 0) {
+          setDupMatches(matches);
+          return;
+        }
+      } finally {
+        setDupChecking(false);
+      }
     }
     setBusy(true);
     setError(null);
@@ -286,9 +333,10 @@ export default function PropertiesClient({
         return;
       }
 
-      const accountName = accounts.find((a) => a.id === accountId)?.name ?? null;
-      const contactName = contactId
-        ? (contacts.find((c) => c.id === contactId)?.full_name ?? null)
+      const resolvedAccountName =
+        accountName ?? accounts.find((a) => a.id === accountId)?.name ?? null;
+      const resolvedContactName = contactId
+        ? (contactName ?? contacts.find((c) => c.id === contactId)?.full_name ?? null)
         : null;
 
       const newProp: PropertyRow = {
@@ -300,9 +348,9 @@ export default function PropertiesClient({
         state: state.trim().toUpperCase(),
         postal_code: postal.trim(),
         primary_account_id: accountId || null,
-        primary_account_name: accountName,
+        primary_account_name: resolvedAccountName,
         primary_contact_id: contactId || null,
-        primary_contact_name: contactName,
+        primary_contact_name: resolvedContactName,
         open_opportunity_count: 0,
         roof_type: roofType || null,
         roof_age_years: roofAgeYears ? parseInt(roofAgeYears, 10) : null,
@@ -381,7 +429,10 @@ export default function PropertiesClient({
               <input
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
                 value={addr1}
-                onChange={(e) => setAddr1(e.target.value)}
+                onChange={(e) => {
+                  setAddr1(e.target.value);
+                  setDupMatches([]);
+                }}
                 placeholder="123 Main St"
               />
             </div>
@@ -402,7 +453,10 @@ export default function PropertiesClient({
                 <input
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
                   value={city}
-                  onChange={(e) => setCity(e.target.value)}
+                  onChange={(e) => {
+                    setCity(e.target.value);
+                    setDupMatches([]);
+                  }}
                   placeholder="Austin"
                 />
               </div>
@@ -431,35 +485,30 @@ export default function PropertiesClient({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">Account *</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                <EntityPicker
+                  kind="account"
                   value={accountId}
-                  onChange={(e) => setAccountId(e.target.value)}
-                >
-                  <option value="">Select account…</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name ?? "—"}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(row) => {
+                    setAccountId(row?.id ?? "");
+                    setAccountName(row?.primary ?? null);
+                  }}
+                  placeholder="Search accounts by name…"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">
                   Primary Contact
                 </label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                <EntityPicker
+                  kind="contact"
                   value={contactId}
-                  onChange={(e) => setContactId(e.target.value)}
-                >
-                  <option value="">None</option>
-                  {contacts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name ?? "—"}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(row) => {
+                    setContactId(row?.id ?? "");
+                    setContactName(row?.primary ?? null);
+                  }}
+                  accountId={accountId || null}
+                  placeholder="Search contacts by name…"
+                />
               </div>
             </div>
             <div>
@@ -536,14 +585,48 @@ export default function PropertiesClient({
                 placeholder="Any notes about the property…"
               />
             </div>
+            {/* Possible-duplicate warning */}
+            {dupMatches.length > 0 && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+                <p className="text-sm font-medium text-amber-800">
+                  Possible duplicate{dupMatches.length > 1 ? "s" : ""} — this address already exists.
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  {dupMatches.map((m) => (
+                    <a
+                      key={m.id}
+                      href={`/app/properties/${m.id}`}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 hover:bg-amber-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-slate-900">{m.label}</span>
+                        <span className="block truncate text-xs text-slate-500">{m.sub}</span>
+                      </span>
+                      <span className="shrink-0 text-xs font-medium text-blue-600">Use existing →</span>
+                    </a>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-amber-700">
+                  If this is genuinely a different building, you can create it anyway.
+                </p>
+              </div>
+            )}
             {error && <p className="text-xs text-red-600">{error}</p>}
             <div className="flex gap-2">
               <button
                 type="submit"
-                disabled={busy}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                disabled={busy || dupChecking}
+                className={`rounded-xl px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+                  dupMatches.length > 0 ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"
+                }`}
               >
-                {busy ? "Creating…" : "Create Property"}
+                {busy
+                  ? "Creating…"
+                  : dupChecking
+                    ? "Checking…"
+                    : dupMatches.length > 0
+                      ? "Create anyway"
+                      : "Create Property"}
               </button>
               <button
                 type="button"

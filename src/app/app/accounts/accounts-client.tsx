@@ -3,6 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 import CompletenessFilter from "@/app/app/_components/completeness-filter";
+import EntityPicker from "@/app/app/_components/entity-picker";
 import { accountCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
 import { scoreAccount, PRIORITY_COLORS, PRIORITY_LABELS_SHORT, type IcpScoreResult } from "@/lib/scoring/icp-score";
 import Link from "next/link";
@@ -28,22 +29,12 @@ type AccountRow = {
   icp: IcpScoreResult;
 };
 
-type PropertyOption = {
-  id: string;
-  name: string | null;
-  address_line1: string;
-  city: string | null;
-  state: string | null;
-  postal_code: string | null;
-};
-
 type Props = {
   accounts: AccountRow[];
   reps: RepOption[];
   orgId: string;
   userId: string;
   userRole: string;
-  allProperties: PropertyOption[];
 };
 
 type Sort = "priority" | "last_touched" | "name" | "most_contacts" | "most_properties" | "most_opportunities";
@@ -101,7 +92,7 @@ function TypeBadge({ type }: { type: string | null }) {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export default function AccountsClient({ accounts: initialAccounts, reps, orgId, userId, userRole, allProperties }: Props) {
+export default function AccountsClient({ accounts: initialAccounts, reps, orgId, userId, userRole }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
   // ── List state ──
@@ -329,24 +320,16 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                 onChange={(e) => setFormPhone(e.target.value)}
               />
             </div>
-            {allProperties.length > 0 && (
-              <div>
-                <label className={sectionLabel}>Link Property</label>
-                <select
-                  className={input}
-                  value={formPropertyId}
-                  onChange={(e) => setFormPropertyId(e.target.value)}
-                >
-                  <option value="">None</option>
-                  {allProperties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name ? `${p.name} — ` : ""}{p.address_line1}{p.city ? `, ${p.city}` : ""}{p.state ? ` ${p.state}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div className={allProperties.length > 0 ? "" : "md:col-span-2"}>
+            <div>
+              <label className={sectionLabel}>Link Property</label>
+              <EntityPicker
+                kind="property"
+                value={formPropertyId}
+                onChange={(row) => setFormPropertyId(row?.id ?? "")}
+                placeholder="Search property by name or address…"
+              />
+            </div>
+            <div>
               <label className={sectionLabel}>Notes</label>
               <input
                 className={input}

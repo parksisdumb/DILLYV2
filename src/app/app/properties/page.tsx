@@ -41,7 +41,7 @@ export default async function PropertiesPage() {
       )
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
-      .limit(500),
+      .limit(200),
     supabase.from("accounts").select("id,name").is("deleted_at", null).order("name").limit(500),
     supabase.from("contacts").select("id,full_name").is("deleted_at", null).limit(500),
     supabase.from("opportunities").select("property_id").eq("status", "open"),

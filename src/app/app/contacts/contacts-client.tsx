@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
-import type { AccountOption, PropertyOption } from "./page";
+import type { AccountOption } from "./page";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 import CompletenessFilter from "@/app/app/_components/completeness-filter";
+import EntityPicker from "@/app/app/_components/entity-picker";
 import { contactCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
 
 type ContactRow = {
@@ -69,14 +70,12 @@ export default function ContactsClient({
   contacts: initialContacts,
   reps,
   accounts,
-  properties,
   userId,
   userRole,
 }: {
   contacts: ContactRow[];
   reps: RepOption[];
   accounts: AccountOption[];
-  properties: PropertyOption[];
   userId: string;
   userRole: string;
 }) {
@@ -95,6 +94,7 @@ export default function ContactsClient({
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [newAccountId, setNewAccountId] = useState("");
+  const [newAccountName, setNewAccountName] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -135,18 +135,11 @@ export default function ContactsClient({
     return list;
   }, [contacts, search, filterAccountId, filterRole, createdByFilter, completenessFilter, sort]);
 
-  // Properties filtered by selected account (show all if no account yet)
-  const filteredProperties = useMemo(() => {
-    if (!newAccountId) return [];
-    return properties.filter(
-      (p) => p.primary_account_id === newAccountId || !p.primary_account_id,
-    );
-  }, [properties, newAccountId]);
-
   function resetCreateForm() {
     setFirstName("");
     setLastName("");
     setNewAccountId("");
+    setNewAccountName(null);
     setTitle("");
     setPhone("");
     setEmail("");
@@ -213,7 +206,7 @@ export default function ContactsClient({
           .eq("id", newAccountId);
       }
 
-      const accountName = accounts.find((a) => a.id === newAccountId)?.name ?? null;
+      const accountName = newAccountName ?? accounts.find((a) => a.id === newAccountId)?.name ?? null;
       const newContact: ContactRow = {
         id: row.id,
         full_name: row.full_name,
@@ -298,18 +291,18 @@ export default function ContactsClient({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">Account *</label>
-              <select
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+              <EntityPicker
+                kind="account"
                 value={newAccountId}
-                onChange={(e) => setNewAccountId(e.target.value)}
-              >
-                <option value="">Select account…</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name ?? "—"}
-                  </option>
-                ))}
-              </select>
+                onChange={(row) => {
+                  setNewAccountId(row?.id ?? "");
+                  setNewAccountName(row?.primary ?? null);
+                  // Property is account-scoped — clear it when the account changes.
+                  setNewPropertyId("");
+                  setIsPrimaryPropertyContact(false);
+                }}
+                placeholder="Search accounts by name…"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -358,24 +351,19 @@ export default function ContactsClient({
                 />
               </div>
             </div>
-            {newAccountId && filteredProperties.length > 0 && (
+            {newAccountId && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">Link Property</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                <EntityPicker
+                  kind="property"
                   value={newPropertyId}
-                  onChange={(e) => {
-                    setNewPropertyId(e.target.value);
-                    if (!e.target.value) setIsPrimaryPropertyContact(false);
+                  accountId={newAccountId}
+                  onChange={(row) => {
+                    setNewPropertyId(row?.id ?? "");
+                    if (!row) setIsPrimaryPropertyContact(false);
                   }}
-                >
-                  <option value="">None</option>
-                  {filteredProperties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.address_line1}{p.city ? `, ${p.city}` : ""}{p.state ? ` ${p.state}` : ""}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Search this account's properties…"
+                />
               </div>
             )}
             <div className="flex flex-wrap gap-x-6 gap-y-2">

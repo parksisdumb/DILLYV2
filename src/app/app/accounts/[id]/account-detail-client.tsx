@@ -5,6 +5,7 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
 import { PRIORITY_COLORS, type IcpScoreResult } from "@/lib/scoring/icp-score";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
+import EntityPicker, { type PickerRow } from "@/app/app/_components/entity-picker";
 import type { CompletenessResult } from "@/lib/completeness";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -300,6 +301,7 @@ export default function AccountDetailClient({
   // ── Link Existing Property form ──
   const [showLinkProperty, setShowLinkProperty] = useState(false);
   const [linkPropId, setLinkPropId] = useState("");
+  const [linkPropRow, setLinkPropRow] = useState<PickerRow | null>(null);
   const [linkPropBusy, setLinkPropBusy] = useState(false);
   const [linkPropError, setLinkPropError] = useState<string | null>(null);
   const [localAvailableProps, setLocalAvailableProps] = useState(availableProperties);
@@ -307,6 +309,7 @@ export default function AccountDetailClient({
   // ── Link Existing Contact form ──
   const [showLinkContact, setShowLinkContact] = useState(false);
   const [linkContactId, setLinkContactId] = useState("");
+  const [linkContactRow, setLinkContactRow] = useState<PickerRow | null>(null);
   const [linkContactBusy, setLinkContactBusy] = useState(false);
   const [linkContactError, setLinkContactError] = useState<string | null>(null);
   const [localAvailableContacts, setLocalAvailableContacts] = useState(availableContacts);
@@ -528,12 +531,22 @@ export default function AccountDetailClient({
     if (error) { setLinkPropError(error.message); return; }
 
     const linked = localAvailableProps.find((p) => p.id === linkPropId);
-    if (linked) {
-      setProperties((prev) => [...prev, { id: linked.id, name: linked.name ?? null, address_line1: linked.address_line1, city: linked.city, state: linked.state, postal_code: linked.postal_code }].sort((a, b) => a.address_line1.localeCompare(b.address_line1)));
-      setLocalAvailableProps((prev) => prev.filter((p) => p.id !== linkPropId));
-    }
+    const raw = linkPropRow?.raw ?? {};
+    const linkedEntry = linked
+      ? { id: linked.id, name: linked.name ?? null, address_line1: linked.address_line1, city: linked.city, state: linked.state, postal_code: linked.postal_code }
+      : {
+          id: linkPropId,
+          name: (raw.name as string | null) ?? null,
+          address_line1: (raw.address_line1 as string) ?? "",
+          city: (raw.city as string | null) ?? null,
+          state: (raw.state as string | null) ?? null,
+          postal_code: (raw.postal_code as string | null) ?? null,
+        };
+    setProperties((prev) => [...prev, linkedEntry].sort((a, b) => a.address_line1.localeCompare(b.address_line1)));
+    setLocalAvailableProps((prev) => prev.filter((p) => p.id !== linkPropId));
     setShowLinkProperty(false);
     setLinkPropId("");
+    setLinkPropRow(null);
     setTab("properties");
     showToast("success", "Property linked.");
   }
@@ -554,12 +567,23 @@ export default function AccountDetailClient({
     if (error) { setLinkContactError(error.message); return; }
 
     const linked = localAvailableContacts.find((c) => c.id === linkContactId);
-    if (linked) {
-      setContacts((prev) => [...prev, { id: linked.id, full_name: linked.full_name, title: linked.title, phone: null, email: null, decision_role: null, updated_at: new Date().toISOString() }].sort((a, b) => (a.full_name ?? "").localeCompare(b.full_name ?? "")));
-      setLocalAvailableContacts((prev) => prev.filter((c) => c.id !== linkContactId));
-    }
+    const raw = linkContactRow?.raw ?? {};
+    const linkedEntry = linked
+      ? { id: linked.id, full_name: linked.full_name, title: linked.title, phone: null, email: null, decision_role: null, updated_at: new Date().toISOString() }
+      : {
+          id: linkContactId,
+          full_name: (raw.full_name as string | null) ?? linkContactRow?.primary ?? null,
+          title: (raw.title as string | null) ?? null,
+          phone: null,
+          email: null,
+          decision_role: null,
+          updated_at: new Date().toISOString(),
+        };
+    setContacts((prev) => [...prev, linkedEntry].sort((a, b) => (a.full_name ?? "").localeCompare(b.full_name ?? "")));
+    setLocalAvailableContacts((prev) => prev.filter((c) => c.id !== linkContactId));
     setShowLinkContact(false);
     setLinkContactId("");
+    setLinkContactRow(null);
     setTab("contacts");
     showToast("success", "Contact linked.");
   }
@@ -1172,18 +1196,17 @@ export default function AccountDetailClient({
 
           <div>
             <label className={sectionLabel}>Contact</label>
-            <select
-              className={input}
+            <EntityPicker
+              kind="contact"
               value={linkContactId}
-              onChange={(e) => { setLinkContactId(e.target.value); setLinkContactError(null); }}
-            >
-              <option value="">Select contact...</option>
-              {localAvailableContacts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.full_name ?? "Unnamed"}{c.title ? ` — ${c.title}` : ""}
-                </option>
-              ))}
-            </select>
+              excludeIds={contacts.map((c) => c.id)}
+              onChange={(row) => {
+                setLinkContactId(row?.id ?? "");
+                setLinkContactRow(row);
+                setLinkContactError(null);
+              }}
+              placeholder="Search contacts by name…"
+            />
           </div>
 
           <p className="text-xs text-slate-500">This will reassign the contact to this account.</p>
@@ -1215,18 +1238,17 @@ export default function AccountDetailClient({
 
           <div>
             <label className={sectionLabel}>Property</label>
-            <select
-              className={input}
+            <EntityPicker
+              kind="property"
               value={linkPropId}
-              onChange={(e) => { setLinkPropId(e.target.value); setLinkPropError(null); }}
-            >
-              <option value="">Select property...</option>
-              {localAvailableProps.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.address_line1}{p.city ? `, ${p.city}` : ""}{p.state ? ` ${p.state}` : ""}
-                </option>
-              ))}
-            </select>
+              excludeIds={properties.map((p) => p.id)}
+              onChange={(row) => {
+                setLinkPropId(row?.id ?? "");
+                setLinkPropRow(row);
+                setLinkPropError(null);
+              }}
+              placeholder="Search property by name or address…"
+            />
           </div>
 
           <button

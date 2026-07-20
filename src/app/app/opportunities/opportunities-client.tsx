@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { OppRow, Stage, ScopeType, PropertyOption, AccountOption, OrgUser } from "@/app/app/opportunities/page";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
+import EntityPicker from "@/app/app/_components/entity-picker";
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -66,6 +67,9 @@ export default function OpportunitiesClient({
 
   // Create form state
   const [propId, setPropId] = useState("");
+  // Captured from the picker so we don't depend on the (capped) `properties` prop
+  // list for the selected property's account/label after create.
+  const [pickedProp, setPickedProp] = useState<{ label: string; accountId: string | null } | null>(null);
   const [scopeId, setScopeId] = useState("");
   const [stageId, setStageId] = useState("");
   const [title, setTitle] = useState("");
@@ -124,6 +128,7 @@ export default function OpportunitiesClient({
 
   function resetCreateForm() {
     setPropId("");
+    setPickedProp(null);
     setScopeId("");
     setStageId("");
     setTitle("");
@@ -151,7 +156,8 @@ export default function OpportunitiesClient({
         estimated_value: value ? parseFloat(value) : null,
         // Inherit the account from the selected property so the pipeline shows an
         // account and account-level rollups work (the property's owner account).
-        account_id: properties.find((p) => p.id === propId)?.primary_account_id ?? null,
+        account_id:
+          pickedProp?.accountId ?? properties.find((p) => p.id === propId)?.primary_account_id ?? null,
       })
       .select(
         "id,title,status,estimated_value,stage_id,scope_type_id,property_id,account_id,primary_contact_id,opened_at,closed_at,updated_at",
@@ -162,6 +168,7 @@ export default function OpportunitiesClient({
     if (insertErr) { setError(insertErr.message); return; }
 
     const prop = properties.find((p) => p.id === propId);
+    const propertyLabelText = prop ? propertyLabel(prop) : (pickedProp?.label ?? null);
     const stage = stages.find((s) => s.id === stageId);
     const scope = scopeTypes.find((s) => s.id === scopeId);
 
@@ -175,7 +182,7 @@ export default function OpportunitiesClient({
       scope_type_id: data.scope_type_id as string | null,
       scope_name: scope?.name ?? null,
       property_id: data.property_id as string | null,
-      property_label: prop ? propertyLabel(prop) : null,
+      property_label: propertyLabelText,
       account_id: data.account_id as string | null,
       account_name: data.account_id ? (accountsById.get(data.account_id as string) ?? null) : null,
       primary_contact_id: data.primary_contact_id as string | null,
@@ -242,21 +249,22 @@ export default function OpportunitiesClient({
             {/* Property */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Property *</label>
-              <select
+              <EntityPicker
+                kind="property"
                 value={propId}
-                onChange={(e) => setPropId(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select a property…</option>
-                {properties
-                  .slice()
-                  .sort((a, b) => a.address_line1.localeCompare(b.address_line1))
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {propertyLabel(p)}
-                    </option>
-                  ))}
-              </select>
+                onChange={(row) => {
+                  setPropId(row?.id ?? "");
+                  setPickedProp(
+                    row
+                      ? {
+                          label: row.primary,
+                          accountId: (row.raw.primary_account_id as string | null) ?? null,
+                        }
+                      : null,
+                  );
+                }}
+                placeholder="Search property by name or address…"
+              />
             </div>
 
             {/* Scope */}

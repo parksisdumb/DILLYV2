@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { AccountOption, ContactOption } from "./page";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
@@ -178,6 +178,23 @@ export default function PropertiesClient({
 
     return list;
   }, [properties, search, filterAccountId, filterCity, filterState, createdByFilter, completenessFilter, myAssignedOnly, userId, sort]);
+
+  // ── Pagination (50 per page over the filtered set) ──
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // Reset to page 1 whenever the filter/search/sort inputs change.
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterAccountId, filterCity, filterState, createdByFilter, completenessFilter, myAssignedOnly, sort]);
+  // Keep the current page valid if the set shrinks (e.g. after a delete).
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+  const paged = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  );
 
   // ── Dispatch assignment (bulk, managers/admins) ──
   function toggleSelect(id: string) {
@@ -734,7 +751,9 @@ export default function PropertiesClient({
 
       {/* Results count */}
       <p className="text-xs text-slate-500">
-        {filtered.length} propert{filtered.length !== 1 ? "ies" : "y"}
+        {filtered.length === 0
+          ? "0 properties"
+          : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length} propert${filtered.length !== 1 ? "ies" : "y"}`}
       </p>
 
       {/* Bulk assignment bar (managers/admins) */}
@@ -796,7 +815,7 @@ export default function PropertiesClient({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => (
+                {paged.map((p) => (
                   <tr
                     key={p.id}
                     onClick={() => {
@@ -901,7 +920,7 @@ export default function PropertiesClient({
 
           {/* Mobile cards */}
           <div className="space-y-2 md:hidden">
-            {filtered.map((p) => (
+            {paged.map((p) => (
               <div
                 key={p.id}
                 onClick={() => {
@@ -973,6 +992,31 @@ export default function PropertiesClient({
               </div>
             ))}
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="text-xs tabular-nums text-slate-500">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

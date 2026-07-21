@@ -31,7 +31,7 @@ export default async function AccountsPage() {
       .select("id,name,account_type,status,onboarding_status,notes,website,phone,updated_at,created_by")
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
-      .limit(200),
+      .limit(500),
     supabase.from("contacts").select("account_id").is("deleted_at", null),
     supabase
       .from("touchpoints")

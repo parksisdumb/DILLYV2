@@ -90,3 +90,15 @@ export function cadenceDueDateString(
 export function formatNextTouch(d: Date): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+/** True for the "inspection scheduled" outcomes, which cadence off the inspection date. */
+export function isInspectionOutcome(outcomeKey: string | null | undefined): boolean {
+  return outcomeKey === "inspection_scheduled" || outcomeKey === "inspection_set";
+}
+
+/** The day after a `YYYY-MM-DD` date, as a `YYYY-MM-DD` string. */
+export function dayAfter(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}

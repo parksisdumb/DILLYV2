@@ -7,6 +7,7 @@ import { formatPhone } from "@/lib/utils/format";
 import { PRIORITY_COLORS, type IcpScoreResult } from "@/lib/scoring/icp-score";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
 import EntityPicker, { type PickerRow } from "@/app/app/_components/entity-picker";
+import { useCadenceFollowUp, CadenceFollowUpFields } from "@/app/app/_components/cadence-follow-up";
 import {
   ONBOARDING_STATUS_SHORT,
   ONBOARDING_STATUS_COLORS,
@@ -81,6 +82,7 @@ type TouchpointType = {
 type Outcome = {
   id: string;
   name: string;
+  key?: string | null;
   touchpoint_type_id?: string | null;
 };
 
@@ -280,6 +282,7 @@ export default function AccountDetailClient({
   const [logContactId, setLogContactId] = useState("");
   const [logTypeId, setLogTypeId] = useState("");
   const [logOutcomeId, setLogOutcomeId] = useState("");
+  const fu = useCadenceFollowUp();
   const [logNotes, setLogNotes] = useState("");
   const [logBusy, setLogBusy] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
@@ -491,8 +494,22 @@ export default function AccountDetailClient({
     };
 
     setTouchpoints((prev) => [newTp, ...prev]);
+
+    // Cadence follow-up — auto-scheduled unless the rep turned it off; linked to
+    // the touchpoint just logged. Requires a contact (inbound account-only skips).
+    const followUpRow = fu.buildInsert({
+      orgId,
+      userId,
+      contactId: logContactId || null,
+      accountId: account.id,
+      typeId: logTypeId,
+      touchpointId: ((row as Record<string, unknown>)?.touchpoint_id as string | undefined) ?? null,
+    });
+    if (followUpRow) await supabase.from("next_actions").insert(followUpRow);
+
     setShowLogForm(false);
     setLogDirection("outbound"); setLogContactId(""); setLogTypeId(""); setLogOutcomeId(""); setLogNotes("");
+    fu.reset();
     setTab("timeline");
     showToast("success", isInbound ? "Inbound touchpoint logged." : "Touchpoint logged.");
   }
@@ -1146,7 +1163,7 @@ export default function AccountDetailClient({
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => { setLogTypeId(t.id); setLogOutcomeId(""); setLogError(null); }}
+                      onClick={() => { setLogTypeId(t.id); setLogOutcomeId(""); fu.applyOutcome(null); setLogError(null); }}
                       className={chipBtn(logTypeId === t.id)}
                     >
                       {t.name}
@@ -1163,7 +1180,11 @@ export default function AccountDetailClient({
                       <button
                         key={o.id}
                         type="button"
-                        onClick={() => setLogOutcomeId(logOutcomeId === o.id ? "" : o.id)}
+                        onClick={() => {
+                          const next = logOutcomeId === o.id ? "" : o.id;
+                          setLogOutcomeId(next);
+                          fu.applyOutcome(next ? (o.key ?? null) : null);
+                        }}
                         className={chipBtn(logOutcomeId === o.id)}
                       >
                         {o.name}
@@ -1182,6 +1203,8 @@ export default function AccountDetailClient({
                   onChange={(e) => { setLogNotes(e.target.value); setLogError(null); }}
                 />
               </div>
+
+              <CadenceFollowUpFields fu={fu} />
 
               <button
                 type="button"

@@ -6,6 +6,7 @@ import type { PropContact } from "./page";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
 import PropertyAssignments from "@/app/app/properties/[id]/property-assignments";
 import EntityPicker, { type PickerRow } from "@/app/app/_components/entity-picker";
+import { useCadenceFollowUp, CadenceFollowUpFields } from "@/app/app/_components/cadence-follow-up";
 import type { CompletenessResult } from "@/lib/completeness";
 
 type Property = {
@@ -47,7 +48,7 @@ type Touchpoint = {
 type TouchpointType = { id: string; name: string; key?: string | null; is_outreach: boolean };
 
 const INBOUND_TYPE_KEYS = ["call", "email", "text"];
-type Outcome = { id: string; name: string; touchpoint_type_id?: string | null };
+type Outcome = { id: string; name: string; key?: string | null; touchpoint_type_id?: string | null };
 type ScopeType = { id: string; name: string; key: string };
 type Stage = { id: string; name: string; key: string; is_closed_stage: boolean };
 
@@ -259,6 +260,7 @@ export default function PropertyDetailClient({
   const [logTypeId, setLogTypeId] = useState("");
   const [logContactId, setLogContactId] = useState(localPropContacts[0]?.contact_id ?? "");
   const [logOutcomeId, setLogOutcomeId] = useState("");
+  const fu = useCadenceFollowUp();
   const [logPhase, setLogPhase] = useState("visibility");
   const [logNotes, setLogNotes] = useState("");
   const [logBusy, setLogBusy] = useState(false);
@@ -337,6 +339,7 @@ export default function PropertyDetailClient({
     setLogDirection(dir);
     setLogTypeId("");
     setLogOutcomeId("");
+    fu.applyOutcome(null);
     setLogPhase(dir === "inbound" ? "follow_up" : "visibility");
     setLogError(null);
   }
@@ -355,6 +358,7 @@ export default function PropertyDetailClient({
     const t = typeById.get(typeId);
     setLogTypeId(typeId);
     setLogOutcomeId("");
+    fu.applyOutcome(null);
     setLogPhase(t?.is_outreach ? "follow_up" : "visibility");
   }
 
@@ -569,7 +573,8 @@ export default function PropertyDetailClient({
           p_engagement_phase: logPhase as "first_touch" | "follow_up",
         });
         if (error) { setLogError(error.message); return; }
-        tpId = (data as { touchpoint: { id: string } } | null)?.touchpoint?.id ?? null;
+        const orow = Array.isArray(data) ? data[0] : data;
+        tpId = (orow as { touchpoint_id?: string } | null)?.touchpoint_id ?? null;
       } else {
         const { data, error } = await supabase.rpc("rpc_log_touchpoint", {
           p_property_id: property.id,
@@ -594,12 +599,28 @@ export default function PropertyDetailClient({
         direction: isInbound ? "inbound" : "outbound",
       };
       setTouchpoints((prev) => [newTp, ...prev]);
+
+      // Cadence follow-up — auto-scheduled unless the rep turned it off; linked to
+      // the touchpoint just logged. Needs a contact (visibility-only logs skip).
+      const followUpPc = localPropContacts.find((p) => p.contact_id === logContactId);
+      const followUpRow = fu.buildInsert({
+        orgId,
+        userId,
+        contactId: logContactId || null,
+        accountId: followUpPc?.contact.account_id ?? null,
+        propertyId: property.id,
+        typeId: logTypeId,
+        touchpointId: tpId,
+      });
+      if (followUpRow) await supabase.from("next_actions").insert(followUpRow);
+
       setLogDirection("outbound");
       setLogTypeId("");
       setLogContactId(localPropContacts[0]?.contact_id ?? "");
       setLogOutcomeId("");
       setLogPhase("visibility");
       setLogNotes("");
+      fu.reset();
       setActiveAction(null);
       setTab("timeline");
       showToast("success", isInbound ? "Inbound touchpoint logged." : "Touchpoint logged.");
@@ -1125,7 +1146,11 @@ export default function PropertyDetailClient({
                     <button
                       key={o.id}
                       type="button"
-                      onClick={() => setLogOutcomeId(logOutcomeId === o.id ? "" : o.id)}
+                      onClick={() => {
+                        const next = logOutcomeId === o.id ? "" : o.id;
+                        setLogOutcomeId(next);
+                        fu.applyOutcome(next ? (o.key ?? null) : null);
+                      }}
                       className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                         logOutcomeId === o.id
                           ? "bg-blue-600 text-white"
@@ -1151,6 +1176,7 @@ export default function PropertyDetailClient({
                 placeholder="What happened?"
               />
             </div>
+            <CadenceFollowUpFields fu={fu} />
             {logError && <p className="text-xs text-red-600">{logError}</p>}
             <div className="flex gap-2">
               <button

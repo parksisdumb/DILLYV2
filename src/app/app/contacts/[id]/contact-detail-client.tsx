@@ -5,6 +5,7 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
 import { BUILDING_TYPE_LABELS } from "@/app/app/properties/properties-client";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
+import { useCadenceFollowUp, CadenceFollowUpFields } from "@/app/app/_components/cadence-follow-up";
 import type { CompletenessResult } from "@/lib/completeness";
 
 type Contact = {
@@ -56,7 +57,7 @@ type NextAction = {
   recommended_touchpoint_type_id: string | null;
 };
 type TouchpointType = { id: string; name: string; key?: string | null; is_outreach: boolean };
-type Outcome = { id: string; name: string; touchpoint_type_id?: string | null };
+type Outcome = { id: string; name: string; key?: string | null; touchpoint_type_id?: string | null };
 
 const ROLE_LABELS: Record<string, string> = {
   decision_maker: "Decision Maker",
@@ -222,6 +223,7 @@ export default function ContactDetailClient({
   const [logDirection, setLogDirection] = useState<"outbound" | "inbound">("outbound");
   const [logTypeId, setLogTypeId] = useState("");
   const [logOutcomeId, setLogOutcomeId] = useState("");
+  const fu = useCadenceFollowUp();
   const [logNotes, setLogNotes] = useState("");
   const [logBusy, setLogBusy] = useState(false);
   const [logError, setLogError] = useState<string | null>(null);
@@ -345,6 +347,7 @@ export default function ContactDetailClient({
     setLogDirection(dir);
     setLogTypeId("");
     setLogOutcomeId("");
+    fu.applyOutcome(null);
     setLogError(null);
   }
 
@@ -390,10 +393,24 @@ export default function ContactDetailClient({
         direction: isInbound ? "inbound" : "outbound",
       };
       setTouchpoints((prev) => [newTp, ...prev]);
+
+      // Cadence follow-up — auto-scheduled unless the rep turned it off; linked to
+      // the touchpoint just logged.
+      const followUpRow = fu.buildInsert({
+        orgId,
+        userId,
+        contactId: contact.id,
+        accountId: contact.account_id,
+        typeId: logTypeId,
+        touchpointId: row?.touchpoint_id ?? null,
+      });
+      if (followUpRow) await supabase.from("next_actions").insert(followUpRow);
+
       setLogDirection("outbound");
       setLogTypeId("");
       setLogOutcomeId("");
       setLogNotes("");
+      fu.reset();
       setActiveAction(null);
       setTab("timeline");
       showToast("success", isInbound ? "Inbound touchpoint logged." : "Touchpoint logged.");
@@ -649,6 +666,7 @@ export default function ContactDetailClient({
                     onClick={() => {
                       setLogTypeId(t.id);
                       setLogOutcomeId("");
+                      fu.applyOutcome(null);
                     }}
                     className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                       logTypeId === t.id
@@ -670,7 +688,11 @@ export default function ContactDetailClient({
                     <button
                       key={o.id}
                       type="button"
-                      onClick={() => setLogOutcomeId(logOutcomeId === o.id ? "" : o.id)}
+                      onClick={() => {
+                        const next = logOutcomeId === o.id ? "" : o.id;
+                        setLogOutcomeId(next);
+                        fu.applyOutcome(next ? (o.key ?? null) : null);
+                      }}
                       className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                         logOutcomeId === o.id
                           ? "bg-blue-600 text-white"
@@ -694,6 +716,7 @@ export default function ContactDetailClient({
                 placeholder="What happened?"
               />
             </div>
+            <CadenceFollowUpFields fu={fu} />
             {logError && <p className="text-xs text-red-600">{logError}</p>}
             <div className="flex gap-2">
               <button

@@ -43,7 +43,7 @@ export default async function AccountDetailPage({
       .order("happened_at", { ascending: false })
       .limit(50),
     supabase.from("touchpoint_types").select("id,name,key,is_outreach").order("sort_order"),
-    supabase.from("touchpoint_outcomes").select("id,name,touchpoint_type_id").order("sort_order"),
+    supabase.from("touchpoint_outcomes").select("id,name,key,touchpoint_type_id").order("sort_order"),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     // All properties not linked to this account (for linking)
     supabase

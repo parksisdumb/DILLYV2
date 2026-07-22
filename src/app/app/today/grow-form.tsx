@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { getOutcomesForType, getNextActionLabel } from "@/lib/constants/outcome-config";
-import { cadenceFor, cadenceDueDateString } from "@/lib/constants/cadence";
+import { cadenceFor, cadenceDueDateString, isInspectionOutcome, dayAfter } from "@/lib/constants/cadence";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +105,9 @@ export default function GrowForm({
   // True once the rep manually changes the follow-up toggle/date/notes, so the
   // cadence auto-fill stops overriding their choices.
   const [followUpTouched, setFollowUpTouched] = useState(false);
+  // Inspection date — for inspection_scheduled, the follow-up cadences off the
+  // day after the actual inspection rather than 1 day from logging.
+  const [inspectionDate, setInspectionDate] = useState("");
 
   // ── Submission state ──
   const [busy, setBusy] = useState(false);
@@ -178,6 +181,14 @@ export default function GrowForm({
     return getNextActionLabel(configKey, selectedTypeKey);
   }, [outcomeId, selectedTypeKey, filteredOutcomes]);
 
+  // Resolved key of the currently selected outcome (for the inspection-date field).
+  const selectedOutcomeKey = useMemo(() => {
+    if (!outcomeId) return null;
+    const o = filteredOutcomes.find((o) => o.id === outcomeId) as Record<string, unknown> | undefined;
+    return (o?.configKey as string | undefined) ?? (o?.key as string | undefined) ?? null;
+  }, [outcomeId, filteredOutcomes]);
+  const showInspectionDate = isInspectionOutcome(selectedOutcomeKey);
+
   // Apply the cadence engine's default follow-up (date + note) for an outcome.
   // Called from the outcome selection handler — so it never overrides a rep who
   // has already adjusted the follow-up manually. Terminal outcomes turn it off.
@@ -189,8 +200,12 @@ export default function GrowForm({
       return;
     }
     setFollowUp(true);
-    const dateStr = cadenceDueDateString(outcomeKey);
-    if (dateStr) setFollowUpDate(dateStr);
+    if (isInspectionOutcome(outcomeKey) && inspectionDate) {
+      setFollowUpDate(dayAfter(inspectionDate));
+    } else {
+      const dateStr = cadenceDueDateString(outcomeKey);
+      if (dateStr) setFollowUpDate(dateStr);
+    }
     setFollowUpNotes(rule.note);
   }
 
@@ -393,6 +408,7 @@ export default function GrowForm({
     setFollowUpTouched(false);
     setFollowUpDate(localDateValue(1));
     setFollowUpNotes("");
+    setInspectionDate("");
 
     // Auto-dismiss result and collapse after 2.5s
     setTimeout(() => {
@@ -851,6 +867,21 @@ export default function GrowForm({
 
             {followUp && (
               <div className="mt-3 space-y-2">
+                {showInspectionDate && (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Inspection date</label>
+                    <input
+                      type="date"
+                      className={input}
+                      value={inspectionDate}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setInspectionDate(v);
+                        if (!followUpTouched && v) setFollowUpDate(dayAfter(v));
+                      }}
+                    />
+                  </div>
+                )}
                 <input
                   type="date"
                   className={input}

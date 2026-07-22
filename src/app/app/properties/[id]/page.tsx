@@ -84,7 +84,7 @@ export default async function PropertyDetailPage({
       .order("happened_at", { ascending: false })
       .limit(50),
     supabase.from("touchpoint_types").select("id,name,key,is_outreach").order("sort_order"),
-    supabase.from("touchpoint_outcomes").select("id,name,touchpoint_type_id").order("sort_order"),
+    supabase.from("touchpoint_outcomes").select("id,name,key,touchpoint_type_id").order("sort_order"),
     supabase.from("scope_types").select("id,name,key").order("sort_order"),
     supabase.from("opportunity_stages").select("id,name,key,is_closed_stage").order("sort_order"),
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),

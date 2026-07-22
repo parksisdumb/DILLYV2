@@ -46,7 +46,7 @@ export default async function ContactDetailPage({
         .select("property_id,is_primary,properties(id,name,address_line1,city,state,building_type)")
         .eq("contact_id", id),
       supabase.from("touchpoint_types").select("id,name,key,is_outreach").order("sort_order"),
-      supabase.from("touchpoint_outcomes").select("id,name,touchpoint_type_id").order("sort_order"),
+      supabase.from("touchpoint_outcomes").select("id,name,key,touchpoint_type_id").order("sort_order"),
       supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     ]);
 

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { getOutcomesForType, getNextActionLabel } from "@/lib/constants/outcome-config";
+import { cadenceFor, cadenceDueDateString } from "@/lib/constants/cadence";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -96,10 +97,14 @@ export default function GrowForm({
   const [propertyQuery, setPropertyQuery] = useState("");
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
 
-  // ── Follow-up toggle ──
-  const [followUp, setFollowUp] = useState(false);
+  // ── Follow-up toggle ── (defaults ON — disciplined follow-up is the point;
+  // opting out must be a conscious act, not the default.)
+  const [followUp, setFollowUp] = useState(true);
   const [followUpDate, setFollowUpDate] = useState(localDateValue(1));
   const [followUpNotes, setFollowUpNotes] = useState("");
+  // True once the rep manually changes the follow-up toggle/date/notes, so the
+  // cadence auto-fill stops overriding their choices.
+  const [followUpTouched, setFollowUpTouched] = useState(false);
 
   // ── Submission state ──
   const [busy, setBusy] = useState(false);
@@ -172,6 +177,22 @@ export default function GrowForm({
     if (!configKey) return null;
     return getNextActionLabel(configKey, selectedTypeKey);
   }, [outcomeId, selectedTypeKey, filteredOutcomes]);
+
+  // Apply the cadence engine's default follow-up (date + note) for an outcome.
+  // Called from the outcome selection handler — so it never overrides a rep who
+  // has already adjusted the follow-up manually. Terminal outcomes turn it off.
+  function applyOutcomeCadence(outcomeKey: string | null) {
+    if (followUpTouched) return;
+    const rule = cadenceFor(outcomeKey);
+    if (!rule) {
+      setFollowUp(false);
+      return;
+    }
+    setFollowUp(true);
+    const dateStr = cadenceDueDateString(outcomeKey);
+    if (dateStr) setFollowUpDate(dateStr);
+    setFollowUpNotes(rule.note);
+  }
 
   const filteredProperties = useMemo(() => {
     const q = propertyQuery.trim().toLowerCase();
@@ -335,7 +356,8 @@ export default function GrowForm({
       outreach_remaining: Number(row?.outreach_remaining ?? 0),
     };
 
-    // Follow-up scheduling
+    // Follow-up scheduling — auto-created at the cadence interval unless the rep
+    // deliberately turned it off. Linked back to the touchpoint that spawned it.
     if (followUp && selectedContactId && selectedAccountId) {
       await supabase.from("next_actions").insert({
         org_id: orgId,
@@ -347,6 +369,7 @@ export default function GrowForm({
         due_at: new Date(followUpDate + "T09:00:00").toISOString(),
         notes: followUpNotes.trim() || `Follow up — ${selectedContactName}`,
         recommended_touchpoint_type_id: typeId || null,
+        created_from_touchpoint_id: (row?.touchpoint_id as string | undefined) || null,
         created_by: userId,
       });
     }
@@ -366,7 +389,8 @@ export default function GrowForm({
     setSelectedPropertyId("");
     setPropertyQuery("");
     setPropertyOpen(false);
-    setFollowUp(false);
+    setFollowUp(true);
+    setFollowUpTouched(false);
     setFollowUpDate(localDateValue(1));
     setFollowUpNotes("");
 
@@ -699,7 +723,15 @@ export default function GrowForm({
                     <button
                       key={o.id}
                       type="button"
-                      onClick={() => setOutcomeId(outcomeId === o.id ? "" : o.id)}
+                      onClick={() => {
+                        const next = outcomeId === o.id ? "" : o.id;
+                        setOutcomeId(next);
+                        const oo = o as Record<string, unknown>;
+                        const key = next
+                          ? ((oo.configKey as string | undefined) ?? (oo.key as string | undefined) ?? null)
+                          : null;
+                        applyOutcomeCadence(key);
+                      }}
                       className={chipBtn(outcomeId === o.id)}
                     >
                       {label ?? o.name}
@@ -795,7 +827,10 @@ export default function GrowForm({
           <div>
             <button
               type="button"
-              onClick={() => setFollowUp(!followUp)}
+              onClick={() => {
+                setFollowUp(!followUp);
+                setFollowUpTouched(true);
+              }}
               className="flex items-center gap-3"
             >
               <div
@@ -821,13 +856,19 @@ export default function GrowForm({
                   className={input}
                   value={followUpDate}
                   min={localDateValue(0)}
-                  onChange={(e) => setFollowUpDate(e.target.value)}
+                  onChange={(e) => {
+                    setFollowUpDate(e.target.value);
+                    setFollowUpTouched(true);
+                  }}
                 />
                 <input
                   className={input}
                   placeholder="Follow-up notes (optional)"
                   value={followUpNotes}
-                  onChange={(e) => setFollowUpNotes(e.target.value)}
+                  onChange={(e) => {
+                    setFollowUpNotes(e.target.value);
+                    setFollowUpTouched(true);
+                  }}
                 />
               </div>
             )}

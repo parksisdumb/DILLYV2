@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
+import { cadenceFor, cadenceDueDate, formatNextTouch } from "@/lib/constants/cadence";
 import type { FocusQueueItem, FocusFollowUpItem, FocusProspectItem } from "./page";
 
 type OutcomeButton = {
@@ -57,6 +58,7 @@ export default function FocusClient({
   outreachToday: outreachAtStart,
   outreachTarget,
   streakAtStart,
+  orgId,
   userId,
 }: Props) {
   const router = useRouter();
@@ -125,7 +127,41 @@ export default function FocusClient({
       })
       .eq("id", item.nextActionId)
       .eq("status", "open");
+
+    // Continue the cadence: silently schedule the next touch (unless the outcome
+    // is terminal), linked back to the touchpoint just logged.
+    await scheduleNextTouch(outcome.key, {
+      contactId: item.contactId,
+      accountId: item.accountId,
+      propertyId: item.propertyId ?? null,
+      fromTouchpointId: tpId ?? null,
+    });
     return true;
+  }
+
+  // Insert a follow-up next_action at the cadence interval for an outcome and
+  // surface a tiny "Next touch: Jul 27" confirmation. No-op for terminal outcomes.
+  async function scheduleNextTouch(
+    outcomeKey: string,
+    ctx: { contactId: string; accountId: string; propertyId: string | null; fromTouchpointId: string | null },
+  ) {
+    const rule = cadenceFor(outcomeKey);
+    const due = cadenceDueDate(outcomeKey);
+    if (!rule || !due) return;
+    const { error } = await supabase.from("next_actions").insert({
+      org_id: orgId,
+      assigned_user_id: userId,
+      contact_id: ctx.contactId,
+      account_id: ctx.accountId,
+      property_id: ctx.propertyId,
+      status: "open",
+      due_at: new Date(`${due.toISOString().slice(0, 10)}T09:00:00`).toISOString(),
+      notes: rule.note,
+      recommended_touchpoint_type_id: callTypeId,
+      created_from_touchpoint_id: ctx.fromTouchpointId,
+      created_by: userId,
+    });
+    if (!error) showToast(`Next touch: ${formatNextTouch(due)}`);
   }
 
   async function convertProspectAndLog(item: FocusProspectItem, outcome: OutcomeButton): Promise<boolean> {
@@ -175,7 +211,7 @@ export default function FocusClient({
       showToast(`${item.companyName} added; no contact to log against.`);
       return true;
     }
-    const { error: tpErr } = await supabase.rpc("rpc_log_outreach_touchpoint", {
+    const { data: tpData, error: tpErr } = await supabase.rpc("rpc_log_outreach_touchpoint", {
       p_contact_id: result.contact_id,
       p_account_id: result.account_id,
       p_touchpoint_type_id: callTypeId,
@@ -190,6 +226,15 @@ export default function FocusClient({
       // log a touchpoint manually later if needed.
       return true;
     }
+    // Schedule the next touch at cadence for the freshly converted contact.
+    const tpRow = Array.isArray(tpData) ? tpData[0] : tpData;
+    const newTpId = (tpRow as Record<string, unknown> | null)?.touchpoint_id as string | undefined;
+    await scheduleNextTouch(outcome.key, {
+      contactId: result.contact_id,
+      accountId: result.account_id,
+      propertyId: null,
+      fromTouchpointId: newTpId ?? null,
+    });
     return true;
   }
 

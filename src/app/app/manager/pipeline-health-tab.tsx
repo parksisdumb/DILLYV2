@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { PipelineHealth, PipelineRow, PipelineSummary } from "@/app/app/manager/page";
+import type { ColdAccount } from "@/lib/cold-accounts";
+import { PRIORITY_COLORS, PRIORITY_LABELS_SHORT } from "@/lib/scoring/icp-score";
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -200,6 +202,93 @@ function MonthlyTargetSection({
   );
 }
 
+// Relationship-level counterpart to the deal-level health table below: accounts
+// nobody has touched inside their ICP-weighted window, grouped by the rep who owns
+// them. This is the coaching lever — "you have three P1 relationships cold."
+function GoingCold({
+  accounts,
+  repNames,
+}: {
+  accounts: ColdAccount[];
+  repNames: Record<string, string>;
+}) {
+  if (accounts.length === 0) return null;
+
+  const byRep = new Map<string, ColdAccount[]>();
+  for (const a of accounts) {
+    const key = a.ownerUserId ?? "unassigned";
+    const list = byRep.get(key) ?? [];
+    list.push(a);
+    byRep.set(key, list);
+  }
+
+  const groups = [...byRep.entries()]
+    .map(([userId, list]) => {
+      const rows = [...list].sort((x, y) => x.priority - y.priority || y.daysCold - x.daysCold);
+      return {
+        userId,
+        name: repNames[userId] ?? (userId === "unassigned" ? "Unassigned" : userId.slice(0, 8)),
+        rows,
+        p1: rows.filter((a) => a.priority === 1).length,
+        p2: rows.filter((a) => a.priority === 2).length,
+      };
+    })
+    .sort((a, b) => b.p1 - a.p1 || b.p2 - a.p2 || b.rows.length - a.rows.length);
+
+  const totalP1 = accounts.filter((a) => a.priority === 1).length;
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-white p-4">
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-800">Going Cold — relationships</h3>
+        <span className="text-xs tabular-nums text-slate-500">{accounts.length} accounts</span>
+      </div>
+      <p className="mb-3 text-xs text-slate-500">
+        Past their ICP-weighted threshold since last touch (P1 14d · P2 21d · P3 30d · P4 60d).
+        {totalP1 > 0
+          ? ` ${totalP1} P1 relationship${totalP1 === 1 ? "" : "s"} cold.`
+          : " No P1 relationships cold."}
+      </p>
+
+      <div className="space-y-3">
+        {groups.map((g) => (
+          <div key={g.userId} className="rounded-xl border border-slate-200">
+            <div className="flex items-baseline justify-between gap-2 border-b border-slate-200 px-3 py-2">
+              <span className="text-sm font-medium text-slate-900">{g.name}</span>
+              <span className="text-xs tabular-nums text-slate-500">
+                {g.p1 > 0 ? `${g.p1} P1 · ` : ""}
+                {g.rows.length} cold
+              </span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {g.rows.map((a) => (
+                <div key={a.accountId} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${PRIORITY_COLORS[a.priority]}`}
+                    >
+                      {PRIORITY_LABELS_SHORT[a.priority]}
+                    </span>
+                    <Link
+                      href={`/app/accounts/${a.accountId}`}
+                      className="truncate text-sm text-slate-800 hover:underline"
+                    >
+                      {a.accountName}
+                    </Link>
+                  </div>
+                  <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                    {a.neverTouched ? "never touched" : `${a.daysCold}d`} · {a.propertyCount}p
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function PipelineHealthTab({
   rows,
   summary,
@@ -207,6 +296,8 @@ export default function PipelineHealthTab({
   monthlyRevenueDefId,
   initialMonthlyTarget,
   initialMonthlyTargetId,
+  coldAccounts,
+  repNames,
 }: {
   rows: PipelineRow[];
   summary: PipelineSummary;
@@ -214,9 +305,12 @@ export default function PipelineHealthTab({
   monthlyRevenueDefId: string | null;
   initialMonthlyTarget: number | null;
   initialMonthlyTargetId: string | null;
+  coldAccounts: ColdAccount[];
+  repNames: Record<string, string>;
 }) {
   return (
     <div className="space-y-4">
+      <GoingCold accounts={coldAccounts} repNames={repNames} />
       {/* Summary cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total Pipeline" value={money.format(summary.totalValue)} />

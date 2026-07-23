@@ -4,10 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import type { RepStat, StageSummary, TopAccount, PipelineRow, PipelineSummary } from "@/app/app/manager/page";
 import PipelineHealthTab from "@/app/app/manager/pipeline-health-tab";
+import type { ColdAccount } from "@/lib/cold-accounts";
 import ActivityView from "@/app/app/manager/activity-view";
 import DataHealthView from "@/app/app/manager/data-health-view";
 
 type Props = {
+  coldAccounts: ColdAccount[];
   repStats: RepStat[];
   stageSummaries: StageSummary[];
   topAccounts: TopAccount[];
@@ -62,7 +64,7 @@ function ComplianceBadge({ rate }: { rate: number }) {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function ManagerClient({ repStats, stageSummaries, topAccounts, pipelineRows, pipelineSummary, orgId, monthlyRevenueDefId, monthlyRevenueTarget, monthlyRevenueTargetId, queueCounts, unassignedProspectCount, generatedAt }: Props) {
+export default function ManagerClient({ coldAccounts, repStats, stageSummaries, topAccounts, pipelineRows, pipelineSummary, orgId, monthlyRevenueDefId, monthlyRevenueTarget, monthlyRevenueTargetId, queueCounts, unassignedProspectCount, generatedAt }: Props) {
   const [tab, setTab] = useState<Tab>("today");
 
   const generatedDate = new Date(generatedAt);
@@ -371,6 +373,8 @@ export default function ManagerClient({ repStats, stageSummaries, topAccounts, p
           monthlyRevenueDefId={monthlyRevenueDefId}
           initialMonthlyTarget={monthlyRevenueTarget}
           initialMonthlyTargetId={monthlyRevenueTargetId}
+          coldAccounts={coldAccounts}
+          repNames={Object.fromEntries(repStats.map((r) => [r.userId, r.name]))}
         />
       )}
 

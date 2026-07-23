@@ -11,6 +11,8 @@ import SuggestedOutreach from "@/app/app/today/suggested-outreach";
 import type { SuggestionRow } from "@/app/app/today/suggested-outreach";
 import EmailSignals from "@/app/app/today/email-signals";
 import type { EmailSignalLogRequest } from "@/app/app/today/email-signals";
+import RelationshipsGoingCold from "@/app/app/today/relationships-going-cold";
+import type { ColdAccount } from "@/lib/cold-accounts";
 import TeamLeaderboard from "@/app/app/today/team-leaderboard";
 import type { LeaderboardEntry } from "@/app/app/today/team-leaderboard";
 
@@ -97,7 +99,13 @@ function dedupeByKey<T extends { key?: string | null; org_id?: string | null }>(
   return Array.from(map.values());
 }
 
-export default function TodayClient({ userId }: { userId: string }) {
+export default function TodayClient({
+  userId,
+  coldAccounts,
+}: {
+  userId: string;
+  coldAccounts: ColdAccount[];
+}) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
   const [tab, setTab] = useState<Tab>("grow");
@@ -398,6 +406,24 @@ export default function TodayClient({ userId }: { userId: string }) {
 
   // ── Grow: partial scoreboard update (no full reload) ───────────────────
 
+  // Same one-tap pattern as the email signals: open the Grow form pre-filled with
+  // this cold account's most recently touched contact. Rows without a contact link
+  // to the account instead (handled in the card), so this is never a dead end.
+  function handleColdAccountLog(a: ColdAccount) {
+    if (!a.recentContactId) return;
+    setGrowPrefill({
+      contactId: a.recentContactId,
+      contactName: a.recentContactName ?? "",
+      accountId: a.accountId,
+      accountName: a.accountName,
+      typeId: null,
+      notes: "",
+    });
+    setGrowPrefillKey((k) => k + 1);
+    setTab("grow");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   // Route an email-signal "Log follow-up" into the normal Grow form, pre-filled
   // with that contact + type=email. The rep picks an outcome there, so the cadence
   // engine schedules the next touch — no silent auto-cadence, but no orphan either.
@@ -543,6 +569,10 @@ export default function TodayClient({ userId }: { userId: string }) {
         onAccept={(s) => void handleAcceptSuggestion(s)}
         onDismiss={handleDismissSuggestion}
       />
+
+      {/* Relationships going cold — ICP-weighted, one tap to log against the
+          account's most recently touched contact. */}
+      <RelationshipsGoingCold accounts={coldAccounts} onLog={handleColdAccountLog} />
 
       {/* Email follow-up signals from synced Gmail (awaiting reply / they replied).
           Tapping "Log follow-up" opens the normal Grow form pre-filled with the

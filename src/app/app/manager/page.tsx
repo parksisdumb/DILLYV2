@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
+import { getColdAccounts } from "@/lib/cold-accounts";
 import ManagerClient from "@/app/app/manager/manager-client";
 
 // ── Exported types consumed by manager-client ──────────────────────────────
@@ -497,8 +498,13 @@ export default async function ManagerPage() {
     (p) => !allAssignedIds.has(p.id as string)
   ).length;
 
+  // Relationship-level "going cold" (accounts), the counterpart to the deal-level
+  // Pipeline Health above. Org-wide here — the manager coaching view.
+  const coldAccounts = await getColdAccounts(supabase);
+
   return (
     <ManagerClient
+      coldAccounts={coldAccounts}
       repStats={repStats}
       stageSummaries={stageSummaries}
       topAccounts={topAccounts}

@@ -57,6 +57,7 @@ export default function RelationshipsGoingCold({
                 {a.neverTouched
                   ? `Never touched · ${a.daysCold} days on file`
                   : `${a.daysCold} days since last touch`}
+                {` · cold at ${a.thresholdDays}d`}
                 {" · "}
                 {a.propertyCount} propert{a.propertyCount === 1 ? "y" : "ies"}
                 {a.recentContactName ? ` · ${a.recentContactName}` : ""}

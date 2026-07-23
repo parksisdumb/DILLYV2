@@ -222,20 +222,24 @@ function GoingCold({
     byRep.set(key, list);
   }
 
+  // Urgency uses the recency-free tier (thresholdPriority) — the one that actually
+  // sets the cold window — so a quiet account can't slide down the list.
   const groups = [...byRep.entries()]
     .map(([userId, list]) => {
-      const rows = [...list].sort((x, y) => x.priority - y.priority || y.daysCold - x.daysCold);
+      const rows = [...list].sort(
+        (x, y) => x.thresholdPriority - y.thresholdPriority || y.daysCold - x.daysCold,
+      );
       return {
         userId,
         name: repNames[userId] ?? (userId === "unassigned" ? "Unassigned" : userId.slice(0, 8)),
         rows,
-        p1: rows.filter((a) => a.priority === 1).length,
-        p2: rows.filter((a) => a.priority === 2).length,
+        p1: rows.filter((a) => a.thresholdPriority === 1).length,
+        p2: rows.filter((a) => a.thresholdPriority === 2).length,
       };
     })
     .sort((a, b) => b.p1 - a.p1 || b.p2 - a.p2 || b.rows.length - a.rows.length);
 
-  const totalP1 = accounts.filter((a) => a.priority === 1).length;
+  const totalP1 = accounts.filter((a) => a.thresholdPriority === 1).length;
 
   return (
     <div className="rounded-2xl border border-amber-200 bg-white p-4">
@@ -277,7 +281,8 @@ function GoingCold({
                     </Link>
                   </div>
                   <span className="shrink-0 text-xs tabular-nums text-slate-500">
-                    {a.neverTouched ? "never touched" : `${a.daysCold}d`} · {a.propertyCount}p
+                    {a.neverTouched ? "never touched" : `${a.daysCold}d`} / {a.thresholdDays}d ·{" "}
+                    {a.propertyCount}p
                   </span>
                 </div>
               ))}

@@ -9,7 +9,7 @@
 // RLS scopes every read to the caller's org — no manual org_id filtering.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { scoreAccount } from "@/lib/scoring/icp-score";
+import { scoreAccount, scoreAccountIntrinsic } from "@/lib/scoring/icp-score";
 
 const DAY = 86_400_000;
 
@@ -25,8 +25,16 @@ export type ColdAccount = {
   accountId: string;
   accountName: string;
   accountType: string | null;
+  /** Displayed ICP badge — includes recency, matches the accounts list. */
   priority: 1 | 2 | 3 | 4;
   icpScore: number;
+  /**
+   * Recency-free priority that drives the cold threshold and urgency sort. Kept
+   * separate from `priority` so a quiet account can never self-demote out of
+   * urgency (losing recency points would otherwise LENGTHEN its threshold).
+   */
+  thresholdPriority: 1 | 2 | 3 | 4;
+  intrinsicScore: number;
   /** Days since the last touch — or since the account was created if never touched. */
   daysCold: number;
   lastTouchAt: string | null;
@@ -149,7 +157,7 @@ export function computeColdAccounts(
     const contacts = contactCount.get(a.id) ?? 0;
     const lastTouchAt = lastTouch.get(a.id) ?? null;
 
-    // Same inputs the accounts list uses, so the P-badge matches app-wide.
+    // Displayed badge: same inputs the accounts list uses, so it matches app-wide.
     const icp = scoreAccount(
       {
         account_type: a.account_type,
@@ -160,13 +168,21 @@ export function computeColdAccounts(
       now,
     );
 
+    // Threshold + urgency: intrinsic factors only. Excluding recency breaks the
+    // circularity where going quiet lowers priority and thereby delays detection.
+    const intrinsic = scoreAccountIntrinsic({
+      account_type: a.account_type,
+      property_count: props,
+      contact_count: contacts,
+    });
+
     // Never touched → measure from when the account entered the system.
     const since = lastTouchAt ?? a.created_at;
     const sinceMs = new Date(since).getTime();
     if (!Number.isFinite(sinceMs)) continue;
 
     const daysCold = Math.floor((now - sinceMs) / DAY);
-    const thresholdDays = COLD_THRESHOLD_DAYS[icp.priority];
+    const thresholdDays = COLD_THRESHOLD_DAYS[intrinsic.priority];
     if (daysCold < thresholdDays) continue;
 
     const recentContactId = recentContact.get(a.id) ?? null;
@@ -177,6 +193,8 @@ export function computeColdAccounts(
       accountType: a.account_type,
       priority: icp.priority,
       icpScore: icp.score,
+      thresholdPriority: intrinsic.priority,
+      intrinsicScore: intrinsic.score,
       daysCold,
       lastTouchAt,
       neverTouched: lastTouchAt === null,
@@ -189,7 +207,7 @@ export function computeColdAccounts(
     });
   }
 
-  // P1 first, then coldest first within a priority.
-  out.sort((x, y) => x.priority - y.priority || y.daysCold - x.daysCold);
+  // Urgency order: recency-free priority first, then coldest within a tier.
+  out.sort((x, y) => x.thresholdPriority - y.thresholdPriority || y.daysCold - x.daysCold);
   return out;
 }

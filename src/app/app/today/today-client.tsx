@@ -5,10 +5,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import Scoreboard from "@/app/app/today/scoreboard";
 import GrowForm from "@/app/app/today/grow-form";
+import type { GrowPrefill } from "@/app/app/today/grow-form";
 import AdvanceList from "@/app/app/today/advance-list";
 import SuggestedOutreach from "@/app/app/today/suggested-outreach";
 import type { SuggestionRow } from "@/app/app/today/suggested-outreach";
 import EmailSignals from "@/app/app/today/email-signals";
+import type { EmailSignalLogRequest } from "@/app/app/today/email-signals";
 import TeamLeaderboard from "@/app/app/today/team-leaderboard";
 import type { LeaderboardEntry } from "@/app/app/today/team-leaderboard";
 
@@ -99,6 +101,10 @@ export default function TodayClient({ userId }: { userId: string }) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
   const [tab, setTab] = useState<Tab>("grow");
+  // Pre-fill for the Grow form when a rep logs from another surface (email signals).
+  // `growPrefillKey` remounts GrowForm so the prefill lands as initial state.
+  const [growPrefill, setGrowPrefill] = useState<GrowPrefill | null>(null);
+  const [growPrefillKey, setGrowPrefillKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -392,6 +398,23 @@ export default function TodayClient({ userId }: { userId: string }) {
 
   // ── Grow: partial scoreboard update (no full reload) ───────────────────
 
+  // Route an email-signal "Log follow-up" into the normal Grow form, pre-filled
+  // with that contact + type=email. The rep picks an outcome there, so the cadence
+  // engine schedules the next touch — no silent auto-cadence, but no orphan either.
+  function handleEmailSignalLog(req: EmailSignalLogRequest) {
+    setGrowPrefill({
+      contactId: req.contactId,
+      contactName: req.contactName,
+      accountId: req.accountId,
+      accountName: accountsById.get(req.accountId)?.name ?? "",
+      typeId: req.emailTypeId,
+      notes: req.subject ? `Follow-up on: ${req.subject}` : "",
+    });
+    setGrowPrefillKey((k) => k + 1);
+    setTab("grow");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function handleGrowSuccess(result: OutreachResult) {
     setDashboard((prev) => ({
       ...prev,
@@ -499,6 +522,7 @@ export default function TodayClient({ userId }: { userId: string }) {
             </a>
           )}
           <GrowForm
+            key={growPrefillKey}
             userId={userId}
             orgId={orgId}
             contacts={contacts}
@@ -508,6 +532,7 @@ export default function TodayClient({ userId }: { userId: string }) {
             outreachTypes={outreachTypes}
             outcomes={touchpointOutcomes}
             onSuccess={handleGrowSuccess}
+            prefill={growPrefill}
           />
         </>
       )}
@@ -519,8 +544,10 @@ export default function TodayClient({ userId }: { userId: string }) {
         onDismiss={handleDismissSuggestion}
       />
 
-      {/* Email follow-up signals from synced Gmail (awaiting reply / they replied) */}
-      <EmailSignals />
+      {/* Email follow-up signals from synced Gmail (awaiting reply / they replied).
+          Tapping "Log follow-up" opens the normal Grow form pre-filled with the
+          contact + type=email, so the rep picks an outcome and cadence applies. */}
+      <EmailSignals onLogFollowUp={handleEmailSignalLog} />
 
       {tab === "advance" && (
         <AdvanceList

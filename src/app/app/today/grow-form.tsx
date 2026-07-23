@@ -20,6 +20,20 @@ type OutreachResult = {
   outreach_remaining: number;
 };
 
+/**
+ * Pre-fills the form when the rep arrives from another surface (e.g. tapping
+ * "Log follow-up" on an email signal). The parent remounts GrowForm via `key`
+ * so these become the initial state — no effects, no state syncing.
+ */
+export type GrowPrefill = {
+  contactId: string;
+  contactName: string;
+  accountId: string;
+  accountName: string;
+  typeId?: string | null;
+  notes?: string | null;
+};
+
 type Props = {
   userId: string;
   orgId: string;
@@ -30,6 +44,7 @@ type Props = {
   outreachTypes: TouchpointType[];
   outcomes: Outcome[];
   onSuccess: (result: OutreachResult) => void;
+  prefill?: GrowPrefill | null;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -71,26 +86,27 @@ export default function GrowForm({
   outreachTypes,
   outcomes,
   onSuccess,
+  prefill = null,
 }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
   // ── Collapsed state ──
   const [open, setOpen] = useState(true);
 
-  // ── Contact search ──
+  // ── Contact search ── (seeded from `prefill` when arriving from another surface)
   const [contactQuery, setContactQuery] = useState("");
-  const [selectedContactId, setSelectedContactId] = useState("");
-  const [selectedContactName, setSelectedContactName] = useState("");
-  const [selectedAccountId, setSelectedAccountId] = useState("");
-  const [selectedAccountName, setSelectedAccountName] = useState("");
+  const [selectedContactId, setSelectedContactId] = useState(prefill?.contactId ?? "");
+  const [selectedContactName, setSelectedContactName] = useState(prefill?.contactName ?? "");
+  const [selectedAccountId, setSelectedAccountId] = useState(prefill?.accountId ?? "");
+  const [selectedAccountName, setSelectedAccountName] = useState(prefill?.accountName ?? "");
   const [showContactResults, setShowContactResults] = useState(false);
 
   // ── Outreach type + outcome ──
-  const [typeId, setTypeId] = useState("");
+  const [typeId, setTypeId] = useState(prefill?.typeId ?? "");
   const [outcomeId, setOutcomeId] = useState("");
 
   // ── Notes ──
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(prefill?.notes ?? "");
 
   // ── Property (optional, collapsible) ──
   const [propertyOpen, setPropertyOpen] = useState(false);

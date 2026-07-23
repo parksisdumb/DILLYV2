@@ -33,11 +33,28 @@ function daysAgo(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / DAY_MS);
 }
 
-export default function EmailSignals() {
+/** Payload handed up when a rep taps "Log follow-up" on a signal card. */
+export type EmailSignalLogRequest = {
+  contactId: string;
+  contactName: string;
+  accountId: string;
+  subject: string | null;
+  emailTypeId: string | null;
+};
+
+export default function EmailSignals({
+  onLogFollowUp,
+}: {
+  /**
+   * Opens the normal Grow log form pre-filled with this contact + type=email,
+   * so the rep picks an outcome and the cadence engine schedules the next touch.
+   * Deliberately NOT a silent log — no auto-cadence, but no orphan either.
+   */
+  onLogFollowUp: (req: EmailSignalLogRequest) => void;
+}) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [emailTypeId, setEmailTypeId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -125,30 +142,13 @@ export default function EmailSignals() {
     setSignals(out);
   }, [supabase]);
 
+  // Mount fetch. `load` is async and only calls setState after awaiting, so this
+  // is not the synchronous cascading render the rule guards against — the compiler
+  // just can't see through the useCallback boundary.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
-
-  async function logFollowUp(s: Signal) {
-    if (!emailTypeId) return;
-    setBusyId(s.contactId);
-    try {
-      // Hand-logged follow-up → goes through the normal rep-authenticated RPC, so
-      // it DOES score (unlike the visibility-only synced emails).
-      const { error } = await supabase.rpc("rpc_log_outreach_touchpoint", {
-        p_contact_id: s.contactId,
-        p_account_id: s.accountId,
-        p_touchpoint_type_id: emailTypeId,
-        p_notes: s.subject ? `Follow-up on: ${s.subject}` : "Email follow-up",
-        p_engagement_phase: "follow_up",
-      });
-      if (!error) {
-        setDismissed((prev) => new Set(prev).add(s.contactId));
-      }
-    } finally {
-      setBusyId(null);
-    }
-  }
 
   const visible = signals.filter((s) => !dismissed.has(s.contactId)).slice(0, 6);
   if (visible.length === 0) return null;
@@ -182,11 +182,22 @@ export default function EmailSignals() {
               </div>
               <button
                 type="button"
-                disabled={busyId === s.contactId || !emailTypeId}
-                onClick={() => void logFollowUp(s)}
+                disabled={!emailTypeId}
+                onClick={() => {
+                  onLogFollowUp({
+                    contactId: s.contactId,
+                    contactName: s.contactName,
+                    accountId: s.accountId,
+                    subject: s.subject,
+                    emailTypeId,
+                  });
+                  // Hide the card optimistically — it returns on next load if the
+                  // rep abandons the form without logging.
+                  setDismissed((prev) => new Set(prev).add(s.contactId));
+                }}
                 className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {busyId === s.contactId ? "Logging…" : "Log follow-up"}
+                Log follow-up
               </button>
             </div>
           );

@@ -33,7 +33,7 @@ export type ContactOption = { id: string; full_name: string | null };
 export default async function PropertiesPage() {
   const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  const [propsRes, accountsRes, contactsRes, oppsRes, meRes, orgUsersRes, pcRes, paRes] = await Promise.all([
+  const [propsRes, accountsRes, contactsRes, oppsRes, meRes, orgUsersRes, pcRes, paRes, propCountRes] = await Promise.all([
     supabase
       .from("properties")
       .select(
@@ -49,6 +49,8 @@ export default async function PropertiesPage() {
     supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
     supabase.from("property_contacts").select("property_id").eq("active", true),
     supabase.from("property_assignments").select("property_id,user_id"),
+    // True org total, independent of the row cap above.
+    supabase.from("properties").select("id", { count: "exact", head: true }).is("deleted_at", null),
   ]);
 
   if (propsRes.error) throw new Error(propsRes.error.message);
@@ -139,6 +141,7 @@ export default async function PropertiesPage() {
   return (
     <PropertiesClient
       properties={rows}
+      totalCount={propCountRes.count ?? rows.length}
       reps={reps}
       accounts={accounts}
       contacts={contacts}

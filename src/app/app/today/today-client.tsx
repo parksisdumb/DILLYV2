@@ -16,6 +16,7 @@ import type { ColdAccount } from "@/lib/cold-accounts";
 import TeamLeaderboard from "@/app/app/today/team-leaderboard";
 import type { LeaderboardEntry } from "@/app/app/today/team-leaderboard";
 import { selectWithOptionalCols } from "@/lib/overdue";
+import { startOfTodayUtc, startOfWeekUtc } from "@/lib/time";
 
 type Tab = "grow" | "advance";
 
@@ -162,8 +163,7 @@ export default function TodayClient({
   const contactsById = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
 
   const overdueCount = useMemo(() => {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const startOfToday = new Date(startOfTodayUtc());
     return nextActions.filter((a) => new Date(a.due_at) < startOfToday).length;
   }, [nextActions]);
 
@@ -355,13 +355,9 @@ export default function TodayClient({
       setSuggestions(mapped);
 
       // Team leaderboard — weekly points for ALL org members (shown to every role).
-      // Same score_events weekly window the manager leaderboard uses (Monday-start UTC).
-      const nowTs = new Date();
-      const weekStart = new Date(
-        Date.UTC(nowTs.getUTCFullYear(), nowTs.getUTCMonth(), nowTs.getUTCDate()),
-      );
-      const utcDay = nowTs.getUTCDay();
-      weekStart.setUTCDate(weekStart.getUTCDate() - (utcDay === 0 ? 6 : utcDay - 1));
+      // Same score_events weekly window the manager leaderboard uses (Monday-start,
+      // app timezone).
+      const weekStart = new Date(startOfWeekUtc());
 
       const [membersRes, weekScoresRes] = await Promise.all([
         supabase.from("org_users").select("user_id,full_name,email"),

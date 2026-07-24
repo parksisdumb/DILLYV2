@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import { startOfWeekUtc, startOfMonthUtc, rollingDaysAgoUtc, dateStartUtc, dateEndUtc, nowUtc } from "@/lib/time";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,24 +36,16 @@ const FETCH_CAP = 500; // safety cap on a single filtered fetch
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+// Day boundaries computed in the app timezone (see @/lib/time), converted to UTC
+// instants for the query — so evening-logged touchpoints stay in the right day.
 function rangeFor(preset: DatePreset, customStart: string, customEnd: string): { start: string; end: string } {
-  const now = new Date();
-  const endNow = now.toISOString();
-  if (preset === "week") {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const dow = now.getUTCDay();
-    d.setUTCDate(d.getUTCDate() - (dow === 0 ? 6 : dow - 1)); // Monday start
-    return { start: d.toISOString(), end: endNow };
-  }
-  if (preset === "month") {
-    return { start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString(), end: endNow };
-  }
-  if (preset === "30d") {
-    return { start: new Date(now.getTime() - 30 * 86400000).toISOString(), end: endNow };
-  }
-  // custom
-  const start = customStart ? new Date(`${customStart}T00:00:00Z`).toISOString() : new Date(0).toISOString();
-  const end = customEnd ? new Date(`${customEnd}T23:59:59Z`).toISOString() : endNow;
+  const endNow = nowUtc();
+  if (preset === "week") return { start: startOfWeekUtc(), end: endNow };
+  if (preset === "month") return { start: startOfMonthUtc(), end: endNow };
+  if (preset === "30d") return { start: rollingDaysAgoUtc(30), end: endNow };
+  // custom — interpret the picked calendar dates in the app timezone
+  const start = customStart ? dateStartUtc(customStart) : new Date(0).toISOString();
+  const end = customEnd ? dateEndUtc(customEnd) : endNow;
   return { start, end };
 }
 

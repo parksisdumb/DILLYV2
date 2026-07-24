@@ -79,6 +79,7 @@ function initials(name: string): string {
 
 export default function PropertiesClient({
   properties: initialProperties,
+  totalCount,
   reps,
   accounts,
   contacts,
@@ -87,6 +88,7 @@ export default function PropertiesClient({
   userRole,
 }: {
   properties: PropertyRow[];
+  totalCount: number;
   reps: RepOption[];
   accounts: AccountOption[];
   contacts: ContactOption[];
@@ -183,6 +185,8 @@ export default function PropertiesClient({
   const PAGE_SIZE = 50;
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // Header total: true org count when unfiltered; filtered subset when a filter is active.
+  const resultTotal = filtered.length === properties.length ? totalCount : filtered.length;
   // Reset to page 1 whenever the filter/search/sort inputs change.
   useEffect(() => {
     setPage(1);
@@ -753,7 +757,7 @@ export default function PropertiesClient({
       <p className="text-xs text-slate-500">
         {filtered.length === 0
           ? "0 properties"
-          : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length} propert${filtered.length !== 1 ? "ies" : "y"}`}
+          : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${resultTotal} propert${resultTotal !== 1 ? "ies" : "y"}`}
       </p>
 
       {/* Bulk assignment bar (managers/admins) */}

@@ -68,12 +68,14 @@ function RoleBadge({ role }: { role: string | null }) {
 
 export default function ContactsClient({
   contacts: initialContacts,
+  totalCount,
   reps,
   accounts,
   userId,
   userRole,
 }: {
   contacts: ContactRow[];
+  totalCount: number;
   reps: RepOption[];
   accounts: AccountOption[];
   userId: string;
@@ -473,9 +475,11 @@ export default function ContactsClient({
         </div>
       </div>
 
-      {/* Results count */}
+      {/* Results count — true org total (count query), independent of the row cap */}
       <p className="text-xs text-slate-500">
-        {filtered.length} contact{filtered.length !== 1 ? "s" : ""}
+        {filtered.length === contacts.length
+          ? `${totalCount} contact${totalCount !== 1 ? "s" : ""}`
+          : `${filtered.length} of ${totalCount} contact${totalCount !== 1 ? "s" : ""}`}
       </p>
 
       {/* Empty state */}

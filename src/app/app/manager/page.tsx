@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import { getColdAccounts } from "@/lib/cold-accounts";
 import { selectWithOptionalCols, daysOverdue, isChronicSnooze } from "@/lib/overdue";
+import { startOfTodayUtc, startOfWeekUtc, startOfMonthUtc, rollingDaysAgoUtc } from "@/lib/time";
 import ManagerClient from "@/app/app/manager/manager-client";
 
 // ── Exported types consumed by manager-client ──────────────────────────────
@@ -78,15 +79,14 @@ export default async function ManagerPage() {
     redirect("/app");
   }
 
-  // Date boundaries (UTC)
+  // Day boundaries in the app timezone (see @/lib/time), converted to UTC instants,
+  // so "today"/"this week"/"this month" match the rep's local day, not UTC.
   const now = new Date();
-  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const utcDay = now.getUTCDay();
-  const diffToMonday = utcDay === 0 ? 6 : utcDay - 1;
-  const weekStart = new Date(todayStart);
-  weekStart.setUTCDate(todayStart.getUTCDate() - diffToMonday);
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const todayStartIso = startOfTodayUtc();
+  const weekStartIso = startOfWeekUtc();
+  const weekStart = new Date(weekStartIso);
+  const monthStartIso = startOfMonthUtc();
+  const thirtyDaysAgoIso = rollingDaysAgoUtc(30);
 
   // Parallel fetches — no org_id filters (RLS handles scoping)
   const [
@@ -107,7 +107,7 @@ export default async function ManagerPage() {
     supabase
       .from("touchpoints")
       .select("rep_user_id,engagement_phase,touchpoint_type_id")
-      .gte("happened_at", todayStart.toISOString()),
+      .gte("happened_at", todayStartIso),
     supabase
       .from("kpi_definitions")
       .select("id,key")
@@ -119,11 +119,11 @@ export default async function ManagerPage() {
     supabase
       .from("score_events")
       .select("user_id,points,created_at")
-      .gte("created_at", monthStart.toISOString()),
+      .gte("created_at", monthStartIso),
     supabase
       .from("next_actions")
       .select("assigned_user_id,status,due_at")
-      .gte("due_at", thirtyDaysAgo.toISOString()),
+      .gte("due_at", thirtyDaysAgoIso),
     supabase
       .from("opportunities")
       .select("id,title,stage_id,account_id,property_id,estimated_value,opened_at,updated_at")
@@ -133,7 +133,7 @@ export default async function ManagerPage() {
     supabase
       .from("touchpoints")
       .select("account_id")
-      .gte("happened_at", thirtyDaysAgo.toISOString())
+      .gte("happened_at", thirtyDaysAgoIso)
       .not("account_id", "is", null),
     supabase.from("accounts").select("id,name").is("deleted_at", null),
   ]);

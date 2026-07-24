@@ -13,6 +13,7 @@ import {
   DISMISS_REASONS,
   isMissingColumnError,
 } from "@/lib/overdue";
+import { startOfTodayUtc, startOfTomorrowUtc } from "@/lib/time";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -51,11 +52,6 @@ type Props = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function startOfDay(d: Date) {
-  const s = new Date(d);
-  s.setHours(0, 0, 0, 0);
-  return s;
-}
 
 function formatDueDate(iso: string): string {
   const d = new Date(iso);
@@ -126,8 +122,8 @@ export default function AdvanceList({
   const [formNotes, setFormNotes] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
-  const today = startOfDay(new Date());
-  const tomorrow = startOfDay(new Date(today.getTime() + 86_400_000));
+  const today = new Date(startOfTodayUtc());
+  const tomorrow = new Date(startOfTomorrowUtc());
 
   // ── Expand / collapse a card ──
   function toggleExpand(id: string) {

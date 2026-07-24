@@ -23,13 +23,13 @@ export type PropertyOption = { id: string; address_line1: string; city: string |
 export default async function ContactsPage() {
   const { supabase, userId } = await requireServerOrgContext();
 
-  const [contactsRes, accountsRes, tpRes, meRes, orgUsersRes, pcRes] = await Promise.all([
+  const [contactsRes, accountsRes, tpRes, meRes, orgUsersRes, pcRes, contactCountRes] = await Promise.all([
     supabase
       .from("contacts")
       .select("id,full_name,first_name,last_name,title,phone,email,decision_role,account_id,updated_at,created_by")
       .is("deleted_at", null)
       .order("full_name")
-      .limit(200),
+      .limit(500),
     supabase
       .from("accounts")
       .select("id,name")
@@ -43,6 +43,8 @@ export default async function ContactsPage() {
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
     supabase.from("property_contacts").select("contact_id").eq("active", true),
+    // True org total, independent of the row cap above.
+    supabase.from("contacts").select("id", { count: "exact", head: true }).is("deleted_at", null),
   ]);
 
   if (contactsRes.error) throw new Error(contactsRes.error.message);
@@ -99,6 +101,7 @@ export default async function ContactsPage() {
   return (
     <ContactsClient
       contacts={rows}
+      totalCount={contactCountRes.count ?? rows.length}
       reps={reps}
       accounts={accounts}
       userId={userId}

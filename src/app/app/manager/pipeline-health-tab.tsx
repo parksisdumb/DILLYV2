@@ -269,9 +269,9 @@ function GoingCold({
                 <div key={a.accountId} className="flex items-center justify-between gap-3 px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <span
-                      className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${PRIORITY_COLORS[a.priority]}`}
+                      className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${PRIORITY_COLORS[a.thresholdPriority]}`}
                     >
-                      {PRIORITY_LABELS_SHORT[a.priority]}
+                      {PRIORITY_LABELS_SHORT[a.thresholdPriority]}
                     </span>
                     <Link
                       href={`/app/accounts/${a.accountId}`}

@@ -1,40 +1,86 @@
-// "Going cold" detection for ACCOUNTS (relationships), weighted by ICP value.
+// "Going cold" detection for ACCOUNTS (relationships), weighted by intrinsic value.
 //
 // Pipeline Health flags stalled DEALS. This flags a stalled RELATIONSHIP: an
-// account nobody has touched in longer than its priority warrants. A P1 going
-// quiet is urgent; a P4 going quiet is noise — so the threshold scales with the
-// intrinsic ICP priority from @/lib/scoring/icp-score.
+// account nobody has touched in longer than its value warrants. A high-value
+// account going quiet is urgent; a zero-value one is noise.
+//
+// The cold TIER is derived directly from intrinsic signals — account type and
+// portfolio size — NOT from the recency-inclusive ICP score. Recency is
+// deliberately excluded: an account going quiet must never lengthen its own
+// threshold and delay the alert. (scoreAccount() and the accounts-list badge are
+// untouched by any of this.)
 //
 // Efficiency: four batch queries, aggregated in memory. No per-account queries.
 // RLS scopes every read to the caller's org — no manual org_id filtering.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { scoreAccount, scoreAccountIntrinsic } from "@/lib/scoring/icp-score";
+import { scoreAccount } from "@/lib/scoring/icp-score";
 
 const DAY = 86_400_000;
 
-/** Days without a touch before a relationship counts as cold, by ICP priority. */
-export const COLD_THRESHOLD_DAYS: Record<1 | 2 | 3 | 4, number> = {
-  1: 14,
-  2: 21,
-  3: 30,
-  4: 60,
+// Cold tiers, most-urgent first. Thresholds intentionally wider in the middle than
+// the old 20+-property-only top tier so real property-management volume (8-19
+// properties) is held to a tighter cadence.
+export type ColdTier = "A" | "B" | "C" | "D";
+
+export const COLD_TIER_DAYS: Record<ColdTier, number> = {
+  A: 14,
+  B: 21,
+  C: 30,
+  D: 60,
 };
+
+// Numeric rank of each tier (A=1 … D=4) for the P-badge + urgency sort.
+export const COLD_TIER_RANK: Record<ColdTier, 1 | 2 | 3 | 4> = {
+  A: 1,
+  B: 2,
+  C: 3,
+  D: 4,
+};
+
+/**
+ * Cold tier from intrinsic signals only (account type + portfolio size) —
+ * evaluated most-urgent-first.
+ *
+ *   A (14d): 20+ properties, OR property-mgmt/asset-mgmt with 8+ properties
+ *   B (21d): 8-19 properties, OR property-mgmt/asset-mgmt/owner with 1+ properties,
+ *            OR facilities-management with 3+ properties
+ *   C (30d): 1-7 properties
+ *   D (60d): 0 properties, or vendor/other account types (low intrinsic value,
+ *            demoted regardless of portfolio size)
+ *
+ * The type floors mirror the ICP value model (PM/AM/owner top-value; facilities a
+ * high-mid channel). They are calibrated so no account lands on a LONGER cold
+ * window than the previous score-based thresholds gave it — verified against prod.
+ */
+export function coldTier(accountType: string | null | undefined, propertyCount: number): ColdTier {
+  const t = (accountType ?? "").toLowerCase();
+  const pmAm = t === "commercial_property_management" || t === "asset_management";
+  const pmAmOwner = pmAm || t === "owner";
+  const facilities = t === "facilities_management";
+  const lowValue = t === "vendor" || t === "other";
+  const p = Math.max(0, propertyCount);
+
+  // Low-value types and zero-portfolio accounts are Tier D regardless of size.
+  if (lowValue || p === 0) return "D";
+  if (p >= 20 || (pmAm && p >= 8)) return "A";
+  if ((p >= 8 && p <= 19) || (pmAmOwner && p >= 1) || (facilities && p >= 3)) return "B";
+  if (p >= 1 && p <= 7) return "C";
+  return "D";
+}
 
 export type ColdAccount = {
   accountId: string;
   accountName: string;
   accountType: string | null;
-  /** Displayed ICP badge — includes recency, matches the accounts list. */
+  /** Displayed ICP badge — includes recency, matches the accounts list. Not what
+   *  drives the cold threshold, and not badged on the cold surfaces. */
   priority: 1 | 2 | 3 | 4;
   icpScore: number;
-  /**
-   * Recency-free priority that drives the cold threshold and urgency sort. Kept
-   * separate from `priority` so a quiet account can never self-demote out of
-   * urgency (losing recency points would otherwise LENGTHEN its threshold).
-   */
+  /** Cold tier letter (A–D). */
+  tier: ColdTier;
+  /** Numeric rank of the cold tier (A=1 … D=4) — badged + sorted on cold surfaces. */
   thresholdPriority: 1 | 2 | 3 | 4;
-  intrinsicScore: number;
   /** Days since the last touch — or since the account was created if never touched. */
   daysCold: number;
   lastTouchAt: string | null;
@@ -168,13 +214,10 @@ export function computeColdAccounts(
       now,
     );
 
-    // Threshold + urgency: intrinsic factors only. Excluding recency breaks the
-    // circularity where going quiet lowers priority and thereby delays detection.
-    const intrinsic = scoreAccountIntrinsic({
-      account_type: a.account_type,
-      property_count: props,
-      contact_count: contacts,
-    });
+    // Threshold + urgency: cold TIER from intrinsic signals only (type + portfolio).
+    // Excluding recency breaks the circularity where going quiet delays detection.
+    const tier = coldTier(a.account_type, props);
+    const thresholdDays = COLD_TIER_DAYS[tier];
 
     // Never touched → measure from when the account entered the system.
     const since = lastTouchAt ?? a.created_at;
@@ -182,7 +225,6 @@ export function computeColdAccounts(
     if (!Number.isFinite(sinceMs)) continue;
 
     const daysCold = Math.floor((now - sinceMs) / DAY);
-    const thresholdDays = COLD_THRESHOLD_DAYS[intrinsic.priority];
     if (daysCold < thresholdDays) continue;
 
     const recentContactId = recentContact.get(a.id) ?? null;
@@ -193,8 +235,8 @@ export function computeColdAccounts(
       accountType: a.account_type,
       priority: icp.priority,
       icpScore: icp.score,
-      thresholdPriority: intrinsic.priority,
-      intrinsicScore: intrinsic.score,
+      tier,
+      thresholdPriority: COLD_TIER_RANK[tier],
       daysCold,
       lastTouchAt,
       neverTouched: lastTouchAt === null,

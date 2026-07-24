@@ -128,42 +128,6 @@ export function scoreAccount(a: ScorableAccount, now: number = Date.now()): IcpS
   return { score, priority, label: reason, matches, misses };
 }
 
-// Most engagement points any account can earn (touched within 30 days).
-const MAX_ENGAGEMENT_POINTS = 15;
-
-export type IntrinsicScoreResult = { score: number; priority: 1 | 2 | 3 | 4 };
-
-/**
- * Recency-free priority — account type + portfolio size + contact depth only.
- * Score is the intrinsic total (0-85); recency contributes nothing.
- *
- * Why this exists: scoreAccount() includes an engagement/recency component, which
- * is right for ranking "who do I call next" but CIRCULAR for cold detection. An
- * account going quiet loses recency points, drops a tier, and its cold threshold
- * GROWS — delaying the very alert going quiet should trigger.
- *
- * Calibration: the tier cutoffs are the usual 80/60/40 MINUS the 15 engagement
- * points, i.e. every account is tiered as if it were freshly touched. That keeps
- * each account at the tier it holds today while active, and freezes it there as it
- * goes quiet — instead of silently demoting it and lengthening its own threshold.
- * (Normalizing the 0-85 range onto 0-100 instead would demote most accounts and
- * make detection LESS aggressive — the opposite of the intent.)
- */
-const INTRINSIC_P1 = 80 - MAX_ENGAGEMENT_POINTS; // 65
-const INTRINSIC_P2 = 60 - MAX_ENGAGEMENT_POINTS; // 45
-const INTRINSIC_P3 = 40 - MAX_ENGAGEMENT_POINTS; // 25
-
-export function scoreAccountIntrinsic(a: ScorableAccount): IntrinsicScoreResult {
-  const props = Math.max(0, a.property_count ?? 0);
-  const contacts = Math.max(0, a.contact_count ?? 0);
-
-  const score = typeFitPoints(a.account_type) + portfolioPoints(props) + contactPoints(contacts);
-  const priority: 1 | 2 | 3 | 4 =
-    score >= INTRINSIC_P1 ? 1 : score >= INTRINSIC_P2 ? 2 : score >= INTRINSIC_P3 ? 3 : 4;
-
-  return { score, priority };
-}
-
 // Priority badge colors for UI
 export const PRIORITY_COLORS: Record<number, string> = {
   1: "bg-green-100 text-green-700 border-green-200",

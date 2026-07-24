@@ -42,9 +42,9 @@ export default function RelationshipsGoingCold({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span
-                  className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${PRIORITY_COLORS[a.priority]}`}
+                  className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${PRIORITY_COLORS[a.thresholdPriority]}`}
                 >
-                  {PRIORITY_LABELS_SHORT[a.priority]}
+                  {PRIORITY_LABELS_SHORT[a.thresholdPriority]}
                 </span>
                 <Link
                   href={`/app/accounts/${a.accountId}`}

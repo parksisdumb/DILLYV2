@@ -15,6 +15,7 @@ import RelationshipsGoingCold from "@/app/app/today/relationships-going-cold";
 import type { ColdAccount } from "@/lib/cold-accounts";
 import TeamLeaderboard from "@/app/app/today/team-leaderboard";
 import type { LeaderboardEntry } from "@/app/app/today/team-leaderboard";
+import { selectWithOptionalCols } from "@/lib/overdue";
 
 type Tab = "grow" | "advance";
 
@@ -39,7 +40,14 @@ type NextAction = {
   notes: string | null;
   recommended_touchpoint_type_id: string | null;
   created_from_touchpoint_id: string | null;
+  // Present once the snooze/dismiss migration is applied; absent-safe until then.
+  snoozed_count?: number | null;
+  last_snoozed_at?: string | null;
 };
+
+const NA_BASE_COLS =
+  "id,property_id,contact_id,account_id,opportunity_id,due_at,notes,recommended_touchpoint_type_id,created_from_touchpoint_id";
+const NA_SNOOZE_COLS = "snoozed_count,last_snoozed_at";
 
 export type LatestTouchpoint = {
   happened_at: string;
@@ -241,14 +249,17 @@ export default function TodayClient({
           .from("touchpoint_outcomes")
           .select("id,name,touchpoint_type_id,org_id,key")
           .order("sort_order"),
-        supabase
-          .from("next_actions")
-          .select(
-            "id,property_id,contact_id,account_id,opportunity_id,due_at,notes,recommended_touchpoint_type_id,created_from_touchpoint_id",
-          )
-          .eq("assigned_user_id", userId)
-          .eq("status", "open")
-          .order("due_at"),
+        selectWithOptionalCols<NextAction>(
+          (cols) =>
+            supabase
+              .from("next_actions")
+              .select(cols)
+              .eq("assigned_user_id", userId)
+              .eq("status", "open")
+              .order("due_at"),
+          NA_BASE_COLS,
+          NA_SNOOZE_COLS,
+        ),
         supabase.rpc("rpc_today_dashboard"),
       ]);
 
@@ -452,14 +463,17 @@ export default function TodayClient({
     }));
 
     // Silently refresh next_actions so the Advance tab reflects any newly scheduled follow-up
-    const { data } = await supabase
-      .from("next_actions")
-      .select(
-        "id,property_id,contact_id,account_id,opportunity_id,due_at,notes,recommended_touchpoint_type_id,created_from_touchpoint_id",
-      )
-      .eq("assigned_user_id", userId)
-      .eq("status", "open")
-      .order("due_at");
+    const { data } = await selectWithOptionalCols<NextAction>(
+      (cols) =>
+        supabase
+          .from("next_actions")
+          .select(cols)
+          .eq("assigned_user_id", userId)
+          .eq("status", "open")
+          .order("due_at"),
+      NA_BASE_COLS,
+      NA_SNOOZE_COLS,
+    );
     if (data) {
       const rows = data as NextAction[];
       setNextActions(rows);

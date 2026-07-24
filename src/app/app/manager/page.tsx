@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import { getColdAccounts } from "@/lib/cold-accounts";
+import { selectWithOptionalCols, daysOverdue, isChronicSnooze } from "@/lib/overdue";
 import ManagerClient from "@/app/app/manager/manager-client";
 
 // ── Exported types consumed by manager-client ──────────────────────────────
@@ -19,6 +20,9 @@ export type RepStat = {
   nextActionsTotal30d: number;
   nextActionsCompleted30d: number;
   complianceRate: number;
+  overdueCount: number;
+  avgDaysOverdue: number;
+  chronicSnoozeCount: number;
 };
 
 export type StageSummary = {
@@ -195,6 +199,31 @@ export default async function ManagerPage() {
     });
   }
 
+  // Overdue + chronic-snooze stats from ALL open actions (any age — overdue
+  // items can be older than the 30-day compliance window). Resilient to the
+  // snooze columns not existing yet.
+  const { data: openActionRows } = await selectWithOptionalCols<{
+    assigned_user_id: string;
+    due_at: string;
+    snoozed_count: number | null;
+  }>(
+    (cols) => supabase.from("next_actions").select(cols).eq("status", "open"),
+    "assigned_user_id,due_at",
+    "snoozed_count",
+  );
+  const nowOverdueMs = Date.now();
+  const overdueByRep = new Map<string, { count: number; sumDays: number; chronic: number }>();
+  for (const r of openActionRows) {
+    const agg = overdueByRep.get(r.assigned_user_id) ?? { count: 0, sumDays: 0, chronic: 0 };
+    const d = daysOverdue(r.due_at, nowOverdueMs);
+    if (d > 0) {
+      agg.count++;
+      agg.sumDays += d;
+    }
+    if (isChronicSnooze(r.snoozed_count)) agg.chronic++;
+    overdueByRep.set(r.assigned_user_id, agg);
+  }
+
   // ── Build RepStat[] ────────────────────────────────────────────────────
 
   const ftDefId = kpiDefByKey.get("daily_first_touch_outreach");
@@ -230,6 +259,11 @@ export default async function ManagerPage() {
     const complianceRate =
       nextActionsTotal30d > 0 ? Math.round((nextActionsCompleted30d / nextActionsTotal30d) * 100) : 0;
 
+    const od = overdueByRep.get(uid);
+    const overdueCount = od?.count ?? 0;
+    const avgDaysOverdue = od && od.count > 0 ? Math.round(od.sumDays / od.count) : 0;
+    const chronicSnoozeCount = od?.chronic ?? 0;
+
     const name = member.full_name?.trim() || member.email?.split("@")[0] || uid.slice(0, 8);
 
     return {
@@ -246,6 +280,9 @@ export default async function ManagerPage() {
       nextActionsTotal30d,
       nextActionsCompleted30d,
       complianceRate,
+      overdueCount,
+      avgDaysOverdue,
+      chronicSnoozeCount,
     };
   });
 

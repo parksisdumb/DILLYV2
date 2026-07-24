@@ -237,7 +237,7 @@ Local dev credentials after `npx supabase db reset && npm run seed:dev`:
 - Local Supabase Studio: http://127.0.0.1:54323
 - Local app: http://localhost:3000
 
-Current migrations (70 total on disk, as of 2026-06-13; applied in order):
+Current migrations (77 total on disk, as of 2026-07-24; applied in order):
 1. `20260220204621_init_schema_v1` — core schema
 2. `20260221000022_rls_policies_v1` — initial RLS
 3. `20260221060949_rpc_core_v1` — RPCs + seed data (includes legacy `rpc_create_touchpoint_and_side_effects`)
@@ -308,5 +308,12 @@ Current migrations (70 total on disk, as of 2026-06-13; applied in order):
 68. `20260605100000_touchpoint_direction_inbound_v1` — adds `direction` ('inbound'|'outbound', default 'outbound') to touchpoints, relaxes the outreach-contact trigger so inbound touchpoints can be account/property-anchored (contact only required for OUTBOUND outreach), and adds `rpc_log_inbound_touchpoint` (call/email/text only; visibility-only — no score_events/streaks/KPI impact)
 69. `20260608100000_contacts_dedupe_no_silent_substitution_v1` — fixes `rpc_create_contact` silently returning an existing contact on email/phone match (multiple distinct people sharing a company switchboard line all collapsed into the first contact). Now ALWAYS inserts the new contact; phone is no longer a dedup key; an existing same-email contact becomes an advisory `warning` only. Same return signature.
 70. `20260613100000_fix_scoring_wildcard_rules_backfill_v1` — fixes scoring producing empty `score_events`. Both `rpc_log_outreach_touchpoint` and `rpc_log_touchpoint` now match `score_rules` with NULL `touchpoint_type_id`/`outcome_id` as a WILDCARD (most-specific rule wins: type+outcome > outcome-only > base; org rule beats global; then newest), instead of `sr.touchpoint_type_id = p_touchpoint_type_id` which NULL never satisfied. Seeds GLOBAL outcome-only rules (org_id NULL) for the real outcome taxonomy + one global base rule (all NULL, 1 pt) so every touchpoint scores ≥1. Backfills `score_events` for pre-existing touchpoints (reason `touchpoint_backfill`, `created_at = happened_at`, idempotent via NOT EXISTS on touchpoint_id).
+71. `20260616100000_seed_global_opp_stages_scopes_v1` — seeds global opportunity stages + scope types.
+72. `20260619100000_properties_rls_decouple_assignment_v1` — decouples properties RLS from assignment (org-member read).
+73. `20260719100000_rpc_merge_property_v1` — `rpc_merge_property(p_source_id, p_survivor_id, p_notes)` for property dedup/merge.
+74. `20260720100000_inspection_first_class_v1` — flips 'inspection' touchpoint type to `is_outreach=true` (global + per-org) + seeds a type-level 10-pt score rule so inspections surface in logging flows.
+75. `20260720110000_account_onboarding_status_v1` — adds `onboarding_status text NOT NULL default 'initial_touch'` (+ CHECK) to accounts + `rpc_set_account_onboarding_status` (SECURITY DEFINER, any org member).
+76. `20260720120000_email_tracking_phase1_v1` — `email_connections` + `synced_emails` tables (RLS: owner-read, service-role write) + `rpc_log_synced_email_touchpoint` (headless, visibility-only Gmail sync).
+77. `20260724100000_next_actions_snooze_dismiss_v1` — adds `snoozed_count int NOT NULL default 0`, `last_snoozed_at timestamptz`, `dismiss_reason text` to next_actions + a partial chronic-snooze index (`snoozed_count >= 3`). Powers Advance snooze (roll-forward + count)/dismiss-with-reason + manager overdue/chronic stats. Status `'dismissed'` allowed (status has no CHECK). App code degrades gracefully if unapplied. **Must be applied to prod manually.**
 
 > Migration list maintenance: when you add a migration, bump the "N total on disk" count above and append the new entry here.

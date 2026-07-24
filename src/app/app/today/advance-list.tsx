@@ -2,6 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import {
+  daysOverdue,
+  overdueTier,
+  OVERDUE_TIER_STYLES,
+  isChronicSnooze,
+  SNOOZE_PRESETS,
+  snoozeDueDate,
+  dateInputToDueIso,
+  DISMISS_REASONS,
+  isMissingColumnError,
+} from "@/lib/overdue";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -20,6 +31,8 @@ type NextAction = {
   notes: string | null;
   recommended_touchpoint_type_id: string | null;
   created_from_touchpoint_id: string | null;
+  snoozed_count?: number | null;
+  last_snoozed_at?: string | null;
 };
 
 type LatestTouchpoint = { happened_at: string; outcome_id: string | null };
@@ -37,12 +50,6 @@ type Props = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function plusDaysIso(iso: string, days: number) {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
-}
 
 function startOfDay(d: Date) {
   const s = new Date(d);
@@ -106,8 +113,9 @@ export default function AdvanceList({
   // ── Card expansion ──
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // ── Snooze confirmation ──
-  const [snoozeConfirmId, setSnoozeConfirmId] = useState<string | null>(null);
+  // ── Per-card action menu (snooze presets / dismiss reasons) ──
+  const [actionMenu, setActionMenu] = useState<"none" | "snooze" | "dismiss">("none");
+  const [pickDate, setPickDate] = useState("");
 
   // ── Busy state ──
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -131,7 +139,8 @@ export default function AdvanceList({
       setFormOutcomeId("");
       setFormNotes("");
       setFormError(null);
-      setSnoozeConfirmId(null);
+      setActionMenu("none");
+      setPickDate("");
     }
   }
 
@@ -204,25 +213,65 @@ export default function AdvanceList({
     onActionCompleted();
   }
 
-  // ── Snooze ──
-  async function onSnooze(action: NextAction) {
+  // ── Snooze — legitimate rescheduling, not failure. Rolls forward from today,
+  //    bumps snoozed_count, records last_snoozed_at. Degrades to a plain due_at
+  //    update if the snooze columns aren't in the DB yet. ──
+  async function onSnooze(action: NextAction, dueIso: string) {
     setBusyId(`snooze-${action.id}`);
 
-    const { error: updateErr } = await supabase
-      .from("next_actions")
-      .update({ due_at: plusDaysIso(action.due_at, 1) })
-      .eq("id", action.id)
-      .eq("assigned_user_id", userId)
-      .eq("status", "open");
+    const where = (payload: Record<string, unknown>) =>
+      supabase
+        .from("next_actions")
+        .update(payload)
+        .eq("id", action.id)
+        .eq("assigned_user_id", userId)
+        .eq("status", "open");
+
+    let { error } = await where({
+      due_at: dueIso,
+      snoozed_count: (action.snoozed_count ?? 0) + 1,
+      last_snoozed_at: new Date().toISOString(),
+    });
+    if (error && isMissingColumnError(error)) {
+      ({ error } = await where({ due_at: dueIso }));
+    }
 
     setBusyId(null);
-
-    if (updateErr) {
-      setFormError(updateErr.message);
+    if (error) {
+      setFormError(error.message);
       return;
     }
 
-    setSnoozeConfirmId(null);
+    setActionMenu("none");
+    setExpandedId(null);
+    onActionCompleted();
+  }
+
+  // ── Dismiss with a reason — close without completing (better than snoozing
+  //    forever). Stores dismiss_reason when the column exists. ──
+  async function onDismiss(action: NextAction, reasonKey: string) {
+    setBusyId(`dismiss-${action.id}`);
+
+    const where = (payload: Record<string, unknown>) =>
+      supabase
+        .from("next_actions")
+        .update(payload)
+        .eq("id", action.id)
+        .eq("assigned_user_id", userId)
+        .eq("status", "open");
+
+    let { error } = await where({ status: "dismissed", dismiss_reason: reasonKey });
+    if (error && isMissingColumnError(error)) {
+      ({ error } = await where({ status: "dismissed" }));
+    }
+
+    setBusyId(null);
+    if (error) {
+      setFormError(error.message);
+      return;
+    }
+
+    setActionMenu("none");
     setExpandedId(null);
     onActionCompleted();
   }
@@ -244,11 +293,13 @@ export default function AdvanceList({
   return (
     <div className="space-y-3">
       {nextActions.map((action) => {
+        const odDays = daysOverdue(action.due_at);
+        const tier = overdueTier(action.due_at);
+        const tierStyle = tier !== "none" ? OVERDUE_TIER_STYLES[tier] : null;
+        const chronic = isChronicSnooze(action.snoozed_count);
         const due = new Date(action.due_at);
-        const isOverdue = due < today;
-        const isDueToday = due >= today && due < tomorrow;
+        const isDueToday = tier === "none" && due >= today && due < tomorrow;
         const isExpanded = expandedId === action.id;
-        const isSnoozeConfirm = snoozeConfirmId === action.id;
 
         const contact = action.contact_id ? contactsById.get(action.contact_id) : null;
         const account = action.account_id ? accountsById.get(action.account_id) : null;
@@ -270,9 +321,7 @@ export default function AdvanceList({
             key={action.id}
             className={[
               "rounded-2xl border shadow-sm transition-colors",
-              isOverdue
-                ? "border-amber-300 bg-amber-50"
-                : "border-slate-200 bg-white",
+              tierStyle ? tierStyle.card : "border-slate-200 bg-white",
             ].join(" ")}
           >
             {/* ── Card header (always visible, tap to expand) ── */}
@@ -286,14 +335,19 @@ export default function AdvanceList({
                   <span className="text-sm font-semibold text-slate-900">
                     {contact?.full_name || "Unknown contact"}
                   </span>
-                  {isOverdue && (
-                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                      Overdue
+                  {tierStyle && (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tierStyle.badge}`}>
+                      {odDays} day{odDays === 1 ? "" : "s"} overdue
                     </span>
                   )}
-                  {!isOverdue && isDueToday && (
+                  {isDueToday && (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
                       Today
+                    </span>
+                  )}
+                  {chronic && (
+                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                      Snoozed {action.snoozed_count} times
                     </span>
                   )}
                 </div>
@@ -403,47 +457,86 @@ export default function AdvanceList({
                 />
 
                 {/* Action buttons */}
-                {isSnoozeConfirm ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-700">Snooze 1 day?</span>
-                    <button
-                      type="button"
-                      disabled={busyId === `snooze-${action.id}`}
-                      onClick={() => void onSnooze(action)}
-                      className="rounded-xl bg-slate-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-                    >
-                      {busyId === `snooze-${action.id}` ? "Snoozing..." : "Yes, snooze"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSnoozeConfirmId(null)}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-                    >
-                      Never mind
-                    </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busyId === `complete-${action.id}`}
+                    onClick={() => void onComplete(action)}
+                    className={[
+                      "rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
+                      formTypeId && formNotes.trim()
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "bg-slate-100 text-slate-400",
+                    ].join(" ")}
+                  >
+                    {busyId === `complete-${action.id}` ? "Logging..." : "Log & Complete"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActionMenu(actionMenu === "snooze" ? "none" : "snooze")}
+                    className={chipBtn(actionMenu === "snooze")}
+                  >
+                    Snooze
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActionMenu(actionMenu === "dismiss" ? "none" : "dismiss")}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-50"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+
+                {/* Snooze presets */}
+                {actionMenu === "snooze" && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                    <span className="text-xs font-medium text-slate-500">Snooze until</span>
+                    {SNOOZE_PRESETS.filter((p) => p.days !== null).map((p) => (
+                      <button
+                        key={p.key}
+                        type="button"
+                        disabled={busyId === `snooze-${action.id}`}
+                        onClick={() => void onSnooze(action, snoozeDueDate(p.days as number))}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                    <input
+                      type="date"
+                      value={pickDate}
+                      min={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => setPickDate(e.target.value)}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-blue-400 focus:outline-none"
+                    />
+                    {pickDate && (
+                      <button
+                        type="button"
+                        disabled={busyId === `snooze-${action.id}`}
+                        onClick={() => void onSnooze(action, dateInputToDueIso(pickDate))}
+                        className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        Snooze
+                      </button>
+                    )}
                   </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={busyId === `complete-${action.id}`}
-                      onClick={() => void onComplete(action)}
-                      className={[
-                        "rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
-                        formTypeId && formNotes.trim()
-                          ? "bg-blue-600 text-white hover:bg-blue-700"
-                          : "bg-slate-100 text-slate-400",
-                      ].join(" ")}
-                    >
-                      {busyId === `complete-${action.id}` ? "Logging..." : "Log & Complete"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSnoozeConfirmId(action.id)}
-                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      Snooze 1 day
-                    </button>
+                )}
+
+                {/* Dismiss reasons */}
+                {actionMenu === "dismiss" && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                    <span className="text-xs font-medium text-slate-500">Close without completing —</span>
+                    {DISMISS_REASONS.map((r) => (
+                      <button
+                        key={r.key}
+                        type="button"
+                        disabled={busyId === `dismiss-${action.id}`}
+                        onClick={() => void onDismiss(action, r.key)}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        {r.label}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>

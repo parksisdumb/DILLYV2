@@ -269,25 +269,29 @@ export default function ManagerClient({ coldAccounts, repStats, stageSummaries, 
       {tab === "compliance" && (
         <div className="space-y-3">
           <p className="text-xs text-slate-500">
-            Follow-up completion rate — next actions due in the last 30 days.
+            Follow-up completion rate (30d) plus the overdue queue — overdue count,
+            average days overdue, and chronic snoozers (3+ snoozes: a dead lead or avoidance).
           </p>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            {repStats.every((r) => r.nextActionsTotal30d === 0) ? (
-              <p className="p-6 text-sm text-slate-500">No follow-up data in the last 30 days.</p>
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+            {repStats.every((r) => r.nextActionsTotal30d === 0 && r.overdueCount === 0) ? (
+              <p className="p-6 text-sm text-slate-500">No follow-up data yet.</p>
             ) : (
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th className="px-4 py-3 font-medium">Rep</th>
                     <th className="px-4 py-3 text-right font-medium">Completed</th>
                     <th className="px-4 py-3 text-right font-medium">Total (30d)</th>
                     <th className="px-4 py-3 text-right font-medium">Rate</th>
+                    <th className="px-4 py-3 text-right font-medium">Overdue</th>
+                    <th className="px-4 py-3 text-right font-medium">Avg days OD</th>
+                    <th className="px-4 py-3 text-right font-medium">Chronic</th>
                   </tr>
                 </thead>
                 <tbody>
                   {repStats
                     .slice()
-                    .sort((a, b) => b.complianceRate - a.complianceRate)
+                    .sort((a, b) => b.overdueCount - a.overdueCount || b.complianceRate - a.complianceRate)
                     .map((rep) => (
                       <tr key={rep.userId} className="border-b border-slate-100 last:border-0">
                         <td className="px-4 py-3 font-medium text-slate-900">{rep.name}</td>
@@ -302,6 +306,23 @@ export default function ManagerClient({ coldAccounts, repStats, stageSummaries, 
                             <ComplianceBadge rate={rep.complianceRate} />
                           ) : (
                             <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          {rep.overdueCount > 0 ? (
+                            <span className="font-semibold text-red-600">{rep.overdueCount}</span>
+                          ) : (
+                            <span className="text-slate-400">0</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-slate-500">
+                          {rep.overdueCount > 0 ? `${rep.avgDaysOverdue}d` : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          {rep.chronicSnoozeCount > 0 ? (
+                            <span className="font-semibold text-purple-600">{rep.chronicSnoozeCount}</span>
+                          ) : (
+                            <span className="text-slate-400">0</span>
                           )}
                         </td>
                       </tr>

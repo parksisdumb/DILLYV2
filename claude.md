@@ -237,7 +237,7 @@ Local dev credentials after `npx supabase db reset && npm run seed:dev`:
 - Local Supabase Studio: http://127.0.0.1:54323
 - Local app: http://localhost:3000
 
-Current migrations (78 total on disk, as of 2026-07-24; applied in order):
+Current migrations (79 total on disk, as of 2026-07-25; applied in order):
 1. `20260220204621_init_schema_v1` — core schema
 2. `20260221000022_rls_policies_v1` — initial RLS
 3. `20260221060949_rpc_core_v1` — RPCs + seed data (includes legacy `rpc_create_touchpoint_and_side_effects`)
@@ -315,6 +315,7 @@ Current migrations (78 total on disk, as of 2026-07-24; applied in order):
 75. `20260720110000_account_onboarding_status_v1` — adds `onboarding_status text NOT NULL default 'initial_touch'` (+ CHECK) to accounts + `rpc_set_account_onboarding_status` (SECURITY DEFINER, any org member).
 76. `20260720120000_email_tracking_phase1_v1` — `email_connections` + `synced_emails` tables (RLS: owner-read, service-role write) + `rpc_log_synced_email_touchpoint` (headless, visibility-only Gmail sync).
 77. `20260724100000_next_actions_snooze_dismiss_v1` — adds `snoozed_count int NOT NULL default 0`, `last_snoozed_at timestamptz`, `dismiss_reason text` to next_actions + a partial chronic-snooze index (`snoozed_count >= 3`). Powers Advance snooze (roll-forward + count)/dismiss-with-reason + manager overdue/chronic stats. Status `'dismissed'` allowed (status has no CHECK). App code degrades gracefully if unapplied. **Must be applied to prod manually.**
-78. `20260724110000_today_dashboard_org_timezone_v1` — re-creates `rpc_today_dashboard` identically except its six day-bucketing comparisons use `at time zone 'America/Chicago'` instead of `'utc'`, so the rep Today scoreboard's "today" counts match the local business day (matches `APP_TIME_ZONE` in `src/lib/time.ts`). Client-side day boundaries (Activity view, manager today/week/month, leaderboard) are fixed in TS in the same change. **Must be applied to prod manually** (until then, only the rep scoreboard's raw counts stay UTC-bucketed; the feeds/manager surfaces are already fixed by the deployed code).
+78. `20260724110000_today_dashboard_org_timezone_v1` — re-creates `rpc_today_dashboard` identically except its six day-bucketing comparisons use `at time zone 'America/Chicago'` instead of `'utc'`, so the rep Today scoreboard's "today" counts match the local business day (matches `APP_TIME_ZONE` in `src/lib/time.ts`). Client-side day boundaries (Activity view, manager today/week/month, leaderboard) are fixed in TS in the same change. Applied + confirmed in prod. Client-side Focus queue boundary fixed in TS by the #79 change.
+79. `20260725100000_logging_rpcs_org_timezone_v1` — re-creates `rpc_log_outreach_touchpoint` + `rpc_log_touchpoint` VERBATIM from #70's definitions with the only change being `at time zone 'utc'` → `'America/Chicago'` on the day-bucketing expressions (`v_event_date` streak/daily bucket in both; the `outreach_count_today` comparison in outreach). Fixes evening-Central touchpoints crediting the streak/`score_events` daily bucket to the NEXT day (could break a daily streak). Pure create-or-replace on two existing functions — no new objects, safe against the migration-history drift. **Must be applied to prod manually** (SQL editor).
 
 > Migration list maintenance: when you add a migration, bump the "N total on disk" count above and append the new entry here.

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
+import { startOfTodayUtc, startOfTomorrowUtc } from "@/lib/time";
 import FocusClient from "./focus-client";
 
 // Discriminated union — every queue item has the same display shape, but
@@ -47,13 +48,11 @@ export type FocusQueueItem = FocusFollowUpItem | FocusProspectItem;
 export default async function FocusPage() {
   const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  // Date boundary for "due today or earlier" filter on next_actions
-  const startOfTomorrow = new Date();
-  startOfTomorrow.setHours(0, 0, 0, 0);
-  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
-
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  // Day boundaries in the app timezone (America/Chicago), converted to UTC
+  // instants — so "due today or earlier" and overdue-vs-today match the rep's
+  // local day, consistent with every other surface.
+  const startOfTomorrow = new Date(startOfTomorrowUtc());
+  const startOfToday = new Date(startOfTodayUtc());
 
   const [naRes, ttypeRes, outcomesRes, dashRes, streakRes, sugRes] = await Promise.all([
     supabase

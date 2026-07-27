@@ -854,7 +854,14 @@ export default function AccountDetailClient({
         ) : (
         <div className="p-4 space-y-2">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <h1 className="text-xl font-semibold text-slate-900">{localAccount.name ?? "Unnamed Account"}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold text-slate-900">{localAccount.name ?? "Unnamed Account"}</h1>
+              {contacts.length === 0 && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                  No contact yet
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {localAccount.account_type && (
                 <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${TYPE_COLORS[localAccount.account_type] ?? "bg-slate-100 text-slate-600"}`}>

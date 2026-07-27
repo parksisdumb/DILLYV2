@@ -125,6 +125,7 @@ export default function EntityPicker({
   initialSelected,
   disabled,
   className,
+  onCreateNew,
 }: {
   kind: EntityKind;
   value: string;
@@ -140,6 +141,12 @@ export default function EntityPicker({
   initialSelected?: { id: string; primary: string; secondary?: string | null } | null;
   disabled?: boolean;
   className?: string;
+  /**
+   * Opt-in match-OR-create. When provided, a "＋ Add '<query>'" row appears in
+   * the dropdown; tapping it emits the typed name (the parent creates it on save)
+   * and the field shows a "new" chip. Omit for pick-only behavior (default).
+   */
+  onCreateNew?: (name: string) => void;
 }) {
   const supabase = createBrowserSupabase();
   const cfg = CONFIG[kind];
@@ -150,6 +157,8 @@ export default function EntityPicker({
       : null,
   );
   const [open, setOpen] = useState(false);
+  // Name of a to-be-created entity (match-or-create): mutually exclusive with `selected`.
+  const [pendingNew, setPendingNew] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<PickerRow[]>([]);
   const [searching, setSearching] = useState(false);
@@ -221,28 +230,48 @@ export default function EntityPicker({
 
   function pick(row: PickerRow) {
     setSelected(row);
+    setPendingNew(null);
     setOpen(false);
     setSearch("");
     setResults([]);
     onChange(row);
   }
 
+  function createNew() {
+    const name = search.trim();
+    if (!name || !onCreateNew) return;
+    setSelected(null);
+    setPendingNew(name);
+    setOpen(false);
+    setSearch("");
+    setResults([]);
+    onCreateNew(name);
+  }
+
   function clear() {
     setSelected(null);
+    setPendingNew(null);
     onChange(null);
   }
 
   const noun = kind === "property" ? "property" : kind === "contact" ? "contact" : "account";
 
-  // Collapsed state: a selection exists and the picker is closed.
-  if (selected && value && !open) {
+  // Collapsed state: an existing selection, or a pending "new" entity, + closed.
+  const isNew = Boolean(pendingNew) && !(selected && value);
+  if (((selected && value) || pendingNew) && !open) {
+    const primary = isNew ? (pendingNew as string) : (selected as PickerRow).primary;
+    const secondary = isNew ? "New — will be created on save" : (selected as PickerRow).secondary;
     return (
       <div ref={containerRef} className={className}>
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+        <div
+          className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
+            isNew ? "border-dashed border-blue-400 bg-blue-50" : "border-slate-300 bg-white"
+          }`}
+        >
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-slate-900">{selected.primary}</p>
-            {selected.secondary && (
-              <p className="truncate text-xs text-slate-500">{selected.secondary}</p>
+            <p className="truncate text-sm font-medium text-slate-900">{primary}</p>
+            {secondary && (
+              <p className="truncate text-xs text-slate-500">{secondary}</p>
             )}
           </div>
           {!disabled && (
@@ -284,10 +313,10 @@ export default function EntityPicker({
         onChange={(e) => setSearch(e.target.value)}
         onFocus={() => setOpen(true)}
         placeholder={placeholder ?? `Search ${noun} by name${kind === "property" ? " or address" : ""}…`}
-        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none disabled:bg-slate-50"
+        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none disabled:bg-slate-50"
       />
       {open && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg">
           {error && <p className="px-3 py-2 text-xs text-red-600">{error}</p>}
           <div className="max-h-72 overflow-y-auto">
             {searching && results.length === 0 ? (
@@ -314,6 +343,16 @@ export default function EntityPicker({
                   </div>
                 </button>
               ))
+            )}
+            {onCreateNew && search.trim() && (
+              <button
+                type="button"
+                onClick={createNew}
+                className="flex w-full items-center gap-2 border-t border-slate-100 px-3 py-2.5 text-left text-sm font-semibold text-blue-700 hover:bg-blue-50"
+              >
+                <span className="text-base leading-none">＋</span>
+                Add “{search.trim()}”
+              </button>
             )}
           </div>
         </div>

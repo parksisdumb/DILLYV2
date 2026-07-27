@@ -2,6 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import Scoreboard from "@/app/app/today/scoreboard";
 import GrowForm from "@/app/app/today/grow-form";
@@ -13,6 +14,7 @@ import EmailSignals from "@/app/app/today/email-signals";
 import type { EmailSignalLogRequest } from "@/app/app/today/email-signals";
 import RelationshipsGoingCold from "@/app/app/today/relationships-going-cold";
 import type { ColdAccount } from "@/lib/cold-accounts";
+import QuickLog from "@/app/app/today/quick-log";
 import TeamLeaderboard from "@/app/app/today/team-leaderboard";
 import type { LeaderboardEntry } from "@/app/app/today/team-leaderboard";
 import { selectWithOptionalCols } from "@/lib/overdue";
@@ -20,7 +22,7 @@ import { startOfTodayUtc, startOfWeekUtc } from "@/lib/time";
 
 type Tab = "grow" | "advance";
 
-type Account = { id: string; name: string | null };
+type Account = { id: string; name: string | null; created_by?: string | null };
 type Contact = { id: string; full_name: string | null; account_id: string };
 type Property = { id: string; name: string | null; address_line1: string; city: string | null; state: string | null };
 type TouchpointType = {
@@ -118,6 +120,7 @@ export default function TodayClient({
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
   const [tab, setTab] = useState<Tab>("grow");
+  const [quickLogOpen, setQuickLogOpen] = useState(false);
   // Pre-fill for the Grow form when a rep logs from another surface (email signals).
   // `growPrefillKey` remounts GrowForm so the prefill lands as initial state.
   const [growPrefill, setGrowPrefill] = useState<GrowPrefill | null>(null);
@@ -160,6 +163,12 @@ export default function TodayClient({
   );
 
   const accountsById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
+
+  // Unworked-target nudge: this rep's accounts that still have no contact.
+  const needsFirstContact = useMemo(() => {
+    const withContact = new Set(contacts.map((c) => c.account_id));
+    return accounts.filter((a) => a.created_by === userId && !withContact.has(a.id)).length;
+  }, [accounts, contacts, userId]);
   const contactsById = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
 
   const overdueCount = useMemo(() => {
@@ -236,7 +245,7 @@ export default function TodayClient({
       setOrgId(me.org_id);
 
       const [a, c, p, to, na, dash] = await Promise.all([
-        supabase.from("accounts").select("id,name").is("deleted_at", null),
+        supabase.from("accounts").select("id,name,created_by").is("deleted_at", null),
         supabase
           .from("contacts")
           .select("id,full_name,account_id")
@@ -515,6 +524,46 @@ export default function TodayClient({
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Today</h1>
+
+      {/* Quick Log — pinned above the KPI cards, the fast path for capturing an interaction */}
+      <button
+        type="button"
+        onClick={() => setQuickLogOpen(true)}
+        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-4 text-base font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
+      >
+        <span className="text-xl leading-none">＋</span>
+        Log
+      </button>
+
+      {/* Unworked-target nudge */}
+      {needsFirstContact > 0 && (
+        <Link
+          href="/app/accounts"
+          className="flex items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100"
+        >
+          <span>
+            <span className="font-semibold">{needsFirstContact}</span>{" "}
+            {needsFirstContact === 1 ? "account needs" : "accounts need"} a first contact
+          </span>
+          <span className="shrink-0 text-xs font-medium text-amber-700">Review →</span>
+        </Link>
+      )}
+
+      {quickLogOpen && orgId && (
+        <QuickLog
+          userId={userId}
+          orgId={orgId}
+          outreachTypes={outreachTypes}
+          outcomes={touchpointOutcomes}
+          accountsById={accountsById}
+          onClose={() => setQuickLogOpen(false)}
+          onLogged={(msg) => {
+            setQuickLogOpen(false);
+            showToast("success", msg);
+            void load();
+          }}
+        />
+      )}
 
       <Scoreboard dashboard={dashboard} />
 

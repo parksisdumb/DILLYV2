@@ -487,6 +487,11 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                             {PRIORITY_LABELS_SHORT[row.icp.priority]}
                           </span>
                           {row.name ?? "—"}
+                          {row.contact_count === 0 && (
+                            <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                              No contact yet
+                            </span>
+                          )}
                           <span
                             className={`text-xs font-semibold tabular-nums ${scoreTone(row.completeness.score)}`}
                             title={row.completeness.missing.length ? `Missing: ${row.completeness.missing.map((m) => m.label).join(", ")}` : "Complete"}
@@ -570,6 +575,11 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                         {PRIORITY_LABELS_SHORT[row.icp.priority]}
                       </span>
                       <span className="text-sm font-semibold text-slate-900">{row.name ?? "—"}</span>
+                      {row.contact_count === 0 && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                          No contact yet
+                        </span>
+                      )}
                       <TypeBadge type={row.account_type} />
                       <OnboardingBadge status={row.onboarding_status} />
                       <span

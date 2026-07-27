@@ -16,7 +16,7 @@ import {
 } from "@/lib/constants/cadence";
 
 const FIELD =
-  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none";
+  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none sm:text-sm";
 
 function localDateStr(offsetDays: number): string {
   const d = new Date();

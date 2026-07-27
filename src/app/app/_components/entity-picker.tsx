@@ -126,6 +126,7 @@ export default function EntityPicker({
   disabled,
   className,
   onCreateNew,
+  strongBorder,
 }: {
   kind: EntityKind;
   value: string;
@@ -147,6 +148,8 @@ export default function EntityPicker({
    * and the field shows a "new" chip. Omit for pick-only behavior (default).
    */
   onCreateNew?: (name: string) => void;
+  /** Stronger border (slate-400 vs slate-300) for primary fields on bright screens. */
+  strongBorder?: boolean;
 }) {
   const supabase = createBrowserSupabase();
   const cfg = CONFIG[kind];
@@ -313,7 +316,7 @@ export default function EntityPicker({
         onChange={(e) => setSearch(e.target.value)}
         onFocus={() => setOpen(true)}
         placeholder={placeholder ?? `Search ${noun} by name${kind === "property" ? " or address" : ""}…`}
-        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none disabled:bg-slate-50"
+        className={`w-full rounded-lg border ${strongBorder ? "border-slate-400" : "border-slate-300"} bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none disabled:bg-slate-50 sm:text-sm`}
       />
       {open && (
         <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-300 bg-white shadow-lg">

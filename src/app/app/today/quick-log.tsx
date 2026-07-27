@@ -211,7 +211,7 @@ export default function QuickLog({
     }
   }
 
-  const field = "w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none";
+  const field = "w-full rounded-xl border border-slate-400 bg-white px-3 py-3 text-base text-slate-900 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none";
   const chip = (active: boolean) =>
     [
       "rounded-xl border px-3 py-3 text-base font-medium transition-colors",
@@ -251,6 +251,7 @@ export default function QuickLog({
             <label className="mb-1.5 block text-sm font-semibold text-slate-700">Person</label>
             <EntityPicker
               kind="contact"
+              strongBorder
               value={person.row?.id ?? ""}
               autoFocus
               initialSelected={person.row ? { id: person.row.id, primary: person.row.primary, secondary: person.row.secondary } : null}
@@ -278,6 +279,7 @@ export default function QuickLog({
               <label className="mb-1.5 block text-sm font-semibold text-slate-700">Account</label>
               <EntityPicker
                 kind="account"
+                strongBorder
                 value={account.row?.id ?? ""}
                 initialSelected={account.row ? { id: account.row.id, primary: account.row.primary, secondary: account.row.secondary } : null}
                 onChange={(row) => {

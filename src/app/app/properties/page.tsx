@@ -114,6 +114,7 @@ export default async function PropertiesPage() {
     updated_at: p.updated_at as string,
     created_by: p.created_by as string | null,
     completeness: propertyCompleteness({
+      address_line1: p.address_line1 as string,
       roof_type: p.roof_type as string | null,
       sq_footage: p.sq_footage as number | null,
       roof_age_years: p.roof_age_years as number | null,

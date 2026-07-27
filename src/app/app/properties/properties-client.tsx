@@ -382,6 +382,7 @@ export default function PropertiesClient({
         updated_at: new Date().toISOString(),
         created_by: userId,
         completeness: propertyCompleteness({
+          address_line1: addr1.trim() || null,
           roof_type: roofType || null,
           sq_footage: sqFootage ? parseInt(sqFootage, 10) : null,
           roof_age_years: roofAgeYears ? parseInt(roofAgeYears, 10) : null,

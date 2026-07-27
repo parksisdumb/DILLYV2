@@ -35,6 +35,10 @@ const TYPE_META: { type: RecordType; label: string; plural: string }[] = [
 
 const FETCH_CAP = 2000;
 const TOUCH_CAP = 5000;
+// The worst-first list is capped so the page stays scannable, but the heading
+// always shows the TRUE incomplete count so a manager sees the real scale
+// ("47 need data") even when only LIST_CAP rows are rendered.
+const LIST_CAP = 25;
 
 function pct(score: number): string {
   return `${score}%`;
@@ -169,6 +173,7 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
           href: `/app/properties/${p.id}`,
           createdBy: p.created_by,
           result: propertyCompleteness({
+            address_line1: p.address_line1,
             roof_type: p.roof_type,
             sq_footage: p.sq_footage,
             roof_age_years: p.roof_age_years,
@@ -226,13 +231,17 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
     return m;
   }, [scored]);
 
-  // Worst-first list for the active type (incomplete only).
-  const worstForActive = useMemo(() => {
-    return (byType.get(activeType) ?? [])
-      .filter((s) => s.result.score < 100)
-      .sort((a, b) => a.result.score - b.result.score)
-      .slice(0, 15);
-  }, [byType, activeType]);
+  // Every incomplete record of the active type (drives the true count in the heading).
+  const incompleteForActive = useMemo(
+    () => (byType.get(activeType) ?? []).filter((s) => s.result.score < 100),
+    [byType, activeType],
+  );
+
+  // Worst-first list, capped for scannability (count above shows the real total).
+  const worstForActive = useMemo(
+    () => [...incompleteForActive].sort((a, b) => a.result.score - b.result.score).slice(0, LIST_CAP),
+    [incompleteForActive],
+  );
 
   // Possible duplicate properties — normalized address_line1 + city collisions.
   const dupGroups = useMemo(() => {
@@ -303,7 +312,16 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
       {/* Least-complete records for the selected type */}
       <div>
         <h3 className="mb-2 text-sm font-semibold text-slate-800">
-          Least-complete {TYPE_META.find((t) => t.type === activeType)?.plural} — fix worst first
+          Least-complete {TYPE_META.find((t) => t.type === activeType)?.plural}
+          {incompleteForActive.length > 0 && (
+            <span className="font-normal text-slate-500">
+              {" — "}
+              {incompleteForActive.length} need data
+              {incompleteForActive.length > worstForActive.length
+                ? ` (showing worst ${worstForActive.length})`
+                : ""}
+            </span>
+          )}
         </h3>
         {worstForActive.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">

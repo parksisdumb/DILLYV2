@@ -89,6 +89,7 @@ export const contactCompleteness = (r: ContactCompletenessInput): CompletenessRe
 // ── Property ────────────────────────────────────────────────────────────────
 
 export type PropertyCompletenessInput = {
+  address_line1: string | null;
   roof_type: string | null;
   sq_footage: number | null;
   roof_age_years: number | null;
@@ -97,6 +98,10 @@ export type PropertyCompletenessInput = {
 };
 
 export const PROPERTY_FIELDS: FieldSpec<PropertyCompletenessInput>[] = [
+  // Presence only: a blank street address means the property can't be found,
+  // routed to, or worked. We deliberately do NOT try to detect placeholder
+  // strings (test/tbd/etc.) — heuristics guess, presence is objective.
+  { key: "address_line1", label: "street address", present: (r) => str(r.address_line1) },
   { key: "roof_type", label: "roof type", present: (r) => str(r.roof_type) },
   { key: "sq_footage", label: "square footage", present: (r) => posNum(r.sq_footage) },
   { key: "roof_age_years", label: "roof age", present: (r) => nonNegNum(r.roof_age_years) },

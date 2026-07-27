@@ -125,6 +125,7 @@ export default async function PropertyDetailPage({
   }));
 
   const completeness = propertyCompleteness({
+    address_line1: prop.address_line1 as string | null,
     roof_type: prop.roof_type as string | null,
     sq_footage: prop.sq_footage as number | null,
     roof_age_years: prop.roof_age_years as number | null,

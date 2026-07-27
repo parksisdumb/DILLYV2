@@ -7,6 +7,38 @@ import { Suspense, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { useRouter, useSearchParams } from "next/navigation";
 
+// Map Supabase auth errors to rep-friendly messages. Bad creds get a clear
+// "Incorrect email or password"; anything unrecognized falls back to a generic
+// message so a failure is never silent.
+function friendlyAuthError(
+  err: { message?: string; code?: string; status?: number } | null | undefined,
+  mode: "login" | "signup",
+): string {
+  const msg = (err?.message ?? "").toLowerCase();
+  const code = err?.code ?? "";
+
+  if (
+    code === "invalid_credentials" ||
+    msg.includes("invalid login credentials") ||
+    msg.includes("invalid credentials")
+  ) {
+    return "Incorrect email or password.";
+  }
+  if (code === "email_not_confirmed" || msg.includes("email not confirmed")) {
+    return "Please confirm your email address, then log in.";
+  }
+  if (err?.status === 429 || code === "over_request_rate_limit" || msg.includes("rate limit")) {
+    return "Too many attempts — please wait a moment and try again.";
+  }
+  if (
+    mode === "signup" &&
+    (code === "user_already_exists" || msg.includes("already registered") || msg.includes("already exists"))
+  ) {
+    return "An account with this email already exists — try logging in instead.";
+  }
+  return "Something went wrong — please try again.";
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -32,7 +64,7 @@ function LoginForm() {
           : await supabase.auth.signUp({ email, password });
 
       if (authError) {
-        setError(authError.message);
+        setError(friendlyAuthError(authError, mode));
         return;
       }
 
@@ -42,6 +74,11 @@ function LoginForm() {
 
       router.push(nextPath);
       router.refresh();
+    } catch {
+      // Network failure, misconfigured client, or any unexpected exception —
+      // signInWithPassword throws rather than returning {error} here, so without
+      // this catch the failure was silent.
+      setError("Something went wrong — please try again.");
     } finally {
       setLoading(false);
     }
@@ -81,23 +118,43 @@ function LoginForm() {
       </div>
 
       {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p
+          role="alert"
+          aria-live="assertive"
+          className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700"
+        >
           {error}
         </p>
       )}
 
       <button
         type="submit"
-        className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={loading}
       >
-        {loading ? "..." : mode === "login" ? "Log in" : "Sign up"}
+        {loading && (
+          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+        )}
+        {loading
+          ? mode === "login"
+            ? "Logging in…"
+            : "Signing up…"
+          : mode === "login"
+            ? "Log in"
+            : "Sign up"}
       </button>
 
       <button
         type="button"
-        className="w-full text-center text-sm text-slate-500 hover:text-slate-700"
-        onClick={() => setMode(mode === "login" ? "signup" : "login")}
+        disabled={loading}
+        className="w-full text-center text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50"
+        onClick={() => {
+          setError(null);
+          setMode(mode === "login" ? "signup" : "login");
+        }}
       >
         {mode === "login"
           ? "Need an account? Sign up"

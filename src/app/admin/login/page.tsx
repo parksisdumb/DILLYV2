@@ -3,12 +3,12 @@
 import { useState } from "react";
 
 export default function AdminLoginPage() {
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setError(false);
+    setError(null);
     setLoading(true);
 
     const form = new FormData(e.currentTarget);
@@ -22,7 +22,8 @@ export default function AdminLoginPage() {
       });
 
       if (!res.ok) {
-        setError(true);
+        // 401 = wrong secret; anything else is an unexpected server error.
+        setError(res.status === 401 ? "Incorrect secret key." : "Something went wrong — please try again.");
         setLoading(false);
         return;
       }
@@ -36,7 +37,8 @@ export default function AdminLoginPage() {
       // Full page navigation to /admin (not client-side routing)
       window.location.href = "/admin";
     } catch {
-      setError(true);
+      // Network failure or unexpected exception — never fail silently.
+      setError("Something went wrong — please try again.");
       setLoading(false);
     }
   }
@@ -68,17 +70,27 @@ export default function AdminLoginPage() {
           </div>
 
           {error && (
-            <p className="rounded-xl border border-red-800 bg-red-900/50 px-3 py-2 text-sm text-red-300">
-              Invalid secret key
+            <p
+              role="alert"
+              aria-live="assertive"
+              className="rounded-xl border border-red-800 bg-red-900/50 px-3 py-2 text-sm font-medium text-red-300"
+            >
+              {error}
             </p>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {loading && (
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            )}
+            {loading ? "Signing in…" : "Sign in"}
           </button>
         </form>
       </div>

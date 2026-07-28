@@ -189,10 +189,20 @@ export default function QuickLog({
           touchpointId: tpId,
           fallbackNote: contactName ? `Follow up — ${contactName}` : "Follow up",
         });
+        // followUpRow is null only when the rep genuinely wants no follow-up
+        // (toggle off, or a terminal outcome). When they DID want one, never
+        // report "no follow-up" on a save failure — that hid real data loss.
         let followMsg = "no follow-up";
         if (followUpRow) {
           const { error: naErr } = await supabase.from("next_actions").insert(followUpRow);
-          if (!naErr) followMsg = `next touch ${localDateLabel(fu.date)}`;
+          if (naErr) {
+            // The touchpoint is already saved (immutable); surface the follow-up
+            // failure instead of swallowing it so the rep can re-add it.
+            console.error("Quick Log: next_actions insert failed:", naErr.message);
+            followMsg = "follow-up didn't save — re-add from the contact";
+          } else {
+            followMsg = `next touch ${localDateLabel(fu.date)}`;
+          }
         }
         onLogged(`Logged · ${followMsg}`);
       } else {
@@ -226,12 +236,15 @@ export default function QuickLog({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quick-log-title"
         className="flex max-h-[94vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-md sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <h2 className="text-lg font-semibold text-slate-900">Quick Log</h2>
+          <h2 id="quick-log-title" className="text-lg font-semibold text-slate-900">Quick Log</h2>
           <button
             type="button"
             onClick={onClose}

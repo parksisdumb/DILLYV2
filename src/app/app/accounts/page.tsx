@@ -25,7 +25,7 @@ type AccountRow = {
 export default async function AccountsPage() {
   const { supabase, userId, orgId } = await requireServerOrgContext();
 
-  const [acctRes, contactRes, tpRes, oppRes, meRes, propCountRes, orgUsersRes] = await Promise.all([
+  const [acctRes, contactRes, tpRes, oppRes, meRes, propCountRes, orgUsersRes, assignRes] = await Promise.all([
     supabase
       .from("accounts")
       .select("id,name,account_type,status,onboarding_status,notes,website,phone,updated_at,created_by")
@@ -41,6 +41,8 @@ export default async function AccountsPage() {
     supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
     supabase.from("properties").select("primary_account_id").is("deleted_at", null).not("primary_account_id", "is", null),
     supabase.from("org_users").select("user_id,full_name,email").order("full_name"),
+    // Tolerant of the table not existing yet (deploy-before-migration).
+    supabase.from("account_assignments").select("account_id,user_id"),
   ]);
 
   const firstError = [acctRes.error, contactRes.error, tpRes.error, oppRes.error, propCountRes.error].find(Boolean);
@@ -114,10 +116,16 @@ export default async function AccountsPage() {
     name: (u.full_name as string | null)?.trim() || (u.email as string | null)?.split("@")[0] || (u.user_id as string).slice(0, 8),
   }));
 
+  const assignments = (assignRes.data ?? []).map((a) => ({
+    account_id: a.account_id as string,
+    user_id: a.user_id as string,
+  }));
+
   return (
     <AccountsClient
       accounts={rows}
       reps={reps}
+      assignments={assignments}
       orgId={orgId}
       userId={userId}
       userRole={userRole}

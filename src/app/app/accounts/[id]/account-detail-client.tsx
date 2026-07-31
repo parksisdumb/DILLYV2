@@ -6,6 +6,7 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
 import { PRIORITY_COLORS, type IcpScoreResult } from "@/lib/scoring/icp-score";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
+import AccountAssignments from "@/app/app/accounts/[id]/account-assignments";
 import EntityPicker, { type PickerRow } from "@/app/app/_components/entity-picker";
 import { useCadenceFollowUp, CadenceFollowUpFields } from "@/app/app/_components/cadence-follow-up";
 import {
@@ -782,6 +783,16 @@ export default function AccountDetailClient({
       {/* Completeness */}
       {!editing && (
         <CompletenessChip score={completeness.score} missing={completeness.missing} onFix={() => setEditing(true)} />
+      )}
+
+      {/* Assigned reps — operational dispatch label (managers/admins edit, reps read-only) */}
+      {!editing && (
+        <AccountAssignments
+          accountId={account.id}
+          orgId={orgId}
+          currentUserId={userId}
+          canManage={userRole === "manager" || userRole === "admin"}
+        />
       )}
 
       {/* ── Header card ── */}

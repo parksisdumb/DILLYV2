@@ -214,12 +214,17 @@ function GoingCold({
 }) {
   if (accounts.length === 0) return null;
 
+  // Group by the ASSIGNED reps (falling back to the creator via assignedUserIds
+  // when an account has no assignment). An account assigned to several reps shows
+  // under each of them — every owner sees their own cold relationships.
   const byRep = new Map<string, ColdAccount[]>();
   for (const a of accounts) {
-    const key = a.ownerUserId ?? "unassigned";
-    const list = byRep.get(key) ?? [];
-    list.push(a);
-    byRep.set(key, list);
+    const keys = a.assignedUserIds.length > 0 ? a.assignedUserIds : ["unassigned"];
+    for (const key of keys) {
+      const list = byRep.get(key) ?? [];
+      list.push(a);
+      byRep.set(key, list);
+    }
   }
 
   // Urgency uses the recency-free tier (thresholdPriority) — the one that actually

@@ -132,6 +132,7 @@ export default function TodayClient({
   const [orgId, setOrgId] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [assignRows, setAssignRows] = useState<{ account_id: string; user_id: string }[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [touchpointTypes, setTouchpointTypes] = useState<TouchpointType[]>([]);
   const [touchpointOutcomes, setTouchpointOutcomes] = useState<Outcome[]>([]);
@@ -164,11 +165,19 @@ export default function TodayClient({
 
   const accountsById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
 
-  // Unworked-target nudge: this rep's accounts that still have no contact.
+  // Unworked-target nudge: accounts assigned to this rep that still have no
+  // contact — falling back to accounts this rep created when they carry no
+  // assignment yet (so nothing this rep owns silently drops off the nudge).
   const needsFirstContact = useMemo(() => {
     const withContact = new Set(contacts.map((c) => c.account_id));
-    return accounts.filter((a) => a.created_by === userId && !withContact.has(a.id)).length;
-  }, [accounts, contacts, userId]);
+    const assignedToMe = new Set(assignRows.filter((r) => r.user_id === userId).map((r) => r.account_id));
+    const anyAssignee = new Set(assignRows.map((r) => r.account_id));
+    return accounts.filter(
+      (a) =>
+        !withContact.has(a.id) &&
+        (assignedToMe.has(a.id) || (!anyAssignee.has(a.id) && a.created_by === userId)),
+    ).length;
+  }, [accounts, contacts, assignRows, userId]);
   const contactsById = useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
 
   const overdueCount = useMemo(() => {
@@ -244,7 +253,7 @@ export default function TodayClient({
 
       setOrgId(me.org_id);
 
-      const [a, c, p, to, na, dash] = await Promise.all([
+      const [a, c, p, to, na, dash, aa] = await Promise.all([
         supabase.from("accounts").select("id,name,created_by").is("deleted_at", null),
         supabase
           .from("contacts")
@@ -270,6 +279,8 @@ export default function TodayClient({
           NA_SNOOZE_COLS,
         ),
         supabase.rpc("rpc_today_dashboard"),
+        // Tolerant of the table not existing yet — nudge falls back to created_by.
+        supabase.from("account_assignments").select("account_id,user_id"),
       ]);
 
       const firstError = [a.error, c.error, p.error, to.error, na.error, dash.error].find(Boolean);
@@ -317,6 +328,7 @@ export default function TodayClient({
 
       setAccounts((a.data ?? []) as Account[]);
       setContacts((c.data ?? []) as Contact[]);
+      setAssignRows((aa.data ?? []) as { account_id: string; user_id: string }[]);
       setProperties((p.data ?? []) as Property[]);
       setTouchpointTypes(resolvedTouchpointTypes);
       setTouchpointOutcomes(

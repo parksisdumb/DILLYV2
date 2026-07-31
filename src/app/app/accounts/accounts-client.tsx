@@ -38,6 +38,7 @@ type AccountRow = {
 type Props = {
   accounts: AccountRow[];
   reps: RepOption[];
+  assignments: { account_id: string; user_id: string }[];
   orgId: string;
   userId: string;
   userRole: string;
@@ -107,18 +108,45 @@ function OnboardingBadge({ status }: { status: string | null }) {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export default function AccountsClient({ accounts: initialAccounts, reps, orgId, userId, userRole }: Props) {
+export default function AccountsClient({ accounts: initialAccounts, reps, assignments, orgId, userId, userRole }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
+  const canManage = userRole === "manager" || userRole === "admin";
 
   // ── List state ──
   const [accounts, setAccounts] = useState<AccountRow[]>(initialAccounts);
+  const [assignRows, setAssignRows] = useState<{ account_id: string; user_id: string }[]>(assignments);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [createdByFilter, setCreatedByFilter] = useState("");
   const [completenessFilter, setCompletenessFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [onboardingFilter, setOnboardingFilter] = useState("");
+  const [myAssigned, setMyAssigned] = useState(false);
   const [sort, setSort] = useState<Sort>("priority");
+
+  // ── Bulk assignment (managers) ──
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkRep, setBulkRep] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Assigned reps per account, and rep name/initials lookups.
+  const assigneesByAccount = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const r of assignRows) {
+      const list = m.get(r.account_id) ?? [];
+      list.push(r.user_id);
+      m.set(r.account_id, list);
+    }
+    return m;
+  }, [assignRows]);
+  const repNameById = useMemo(() => new Map(reps.map((r) => [r.userId, r.name])), [reps]);
+  const initialsOf = (name: string) =>
+    name.trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+  // Effective owners: assigned reps, else the creator (fallback while unassigned).
+  const effectiveOwners = (row: AccountRow): string[] => {
+    const a = assigneesByAccount.get(row.id) ?? [];
+    return a.length > 0 ? a : row.created_by ? [row.created_by] : [];
+  };
 
   // ── Create form state ──
   const [showCreate, setShowCreate] = useState(false);
@@ -150,6 +178,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
     if (q) rows = rows.filter((a) => (a.name ?? "").toLowerCase().includes(q));
     if (typeFilter) rows = rows.filter((a) => a.account_type === typeFilter);
     if (createdByFilter) rows = rows.filter((a) => a.created_by === createdByFilter);
+    if (myAssigned) rows = rows.filter((a) => effectiveOwners(a).includes(userId));
     if (completenessFilter) rows = rows.filter((a) => matchesCompleteness(a.completeness.score, completenessFilter));
     if (priorityFilter) rows = rows.filter((a) => String(a.icp.priority) === priorityFilter);
     if (onboardingFilter) rows = rows.filter((a) => (a.onboarding_status ?? "initial_touch") === onboardingFilter);
@@ -166,7 +195,43 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
       if (!b.last_touch_at) return -1;
       return b.last_touch_at.localeCompare(a.last_touch_at);
     });
-  }, [accounts, search, typeFilter, createdByFilter, completenessFilter, priorityFilter, onboardingFilter, sort]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts, search, typeFilter, createdByFilter, myAssigned, assigneesByAccount, userId, completenessFilter, priorityFilter, onboardingFilter, sort]);
+
+  // ── Bulk assign / unassign (managers only; RLS also enforces) ──
+  async function bulkApply(action: "assign" | "unassign") {
+    if (!bulkRep || selected.size === 0) return;
+    setBulkBusy(true);
+    const ids = [...selected];
+    if (action === "assign") {
+      const { error } = await supabase.from("account_assignments").upsert(
+        ids.map((account_id) => ({ account_id, user_id: bulkRep, org_id: orgId, assigned_by: userId })),
+        { onConflict: "account_id,user_id", ignoreDuplicates: true },
+      );
+      if (!error)
+        setAssignRows((prev) => {
+          const have = new Set(prev.filter((r) => r.user_id === bulkRep).map((r) => r.account_id));
+          return [...prev, ...ids.filter((id) => !have.has(id)).map((account_id) => ({ account_id, user_id: bulkRep }))];
+        });
+    } else {
+      const { error } = await supabase
+        .from("account_assignments")
+        .delete()
+        .eq("user_id", bulkRep)
+        .in("account_id", ids);
+      if (!error) setAssignRows((prev) => prev.filter((r) => !(r.user_id === bulkRep && selected.has(r.account_id))));
+    }
+    setBulkBusy(false);
+    setSelected(new Set());
+  }
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   // ── Can user delete this row? ──
   function canDelete(row: AccountRow): boolean {
@@ -397,6 +462,19 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
           <option value="most_opportunities">Most Opps</option>
         </select>
         <RepFilter reps={reps} value={createdByFilter} onChange={setCreatedByFilter} />
+        <button
+          type="button"
+          onClick={() => setMyAssigned((v) => !v)}
+          aria-pressed={myAssigned}
+          className={[
+            "h-10 shrink-0 rounded-xl border px-3 text-sm font-medium transition-colors",
+            myAssigned
+              ? "border-blue-600 bg-blue-600 text-white"
+              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+          ].join(" ")}
+        >
+          My Assigned
+        </button>
         <CompletenessFilter value={completenessFilter} onChange={setCompletenessFilter} />
         <select
           aria-label="Filter by ICP priority"
@@ -454,6 +532,47 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
         </div>
       )}
 
+      {/* ── Bulk assignment bar (managers/admins) ── */}
+      {canManage && selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+          <span className="text-sm font-medium text-blue-900">{selected.size} selected</span>
+          <select
+            aria-label="Rep to assign"
+            className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none"
+            value={bulkRep}
+            onChange={(e) => setBulkRep(e.target.value)}
+          >
+            <option value="">Choose rep…</option>
+            {reps.map((r) => (
+              <option key={r.userId} value={r.userId}>{r.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!bulkRep || bulkBusy}
+            onClick={() => void bulkApply("assign")}
+            className="h-9 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            Assign
+          </button>
+          <button
+            type="button"
+            disabled={!bulkRep || bulkBusy}
+            onClick={() => void bulkApply("unassign")}
+            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Unassign
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="h-9 rounded-lg px-2 text-sm text-slate-500 hover:text-slate-700"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* ── Desktop table ── */}
       {filtered.length > 0 && (
         <>
@@ -461,12 +580,26 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  {canManage && (
+                    <th className="px-4 py-3 font-medium w-10">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all"
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        checked={filtered.length > 0 && filtered.every((r) => selected.has(r.id))}
+                        onChange={(e) =>
+                          setSelected(e.target.checked ? new Set(filtered.map((r) => r.id)) : new Set())
+                        }
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Type</th>
                   <th className="px-4 py-3 font-medium">Onboarding</th>
                   <th className="px-4 py-3 font-medium">Contacts</th>
                   <th className="px-4 py-3 font-medium">Properties</th>
                   <th className="px-4 py-3 font-medium">Opps</th>
+                  <th className="px-4 py-3 font-medium">Assigned</th>
                   <th className="px-4 py-3 font-medium">Last Touch</th>
                   <th className="px-4 py-3 font-medium w-10" />
                 </tr>
@@ -478,6 +611,17 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                       className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50"
                       onClick={() => { window.location.href = `/app/accounts/${row.id}`; }}
                     >
+                      {canManage && (
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${row.name ?? "account"}`}
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            checked={selected.has(row.id)}
+                            onChange={() => toggleSelected(row.id)}
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3 font-medium text-slate-900">
                         <span className="inline-flex items-center gap-2">
                           <span
@@ -509,6 +653,26 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                       <td className="px-4 py-3 text-slate-600">{row.contact_count}</td>
                       <td className="px-4 py-3 text-slate-600">{row.property_count}</td>
                       <td className="px-4 py-3 text-slate-600">{row.opportunity_count}</td>
+                      <td className="px-4 py-3">
+                        {(assigneesByAccount.get(row.id) ?? []).length === 0 ? (
+                          <span className="text-xs text-slate-400">—</span>
+                        ) : (
+                          <span className="flex flex-wrap gap-1">
+                            {(assigneesByAccount.get(row.id) ?? []).map((uid) => {
+                              const nm = repNameById.get(uid) ?? uid.slice(0, 6);
+                              return (
+                                <span
+                                  key={uid}
+                                  title={nm}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600"
+                                >
+                                  {initialsOf(nm)}
+                                </span>
+                              );
+                            })}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-slate-500">{formatDate(row.last_touch_at)}</td>
                       <td className="px-4 py-3">
                         {canDelete(row) && deleteConfirmId !== row.id && (
@@ -527,7 +691,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                     </tr>
                     {deleteConfirmId === row.id && (
                       <tr className="bg-red-50">
-                        <td colSpan={8} className="px-4 py-3">
+                        <td colSpan={canManage ? 10 : 9} className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <span className="text-sm text-slate-700">
                               Delete <strong>{row.name}</strong>?
@@ -595,6 +759,23 @@ export default function AccountsClient({ accounts: initialAccounts, reps, orgId,
                       {row.opportunity_count > 0 && ` · ${row.opportunity_count} opp${row.opportunity_count !== 1 ? "s" : ""}`}
                       {row.last_touch_at && ` · Last touch: ${formatDate(row.last_touch_at)}`}
                     </div>
+                    {(assigneesByAccount.get(row.id) ?? []).length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                        <span className="text-[10px] uppercase tracking-wide text-slate-400">Assigned</span>
+                        {(assigneesByAccount.get(row.id) ?? []).map((uid) => {
+                          const nm = repNameById.get(uid) ?? uid.slice(0, 6);
+                          return (
+                            <span
+                              key={uid}
+                              title={nm}
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-600"
+                            >
+                              {initialsOf(nm)}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   {canDelete(row) && deleteConfirmId !== row.id && (
                     <button

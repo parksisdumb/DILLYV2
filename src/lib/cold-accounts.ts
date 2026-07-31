@@ -88,8 +88,12 @@ export type ColdAccount = {
   thresholdDays: number;
   propertyCount: number;
   contactCount: number;
-  /** accounts.created_by — the de-facto assigned rep for this account. */
+  /** The effective owner for scoping/grouping: the first assigned rep, or
+   *  accounts.created_by when the account has no assignment yet. */
   ownerUserId: string | null;
+  /** All effective owners — assigned reps, or [created_by] when unassigned. In the
+   *  manager view an account assigned to N reps appears under each of them. */
+  assignedUserIds: string[];
   /** Most recently touched contact at this account (the one-tap log target). */
   recentContactId: string | null;
   recentContactName: string | null;
@@ -111,6 +115,8 @@ export type ColdAccountInputs = {
   contacts: { id: string; full_name: string | null; account_id: string }[];
   /** MUST be ordered newest-first (happened_at desc). */
   touchpoints: { account_id: string; contact_id: string | null; happened_at: string }[];
+  /** account_assignments rows — an account may have several assigned reps. */
+  assignments?: { account_id: string; user_id: string }[];
 };
 
 /**
@@ -125,7 +131,7 @@ export async function getColdAccounts(
   // Four batch reads. Touchpoints are ordered newest-first so the first row seen
   // per account IS its last touch (and the first with a contact is the most
   // recently touched contact) — a single pass, no sorting per account.
-  const [acctRes, propRes, contactRes, tpRes] = await Promise.all([
+  const [acctRes, propRes, contactRes, tpRes, assignRes] = await Promise.all([
     supabase
       .from("accounts")
       .select("id,name,account_type,created_by,created_at")
@@ -148,6 +154,10 @@ export async function getColdAccounts(
       .not("account_id", "is", null)
       .order("happened_at", { ascending: false })
       .limit(10000),
+    // Assignment is the source of "whose account this is". Tolerant of the table
+    // not existing yet (deploy-before-migration) — errors collapse to no rows,
+    // and ownership falls back to created_by.
+    supabase.from("account_assignments").select("account_id,user_id").limit(10000),
   ]);
 
   return computeColdAccounts(
@@ -156,6 +166,7 @@ export async function getColdAccounts(
       properties: (propRes.data ?? []) as { primary_account_id: string }[],
       contacts: (contactRes.data ?? []) as ColdAccountInputs["contacts"],
       touchpoints: (tpRes.data ?? []) as ColdAccountInputs["touchpoints"],
+      assignments: (assignRes.data ?? []) as ColdAccountInputs["assignments"],
     },
     opts,
   );
@@ -184,6 +195,15 @@ export function computeColdAccounts(
     contactName.set(c.id, c.full_name);
   }
 
+  // Assigned reps per account (may be several). Ownership = assignment, falling
+  // back to created_by only when an account has no assignment yet.
+  const assigneesByAccount = new Map<string, string[]>();
+  for (const a of input.assignments ?? []) {
+    const list = assigneesByAccount.get(a.account_id) ?? [];
+    list.push(a.user_id);
+    assigneesByAccount.set(a.account_id, list);
+  }
+
   // Newest-first single pass: first hit per account wins.
   const lastTouch = new Map<string, string>();
   const recentContact = new Map<string, string>();
@@ -197,7 +217,13 @@ export function computeColdAccounts(
   const out: ColdAccount[] = [];
 
   for (const a of accounts) {
-    if (opts.ownerUserId && a.created_by !== opts.ownerUserId) continue;
+    // Effective owners: assigned reps, else the creator (fallback while unassigned).
+    const assignees = assigneesByAccount.get(a.id) ?? [];
+    const owners = assignees.length > 0 ? assignees : a.created_by ? [a.created_by] : [];
+
+    // Scope to a single rep (Today card / a manager drilling into one rep): the
+    // account counts if that rep is one of its effective owners.
+    if (opts.ownerUserId && !owners.includes(opts.ownerUserId)) continue;
 
     const props = propertyCount.get(a.id) ?? 0;
     const contacts = contactCount.get(a.id) ?? 0;
@@ -243,7 +269,8 @@ export function computeColdAccounts(
       thresholdDays,
       propertyCount: props,
       contactCount: contacts,
-      ownerUserId: a.created_by,
+      ownerUserId: owners[0] ?? null,
+      assignedUserIds: owners,
       recentContactId,
       recentContactName: recentContactId ? (contactName.get(recentContactId) ?? null) : null,
     });

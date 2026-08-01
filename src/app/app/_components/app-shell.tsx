@@ -129,7 +129,7 @@ export default function AppShell({
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(true);
 
   const canSeeAdmin = orgRole === "admin" || orgRole === "manager";
 
@@ -155,16 +155,21 @@ export default function AppShell({
         { href: "/app/data-health", label: "Data Health" },
       ];
 
-  // Settings items (manager only, collapsible)
-  const settingsItems = canSeeAdmin
-    ? [
-        { href: "/app/manager/territories", label: "Territories" },
-        { href: "/app/manager/icp", label: "ICP Targeting (optional)" },
-        { href: "/app/admin/team", label: "Team Members" },
-        { href: "/app/admin/kpis", label: "KPI Targets" },
-        { href: "/app/manager/agent", label: "Agents" },
-      ]
-    : [];
+  // Settings group. "My Settings" (personal — email connection, etc.) is visible to
+  // EVERY role so it isn't buried in the avatar menu; org-admin settings follow for
+  // managers/admins only.
+  const settingsItems = [
+    { href: "/app/settings", label: "My Settings" },
+    ...(canSeeAdmin
+      ? [
+          { href: "/app/manager/territories", label: "Territories" },
+          { href: "/app/manager/icp", label: "ICP Targeting (optional)" },
+          { href: "/app/admin/team", label: "Team Members" },
+          { href: "/app/admin/kpis", label: "KPI Targets" },
+          { href: "/app/manager/agent", label: "Agents" },
+        ]
+      : []),
+  ];
 
   if (!hasOrg) {
     sidebarItems.push({ href: "/app/setup", label: "Setup" });

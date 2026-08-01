@@ -113,11 +113,32 @@ function dedupeByKey<T extends { key?: string | null; org_id?: string | null }>(
 export default function TodayClient({
   userId,
   coldAccounts,
+  hasEmailConnection,
 }: {
   userId: string;
   coldAccounts: ColdAccount[];
+  hasEmailConnection: boolean;
 }) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
+
+  // "Connect your email" nudge — shown until the rep connects an inbox or dismisses
+  // it. Dismissal persists per user (localStorage). Default hidden to avoid a flash
+  // for users who already dismissed; the effect reveals it if appropriate.
+  const [showEmailNudge, setShowEmailNudge] = useState(false);
+  useEffect(() => {
+    if (hasEmailConnection) return;
+    try {
+      setShowEmailNudge(localStorage.getItem(`dilly:connect-email-dismissed:${userId}`) !== "1");
+    } catch {
+      setShowEmailNudge(true);
+    }
+  }, [hasEmailConnection, userId]);
+  function dismissEmailNudge() {
+    try {
+      localStorage.setItem(`dilly:connect-email-dismissed:${userId}`, "1");
+    } catch {}
+    setShowEmailNudge(false);
+  }
 
   const [tab, setTab] = useState<Tab>("grow");
   const [quickLogOpen, setQuickLogOpen] = useState(false);
@@ -536,6 +557,30 @@ export default function TodayClient({
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Today</h1>
+
+      {/* Connect-email nudge — dismissible, persists per user */}
+      {showEmailNudge && (
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+          <Link href="/app/settings" className="group min-w-0">
+            <div className="text-sm font-semibold text-blue-900 group-hover:underline">
+              Connect your email
+            </div>
+            <div className="mt-0.5 text-xs text-blue-700">
+              Emails to your contacts log automatically — no manual entry.
+            </div>
+          </Link>
+          <button
+            type="button"
+            onClick={dismissEmailNudge}
+            aria-label="Dismiss"
+            className="shrink-0 rounded-lg p-1 text-blue-400 hover:bg-blue-100 hover:text-blue-700"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.28 3.22a.75.75 0 00-1.06 1.06L8.94 10l-5.72 5.72a.75.75 0 101.06 1.06L10 11.06l5.72 5.72a.75.75 0 101.06-1.06L11.06 10l5.72-5.72a.75.75 0 00-1.06-1.06L10 8.94 4.28 3.22z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Quick Log — pinned above the KPI cards, the fast path for capturing an interaction */}
       <button

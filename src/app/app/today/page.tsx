@@ -9,5 +9,14 @@ export default async function TodayPage() {
   // fetch waterfall. Scoped to this rep's own accounts.
   const coldAccounts = await getColdAccounts(supabase, { ownerUserId: userId });
 
-  return <TodayClient userId={userId} coldAccounts={coldAccounts} />;
+  // Has this rep connected an email account? Drives the "Connect your email" nudge.
+  // Tolerant of the email_connections table not existing (returns no row → banner shows).
+  const { data: conn } = await supabase
+    .from("email_connections")
+    .select("id")
+    .eq("user_id", userId)
+    .limit(1)
+    .maybeSingle();
+
+  return <TodayClient userId={userId} coldAccounts={coldAccounts} hasEmailConnection={Boolean(conn)} />;
 }

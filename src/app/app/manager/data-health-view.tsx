@@ -57,6 +57,7 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
   const [propRows, setPropRows] = useState<
     { id: string; name: string | null; address_line1: string; city: string | null; state: string | null }[]
   >([]);
+  const [contactRows, setContactRows] = useState<{ id: string; full_name: string | null; email: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<RecordType>("property");
@@ -191,6 +192,13 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
           state: p.state,
         })),
       );
+      setContactRows(
+        ((conRes.data ?? []) as { id: string; full_name: string | null; email: string | null }[]).map((c) => ({
+          id: c.id,
+          full_name: c.full_name,
+          email: c.email,
+        })),
+      );
 
       for (const o of (oppRes.data ?? []) as { id: string; title: string | null; stage_id: string | null; scope_type_id: string | null; estimated_value: number | null; account_id: string | null; property_id: string | null; created_by: string | null }[]) {
         out.push({
@@ -259,6 +267,56 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
       .filter((g) => g.length > 1)
       .sort((a, b) => b.length - a.length);
   }, [propRows]);
+
+  // Possible duplicate contacts — same normalized full name OR same email within
+  // the org. Contacts connected by either signal are union-found into one cluster,
+  // so an overlapping shared-name and shared-email pair collapse to a single group.
+  const contactDupGroups = useMemo(() => {
+    const normName = (s: string | null) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+    const normEmail = (s: string | null) => (s ?? "").toLowerCase().trim();
+    const parent = new Map<string, string>();
+    const find = (x: string): string => {
+      let root = x;
+      while (parent.get(root) !== root) root = parent.get(root)!;
+      while (parent.get(x) !== root) {
+        const next = parent.get(x)!;
+        parent.set(x, root);
+        x = next;
+      }
+      return root;
+    };
+    const union = (a: string, b: string) => {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent.set(ra, rb);
+    };
+    for (const c of contactRows) parent.set(c.id, c.id);
+    const firstByName = new Map<string, string>();
+    const firstByEmail = new Map<string, string>();
+    for (const c of contactRows) {
+      const nn = normName(c.full_name);
+      if (nn) {
+        const prev = firstByName.get(nn);
+        if (prev) union(prev, c.id);
+        else firstByName.set(nn, c.id);
+      }
+      const ne = normEmail(c.email);
+      if (ne) {
+        const prev = firstByEmail.get(ne);
+        if (prev) union(prev, c.id);
+        else firstByEmail.set(ne, c.id);
+      }
+    }
+    const clusters = new Map<string, { id: string; full_name: string | null; email: string | null }[]>();
+    for (const c of contactRows) {
+      const r = find(c.id);
+      if (!clusters.has(r)) clusters.set(r, []);
+      clusters.get(r)!.push(c);
+    }
+    return Array.from(clusters.values())
+      .filter((g) => g.length > 1)
+      .sort((a, b) => b.length - a.length);
+  }, [contactRows]);
 
   // Completeness by rep (across all record types) — worst first.
   const byRep = useMemo(() => {
@@ -381,6 +439,46 @@ export default function DataHealthView({ reps, orgId }: { reps: DataHealthRep[];
                     </span>
                     <span className="hidden min-w-0 max-w-[55%] truncate text-xs text-slate-500 sm:block">
                       {[p.address_line1, p.city, p.state].filter(Boolean).join(", ")}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Possible duplicate contacts */}
+      <div>
+        <h3 className="mb-2 text-sm font-semibold text-slate-800">
+          Possible duplicate contacts{contactDupGroups.length > 0 ? ` — ${contactDupGroups.length}` : ""}
+        </h3>
+        {contactDupGroups.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+            No duplicate contacts detected. 🎉
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Same normalized name, or the same email, within the org. Open a record and use
+              “Merge…” to fold duplicates into the one to keep.
+            </p>
+            {contactDupGroups.map((g) => (
+              <div key={g[0].id} className="overflow-hidden rounded-2xl border border-amber-200 bg-white">
+                <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">
+                  {g.length} records · {g[0].full_name?.trim() || g.find((c) => c.email)?.email || "unnamed"}
+                </div>
+                {g.map((c) => (
+                  <Link
+                    key={c.id}
+                    href={`/app/contacts/${c.id}`}
+                    className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0 hover:bg-slate-50"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">
+                      {c.full_name?.trim() || "—"}
+                    </span>
+                    <span className="hidden min-w-0 max-w-[55%] truncate text-xs text-slate-500 sm:block">
+                      {c.email || "no email"}
                     </span>
                   </Link>
                 ))}

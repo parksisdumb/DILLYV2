@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import EntityPicker, { type PickerRow } from "@/app/app/_components/entity-picker";
 import { formatPhone } from "@/lib/utils/format";
 import { BUILDING_TYPE_LABELS } from "@/app/app/properties/properties-client";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
@@ -163,6 +164,38 @@ export default function ContactDetailClient({
   const [localContact, setLocalContact] = useState(contact);
   const [touchpoints, setTouchpoints] = useState(initialTouchpoints);
   const [nextActions, setNextActions] = useState(initialNextActions);
+
+  const canManage = userRole === "manager" || userRole === "admin";
+
+  // ── Merge duplicate contact (managers/admins) ──
+  const [showMerge, setShowMerge] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState("");
+  const [mergeTargetRow, setMergeTargetRow] = useState<PickerRow | null>(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
+  async function handleMerge() {
+    if (!mergeTargetId) {
+      setMergeError("Pick the contact to keep.");
+      return;
+    }
+    setMergeBusy(true);
+    setMergeError(null);
+    try {
+      const { error } = await supabase.rpc("rpc_merge_contact", {
+        p_source_id: contact.id,
+        p_survivor_id: mergeTargetId,
+      });
+      if (error) {
+        setMergeError(error.message);
+        return;
+      }
+      // Everything now lives on the survivor — navigate there.
+      window.location.href = `/app/contacts/${mergeTargetId}`;
+    } finally {
+      setMergeBusy(false);
+    }
+  }
 
   // Edit contact state
   const [editing, setEditing] = useState(false);
@@ -1082,6 +1115,82 @@ export default function ContactDetailClient({
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Merge duplicate contact (managers/admins only) */}
+      {canManage && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          {!showMerge ? (
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Duplicate of another contact?</p>
+                <p className="text-xs text-slate-500">
+                  Merge this record into the one you want to keep — touchpoints, follow-ups,
+                  property links and opportunities move over; email/phone/title fill any blanks.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMerge(true);
+                  setMergeError(null);
+                }}
+                className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Merge…
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Merge into another contact</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Pick the contact to <span className="font-medium">keep</span>. This one (
+                  {localContact.full_name ?? "this contact"}) will be closed out and all its
+                  activity re-pointed to the survivor. This can’t be undone.
+                </p>
+              </div>
+              <EntityPicker
+                kind="contact"
+                value={mergeTargetId}
+                excludeIds={[contact.id]}
+                onChange={(row) => {
+                  setMergeTargetId(row?.id ?? "");
+                  setMergeTargetRow(row);
+                  setMergeError(null);
+                }}
+                placeholder="Search the contact to keep…"
+              />
+              {mergeError && <p className="text-xs text-red-600">{mergeError}</p>}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={mergeBusy || !mergeTargetId}
+                  onClick={() => void handleMerge()}
+                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {mergeBusy
+                    ? "Merging…"
+                    : mergeTargetRow
+                      ? `Merge into ${mergeTargetRow.primary}`
+                      : "Merge"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMerge(false);
+                    setMergeTargetId("");
+                    setMergeTargetRow(null);
+                    setMergeError(null);
+                  }}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
         </div>

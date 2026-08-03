@@ -90,6 +90,7 @@ export default async function AnalyticsPage() {
     prospectsConvertedRes,
     platformBenchRes,
     orgBenchRes,
+    scoreEventsRes,
   ] = await Promise.all([
     supabase
       .from("org_users")
@@ -136,7 +137,21 @@ export default async function AnalyticsPage() {
       .eq("org_id", orgId)
       .order("created_at", { ascending: false })
       .limit(20),
+    // Real rep-logged touchpoints have a score_event; visibility-only ones
+    // (synced Gmail, inbound replies, the tracker import) have none. RLS scopes
+    // this to the manager's org. Used to keep visibility touchpoints out of the
+    // funnel / avg-touches / analytics so they don't produce nonsense counts.
+    supabase.from("score_events").select("touchpoint_id").limit(100000),
   ]);
+
+  // Only exclude when the fetch succeeded — otherwise fall back to counting all
+  // (the prior, un-filtered behavior) rather than emptying the analytics.
+  const excludeVisibility = !scoreEventsRes.error;
+  const realTouchpointIds = new Set(
+    ((scoreEventsRes.data ?? []) as { touchpoint_id: string | null }[])
+      .map((s) => s.touchpoint_id)
+      .filter((id): id is string => Boolean(id)),
+  );
 
   // Build lookup maps
   const typeMap = new Map(
@@ -158,8 +173,10 @@ export default async function AnalyticsPage() {
     name: (u.full_name as string) || (u.email as string) || (u.user_id as string).slice(0, 8),
   }));
 
-  // Enrich touchpoints
-  const touchpoints: AnalyticsTouchpoint[] = (touchpointsRes.data ?? []).map(
+  // Enrich touchpoints — real rep-logged only (drop visibility-only ones).
+  const touchpoints: AnalyticsTouchpoint[] = (touchpointsRes.data ?? [])
+    .filter((t) => !excludeVisibility || realTouchpointIds.has(t.id as string))
+    .map(
     (t) => {
       const typeInfo = typeMap.get(t.touchpoint_type_id as string);
       return {

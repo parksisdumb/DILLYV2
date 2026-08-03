@@ -39,10 +39,10 @@ export default function ConversionFunnelSection({ reps }: { reps: RepInfo[] }) {
       try {
         const periodStart = new Date(Date.now() - PERIOD_DAYS[period] * 86400000).toISOString();
 
-        const [tpsRes, outcomesRes, typesRes, oppsRes, assignsRes, stagesRes] = await Promise.all([
+        const [tpsRes, outcomesRes, typesRes, oppsRes, assignsRes, stagesRes, seRes] = await Promise.all([
           supabase
             .from("touchpoints")
-            .select("rep_user_id,contact_id,outcome_id,touchpoint_type_id,engagement_phase,happened_at")
+            .select("id,rep_user_id,contact_id,outcome_id,touchpoint_type_id,engagement_phase,happened_at")
             .gte("happened_at", periodStart),
           supabase.from("touchpoint_outcomes").select("id,key"),
           supabase.from("touchpoint_types").select("id,key"),
@@ -52,12 +52,23 @@ export default function ConversionFunnelSection({ reps }: { reps: RepInfo[] }) {
             .is("deleted_at", null),
           supabase.from("opportunity_assignments").select("opportunity_id,user_id,is_primary,assignment_role"),
           supabase.from("opportunity_stages").select("id,key,sort_order"),
+          // Real rep-logged touchpoints have a score_event; visibility-only ones don't.
+          supabase.from("score_events").select("touchpoint_id").limit(100000),
         ]);
 
         if (cancelled) return;
 
         const firstError = [tpsRes.error, outcomesRes.error, typesRes.error, oppsRes.error, assignsRes.error, stagesRes.error].find(Boolean);
         if (firstError) throw new Error(firstError.message);
+
+        // Exclude visibility-only touchpoints (no score_event). Degrade to counting
+        // all if the score_events fetch failed, rather than emptying the funnel.
+        const excludeVisibility = !seRes.error;
+        const realTpIds = new Set(
+          ((seRes.data ?? []) as { touchpoint_id: string | null }[])
+            .map((s) => s.touchpoint_id)
+            .filter((id): id is string => Boolean(id)),
+        );
 
         // Lookups
         const outcomeKeyById = new Map<string, string>();
@@ -103,6 +114,7 @@ export default function ConversionFunnelSection({ reps }: { reps: RepInfo[] }) {
 
         // Group touchpoints by rep, enriched with outcome key
         type Tp = {
+          id: string;
           rep_user_id: string;
           contact_id: string | null;
           outcome_id: string | null;
@@ -113,6 +125,7 @@ export default function ConversionFunnelSection({ reps }: { reps: RepInfo[] }) {
         type TpEnriched = Tp & { outcomeKey: string | null; typeKey: string | null };
         const tpsByRep = new Map<string, TpEnriched[]>();
         for (const tp of (tpsRes.data ?? []) as Tp[]) {
+          if (excludeVisibility && !realTpIds.has(tp.id)) continue; // real rep-logged only
           const enriched: TpEnriched = {
             ...tp,
             outcomeKey: tp.outcome_id ? outcomeKeyById.get(tp.outcome_id) ?? null : null,

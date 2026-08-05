@@ -1,4 +1,5 @@
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
+import { NotificationSettings } from "./notification-settings";
 
 type Conn = {
   email_address: string | null;
@@ -33,12 +34,20 @@ export default async function SettingsPage({
   const { supabase, userId } = await requireServerOrgContext();
   const sp = await searchParams;
 
-  const { data } = await supabase
-    .from("email_connections")
-    .select("email_address,status,last_synced_at,last_error")
-    .eq("user_id", userId)
-    .eq("provider", "gmail")
-    .maybeSingle();
+  const [{ data }, meRes, prefRes] = await Promise.all([
+    supabase
+      .from("email_connections")
+      .select("email_address,status,last_synced_at,last_error")
+      .eq("user_id", userId)
+      .eq("provider", "gmail")
+      .maybeSingle(),
+    supabase.from("org_users").select("role").eq("user_id", userId).maybeSingle(),
+    supabase.from("notification_preferences").select("follow_up_digest").eq("user_id", userId).maybeSingle(),
+  ]);
+
+  const isAdmin = meRes.data?.role === "admin";
+  // Absent row = opted in (default ON).
+  const digestEnabled = (prefRes.data?.follow_up_digest ?? true) as boolean;
 
   const conn = data as Conn | null;
   const connected = conn?.status === "active";
@@ -68,6 +77,9 @@ export default async function SettingsPage({
           {ERROR_LABELS[gmailError] ?? "Couldn't connect Gmail. Try again."}
         </div>
       )}
+
+      {/* Follow-up morning digest */}
+      <NotificationSettings initialEnabled={digestEnabled} isAdmin={isAdmin} />
 
       {/* Email integration card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5">

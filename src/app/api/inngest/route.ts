@@ -10,6 +10,9 @@ import { enrichmentAgent } from "@/inngest/agents/enrichment-agent";
 // Email tracking (phase 1)
 import { gmailSyncScheduler, gmailSyncUser } from "@/inngest/email/gmail-sync";
 
+// Follow-up alerting (phase 1 — email digests)
+import { followUpDigestScheduler } from "@/inngest/notifications/follow-up-digest";
+
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [
@@ -21,5 +24,7 @@ export const { GET, POST, PUT } = serve({
     // Email tracking
     gmailSyncScheduler,
     gmailSyncUser,
+    // Follow-up alerting
+    followUpDigestScheduler,
   ],
 });

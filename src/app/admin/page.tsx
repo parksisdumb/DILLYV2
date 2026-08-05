@@ -1,10 +1,24 @@
 import Link from "next/link";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/admin-auth";
+import { digestCronEnabled } from "@/lib/notifications/send";
+import { DigestCronCard } from "./digest-cron-card";
 
 export default async function AdminDashboard() {
   await requireAdmin();
   const admin = createAdminClient();
+
+  // Last-run status of the follow-up digest cron. A silent failure here is the
+  // exact sin this system exists to prevent, so surface it up top.
+  const { data: lastRun } = await admin
+    .from("cron_runs")
+    .select("status,started_at,finished_at,summary,error")
+    .eq("job", "follow_up_digest")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const digestEnabled = digestCronEnabled();
 
   const { data: orgs, error: orgsError } = await admin
     .from("orgs")
@@ -43,6 +57,21 @@ export default async function AdminDashboard() {
           </Link>
         </div>
       </div>
+
+      <DigestCronCard
+        enabled={digestEnabled}
+        run={
+          lastRun
+            ? {
+                status: lastRun.status as string,
+                startedAt: lastRun.started_at as string,
+                finishedAt: (lastRun.finished_at as string | null) ?? null,
+                summary: (lastRun.summary as Record<string, unknown> | null) ?? null,
+                error: (lastRun.error as string | null) ?? null,
+              }
+            : null
+        }
+      />
 
       <div className="mt-6 space-y-3">
         {(!orgs || orgs.length === 0) && (

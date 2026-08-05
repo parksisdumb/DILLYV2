@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isMissingColumnError } from "@/lib/overdue";
 import { buildOrgDigests, dayBounds } from "./build";
 import { renderUserEmail } from "./render";
 import { appUrl, sendEmail } from "./send";
@@ -68,8 +69,19 @@ export async function runDigestCron(
   const runId = (runRow as { id: string } | null)?.id ?? null;
 
   try {
-    const { data: orgs, error: orgErr } = await admin.from("orgs").select("id");
-    if (orgErr) throw new Error(`orgs read failed: ${orgErr.message}`);
+    // Per-org allowlist (migration 89). Only orgs explicitly opted in receive mail —
+    // dev/test orgs and not-yet-briefed clients are excluded. Fail-safe: if the
+    // column is missing, refuse to send rather than blast every org.
+    const orgsRes = await admin.from("orgs").select("id").eq("follow_up_digest_enabled", true);
+    if (orgsRes.error) {
+      if (isMissingColumnError(orgsRes.error)) {
+        throw new Error(
+          "orgs.follow_up_digest_enabled is missing — apply migration 89 (orgs_digest_enabled). Fail-safe: no digests sent.",
+        );
+      }
+      throw new Error(`orgs read failed: ${orgsRes.error.message}`);
+    }
+    const orgs = orgsRes.data;
 
     // Users who turned off their own morning digest. (Overdue still escalates to
     // managers — that lives in the MANAGER's own email, unaffected by this.)

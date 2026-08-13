@@ -343,17 +343,6 @@ export default function PropertyDetailClient({
     setLogPhase(dir === "inbound" ? "follow_up" : "visibility");
     setLogError(null);
   }
-  const phaseOptions = selectedType?.is_outreach
-    ? [
-        { value: "first_touch", label: "First Touch" },
-        { value: "follow_up", label: "Follow Up" },
-      ]
-    : [
-        { value: "first_touch", label: "First Touch" },
-        { value: "follow_up", label: "Follow Up" },
-        { value: "visibility", label: "Visibility" },
-      ];
-
   function handleTypeSelect(typeId: string) {
     const t = typeById.get(typeId);
     setLogTypeId(typeId);
@@ -1120,23 +1109,9 @@ export default function PropertyDetailClient({
                 No contacts linked to this property. Outreach requires a contact.
               </p>
             )}
-            {/* Phase */}
-            {logTypeId && (
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-600">Phase</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-                  value={logPhase}
-                  onChange={(e) => setLogPhase(e.target.value)}
-                >
-                  {phaseOptions.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {/* Phase is no longer a rep choice — it's derived at log time from
+                history (first real touch on the contact/property = first_touch,
+                otherwise follow_up). See rpc_log_outreach_touchpoint. */}
             {/* Outcome chips */}
             {logTypeId && logOutcomes.length > 0 && (
               <div>

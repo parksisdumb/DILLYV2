@@ -559,7 +559,7 @@ export default function PropertyDetailClient({
           p_property_id: property.id,
           p_outcome_id: logOutcomeId || null,
           p_notes: logNotes.trim(),
-          p_engagement_phase: logPhase as "first_touch" | "follow_up",
+          // engagement_phase is derived server-side.
         });
         if (error) { setLogError(error.message); return; }
         const orow = Array.isArray(data) ? data[0] : data;
@@ -571,7 +571,7 @@ export default function PropertyDetailClient({
           p_contact_id: logContactId || null,
           p_outcome_id: logOutcomeId || null,
           p_notes: logNotes.trim() || null,
-          p_engagement_phase: logPhase as "first_touch" | "follow_up" | "visibility",
+          // Non-outreach: RPC defaults to 'visibility'. No rep phase choice.
         });
         if (error) { setLogError(error.message); return; }
         tpId = (data as { touchpoint_id: string } | null)?.touchpoint_id ?? null;

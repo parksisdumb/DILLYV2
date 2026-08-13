@@ -408,7 +408,7 @@ export default function ContactDetailClient({
             p_touchpoint_type_id: logTypeId,
             p_outcome_id: logOutcomeId || null,
             p_notes: logNotes.trim(),
-            p_engagement_phase: "follow_up",
+            // engagement_phase is derived server-side.
           });
       if (error) {
         setLogError(error.message);

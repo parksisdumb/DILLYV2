@@ -369,7 +369,7 @@ export default function GrowForm({
         p_outcome_id: outcomeId || null,
         p_notes: notes.trim(),
         p_happened_at: new Date().toISOString(),
-        p_engagement_phase: "first_touch",
+        // engagement_phase is derived server-side (see rpc_log_outreach_touchpoint).
       },
     );
 

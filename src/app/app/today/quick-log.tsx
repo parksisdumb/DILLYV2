@@ -173,7 +173,7 @@ export default function QuickLog({
           p_property_id: propertyId,
           p_outcome_id: outcomeId,
           p_notes: notes.trim() || `${methodName} · ${outcomeName}`,
-          p_engagement_phase: "first_touch",
+          // engagement_phase is derived server-side.
         });
         if (e) throw new Error(e.message);
         const row = Array.isArray(data) ? data[0] : data;

@@ -174,7 +174,7 @@ export default function AdvanceList({
         p_property_id: action.property_id ?? null,
         p_outcome_id: formOutcomeId || null,
         p_notes: formNotes.trim(),
-        p_engagement_phase: "follow_up",
+        // engagement_phase is derived server-side.
       },
     );
 

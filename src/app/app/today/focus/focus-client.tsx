@@ -111,7 +111,7 @@ export default function FocusClient({
       p_property_id: item.propertyId ?? null,
       p_outcome_id: outcome.id,
       p_notes: `Focus session · ${outcome.label}`,
-      p_engagement_phase: "follow_up",
+      // engagement_phase is derived server-side.
     });
     if (rpcErr) {
       showToast(`Couldn't log call: ${rpcErr.message}`);
@@ -218,7 +218,7 @@ export default function FocusClient({
       p_property_id: null,
       p_outcome_id: outcome.id,
       p_notes: `Focus session · ${outcome.label}`,
-      p_engagement_phase: "first_touch",
+      // engagement_phase is derived server-side.
     });
     if (tpErr) {
       showToast(`Converted ${item.companyName}, but touchpoint failed: ${tpErr.message}`);

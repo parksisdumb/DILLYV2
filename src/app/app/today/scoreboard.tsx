@@ -11,7 +11,15 @@ type DashboardData = {
   streak: number;
 };
 
-type Props = { dashboard: DashboardData };
+import { formatLastActiveCentral } from "@/lib/time";
+
+type Props = {
+  dashboard: DashboardData;
+  /** Most recent touchpoint (any type) for this rep — powers the "last active" line. */
+  lastActiveAt?: string | null;
+  /** Total touchpoints this week — the truth beside a 0 "today". */
+  weekTouchCount?: number;
+};
 
 function pct(count: number, target: number): number {
   if (target <= 0) return 0;
@@ -75,7 +83,7 @@ function ProgressCard({ label, sublabel, count, target, remaining }: ProgressCar
   );
 }
 
-export default function Scoreboard({ dashboard }: Props) {
+export default function Scoreboard({ dashboard, lastActiveAt, weekTouchCount }: Props) {
   const {
     points_today,
     first_touch_outreach_today,
@@ -143,6 +151,24 @@ export default function Scoreboard({ dashboard }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Context beside "today" — so an evening session doesn't read as a blank day. */}
+      {weekTouchCount !== undefined && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-xs text-slate-500">
+          <span>
+            <span className="font-semibold tabular-nums text-slate-700">
+              {first_touch_outreach_today + follow_up_outreach_today}
+            </span>{" "}
+            today
+          </span>
+          <span className="text-slate-300">·</span>
+          <span>
+            <span className="font-semibold tabular-nums text-slate-700">{weekTouchCount}</span> this week
+          </span>
+          <span className="text-slate-300">·</span>
+          <span>last active {formatLastActiveCentral(lastActiveAt)}</span>
+        </div>
+      )}
     </div>
   );
 }

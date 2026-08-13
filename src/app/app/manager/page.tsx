@@ -24,6 +24,10 @@ export type RepStat = {
   overdueCount: number;
   avgDaysOverdue: number;
   chronicSnoozeCount: number;
+  /** Most recent touchpoint (any type), for the "last active" context line. */
+  lastActiveAt: string | null;
+  /** Total touchpoints this week (Central Monday boundary) — the truth beside "today". */
+  touchpointsThisWeek: number;
 };
 
 export type StageSummary = {
@@ -224,6 +228,24 @@ export default async function ManagerPage() {
     overdueByRep.set(r.assigned_user_id, agg);
   }
 
+  // Per-rep recent activity for the "last active / this week" context beside the
+  // today counts — so an evening-heavy rep never reads as inactive at a glance.
+  // 30-day window covers "last active" for anyone active this month; older reads
+  // as "no recent activity". Week count uses the same Central Monday boundary.
+  const { data: repActivityRows } = await supabase
+    .from("touchpoints")
+    .select("rep_user_id,happened_at")
+    .gte("happened_at", thirtyDaysAgoIso);
+  const lastActiveByRep = new Map<string, string>();
+  const weekTouchByRep = new Map<string, number>();
+  for (const tp of (repActivityRows ?? []) as { rep_user_id: string; happened_at: string }[]) {
+    const prev = lastActiveByRep.get(tp.rep_user_id);
+    if (!prev || new Date(tp.happened_at) > new Date(prev)) lastActiveByRep.set(tp.rep_user_id, tp.happened_at);
+    if (new Date(tp.happened_at) >= weekStart) {
+      weekTouchByRep.set(tp.rep_user_id, (weekTouchByRep.get(tp.rep_user_id) ?? 0) + 1);
+    }
+  }
+
   // ── Build RepStat[] ────────────────────────────────────────────────────
 
   const ftDefId = kpiDefByKey.get("daily_first_touch_outreach");
@@ -283,6 +305,8 @@ export default async function ManagerPage() {
       overdueCount,
       avgDaysOverdue,
       chronicSnoozeCount,
+      lastActiveAt: lastActiveByRep.get(uid) ?? null,
+      touchpointsThisWeek: weekTouchByRep.get(uid) ?? 0,
     };
   });
 

@@ -7,6 +7,7 @@ import PipelineHealthTab from "@/app/app/manager/pipeline-health-tab";
 import type { ColdAccount } from "@/lib/cold-accounts";
 import ActivityView from "@/app/app/manager/activity-view";
 import DataHealthView from "@/app/app/manager/data-health-view";
+import { formatLastActiveCentral } from "@/lib/time";
 
 type Props = {
   coldAccounts: ColdAccount[];
@@ -190,6 +191,19 @@ export default function ManagerClient({ coldAccounts, repStats, stageSummaries, 
                       </div>
                       <ProgressBar value={rep.followUpToday} target={rep.targetFollowUp} colorClass="bg-amber-500" />
                     </div>
+                  </div>
+                  {/* Truth beside "today": an evening-heavy rep with 0 today may still
+                      be the week's most active — show week count + last active. */}
+                  <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-slate-100 pt-2 text-xs text-slate-500">
+                    <span>
+                      <span className="font-semibold tabular-nums text-slate-700">{rep.firstTouchToday + rep.followUpToday}</span> today
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span>
+                      <span className="font-semibold tabular-nums text-slate-700">{rep.touchpointsThisWeek}</span> this week
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span>last active {formatLastActiveCentral(rep.lastActiveAt)}</span>
                   </div>
                 </div>
               ))}

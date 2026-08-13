@@ -66,3 +66,24 @@ export function nowUtc(): string {
 export function rollingDaysAgoUtc(n: number): string {
   return DateTime.now().minus({ days: n }).toUTC().toISO()!;
 }
+
+/**
+ * Human "last active" label in the app timezone — so an evening-heavy rep whose
+ * "today" count is 0 still reads as recently active, not inactive.
+ *   just now · 12m ago · today 9:03 AM · yesterday 8:19 PM · Sat 8:19 PM · Aug 3
+ */
+export function formatLastActiveCentral(iso: string | null | undefined, tz: string = APP_TIME_ZONE): string {
+  if (!iso) return "no recent activity";
+  const dt = DateTime.fromISO(iso).setZone(tz);
+  if (!dt.isValid) return "no recent activity";
+  const nowLocal = DateTime.now().setZone(tz);
+  const mins = nowLocal.diff(dt, "minutes").minutes;
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${Math.floor(mins)}m ago`;
+  const dayDiff = Math.round(nowLocal.startOf("day").diff(dt.startOf("day"), "days").days);
+  const time = dt.toFormat("h:mm a");
+  if (dayDiff <= 0) return `today ${time}`;
+  if (dayDiff === 1) return `yesterday ${time}`;
+  if (dayDiff < 7) return `${dt.toFormat("ccc")} ${time}`;
+  return dt.toFormat("MMM d");
+}

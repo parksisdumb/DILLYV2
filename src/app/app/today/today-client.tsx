@@ -18,7 +18,7 @@ import QuickLog from "@/app/app/today/quick-log";
 import TeamLeaderboard from "@/app/app/today/team-leaderboard";
 import type { LeaderboardEntry } from "@/app/app/today/team-leaderboard";
 import { selectWithOptionalCols } from "@/lib/overdue";
-import { startOfTodayUtc, startOfWeekUtc } from "@/lib/time";
+import { startOfTodayUtc, startOfWeekUtc, rollingDaysAgoUtc } from "@/lib/time";
 
 type Tab = "grow" | "advance";
 
@@ -162,6 +162,10 @@ export default function TodayClient({
   const [sourceTouchpointOutcomeByActionId, setSourceTouchpointOutcomeByActionId] = useState<Map<string, string | null>>(new Map());
   const [suggestions, setSuggestions] = useState<SuggestionRow[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  // "Last active / this week" context beside the today scoreboard, so an evening
+  // session doesn't read as a blank day.
+  const [lastActiveAt, setLastActiveAt] = useState<string | null>(null);
+  const [weekTouchCount, setWeekTouchCount] = useState(0);
 
   const [dashboard, setDashboard] = useState<DashboardRow>({
     points_today: 0,
@@ -401,13 +405,25 @@ export default function TodayClient({
       // app timezone).
       const weekStart = new Date(startOfWeekUtc());
 
-      const [membersRes, weekScoresRes] = await Promise.all([
+      const [membersRes, weekScoresRes, myTpsRes] = await Promise.all([
         supabase.from("org_users").select("user_id,full_name,email"),
         supabase
           .from("score_events")
           .select("user_id,points")
           .gte("created_at", weekStart.toISOString()),
+        // This rep's own recent touchpoints (any type) for the last-active + week
+        // context. 30-day window; ordered so [0] is the most recent.
+        supabase
+          .from("touchpoints")
+          .select("happened_at")
+          .eq("rep_user_id", userId)
+          .gte("happened_at", rollingDaysAgoUtc(30))
+          .order("happened_at", { ascending: false }),
       ]);
+
+      const myTps = (myTpsRes.data ?? []) as { happened_at: string }[];
+      setLastActiveAt(myTps[0]?.happened_at ?? null);
+      setWeekTouchCount(myTps.filter((t) => new Date(t.happened_at) >= weekStart).length);
 
       const pointsByUser = new Map<string, number>();
       for (const se of (weekScoresRes.data ?? []) as { user_id: string; points: number }[]) {
@@ -622,7 +638,7 @@ export default function TodayClient({
         />
       )}
 
-      <Scoreboard dashboard={dashboard} />
+      <Scoreboard dashboard={dashboard} lastActiveAt={lastActiveAt} weekTouchCount={weekTouchCount} />
 
       {/* Tab switcher */}
       <div className="flex gap-2">

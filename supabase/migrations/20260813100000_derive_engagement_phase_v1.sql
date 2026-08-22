@@ -19,10 +19,14 @@
 -- (and the passed p_engagement_phase now ignored for outreach). Pure
 -- create-or-replace on two existing functions — safe against migration-history
 -- drift. Phase does NOT feed score_events or streaks, so this changes only the
--- first/follow-up split (KPIs + funnel), never points or streaks. Apply via the
--- SQL editor.
-
-begin;
+-- first/follow-up split (KPIs + funnel), never points or streaks.
+--
+-- Apply via the SQL editor. There is deliberately NO begin/commit wrapper: under
+-- the transaction-mode pooler (and for a large multi-statement paste that can be
+-- truncated before `commit`), a wrapped script silently rolls back, leaving the
+-- functions unchanged and has_derivation=false even though the SQL is valid. Each
+-- create-or-replace below auto-commits on its own; apply and verify them one at a
+-- time. (Same pooling lesson as migration 91's temp table.)
 
 create or replace function public.rpc_log_outreach_touchpoint(
   p_contact_id uuid,
@@ -627,6 +631,3 @@ revoke all on function public.rpc_log_touchpoint(
 grant execute on function public.rpc_log_touchpoint(
   uuid, uuid, uuid, uuid, uuid, uuid, timestamptz, text, uuid, uuid, text
 ) to authenticated;
-
-
-commit;

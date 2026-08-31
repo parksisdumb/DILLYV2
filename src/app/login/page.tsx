@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 import { Suspense, useState } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 // Map Supabase auth errors to rep-friendly messages. Bad creds get a clear
 // "Incorrect email or password"; anything unrecognized falls back to a generic
@@ -40,7 +40,6 @@ function friendlyAuthError(
 }
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
@@ -72,8 +71,11 @@ function LoginForm() {
       const nextPath =
         requestedNext && requestedNext.startsWith("/") ? requestedNext : "/app";
 
-      router.push(nextPath);
-      router.refresh();
+      // Hard navigation (not router.push): forces a fresh full request to nextPath
+      // carrying the session cookie just written by signInWithPassword, so the
+      // server renders /app with a valid session instead of bouncing to /login.
+      // With the auth middleware in place this is belt-and-suspenders.
+      window.location.assign(nextPath);
     } catch {
       // Network failure, misconfigured client, or any unexpected exception —
       // signInWithPassword throws rather than returning {error} here, so without

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireServerOrgContext } from "@/lib/supabase/server-org";
 import PropertyDetailClient from "@/app/app/properties/[id]/property-detail-client";
 import { propertyCompleteness } from "@/lib/completeness";
+import { mergeTimeline } from "@/lib/timeline";
 
 export type PropContact = {
   contact_id: string;
@@ -79,7 +80,7 @@ export default async function PropertyDetailPage({
       .order("opened_at", { ascending: false }),
     supabase
       .from("touchpoints")
-      .select("id,happened_at,notes,engagement_phase,touchpoint_type_id,outcome_id,contact_id,direction")
+      .select("id,happened_at,notes,engagement_phase,touchpoint_type_id,outcome_id,contact_id,property_id,direction")
       .eq("property_id", id)
       .order("happened_at", { ascending: false })
       .limit(50),
@@ -104,8 +105,28 @@ export default async function PropertyDetailPage({
     }))
     .filter((pc) => pc.contact != null);
 
-  // All contacts for linking (exclude already-linked ones)
+  // Related-activity timeline: this property's touchpoints PLUS touchpoints on its
+  // linked contacts — so a touch logged on a contact shows on the property. One
+  // extra batched query (no N+1); indirect rows labeled "via <contact>".
   const linkedContactIds = new Set(propContacts.map((pc) => pc.contact_id));
+  const linkedIds = [...linkedContactIds].slice(0, 500);
+  const PROP_TP_COLS = "id,happened_at,notes,engagement_phase,touchpoint_type_id,outcome_id,contact_id,property_id,direction";
+  const viaContactRes =
+    linkedIds.length > 0
+      ? await supabase.from("touchpoints").select(PROP_TP_COLS).in("contact_id", linkedIds).order("happened_at", { ascending: false }).limit(50)
+      : { data: [] as Record<string, unknown>[] };
+  const propContactName = new Map(propContacts.map((pc) => [pc.contact_id, (pc.contact?.full_name as string | null) ?? "contact"]));
+  type PropTpRow = { id: string; happened_at: string; property_id: string | null; contact_id: string | null };
+  const timeline = mergeTimeline<PropTpRow>(
+    [
+      { rows: (tpRes.data ?? []) as unknown as PropTpRow[], labelFor: () => null },
+      {
+        rows: (viaContactRes.data ?? []) as unknown as PropTpRow[],
+        labelFor: (r) => (r.property_id === id ? null : `via ${propContactName.get(r.contact_id ?? "") ?? "contact"}`),
+      },
+    ],
+    50,
+  );
   const availableContacts = (allContactsRes.data ?? [])
     .filter((c) => !linkedContactIds.has(c.id as string))
     .map((c) => ({
@@ -140,7 +161,7 @@ export default async function PropertyDetailPage({
       account={(accountRes.data ?? null) as any}
       propContacts={propContacts}
       opportunities={cast(oppsRes.data)}
-      touchpoints={cast(tpRes.data)}
+      touchpoints={cast(timeline)}
       touchpointTypes={cast(ttRes.data)}
       touchpointOutcomes={cast(toRes.data)}
       scopeTypes={cast(scopeRes.data)}

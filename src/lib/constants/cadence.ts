@@ -30,17 +30,21 @@ export const CADENCE_BY_OUTCOME: Record<string, CadenceRule> = {
   inspection_set: { days: 1, note: "Follow up on inspection findings" }, // legacy alias
   met_in_person: { days: 10, note: "Follow up on meeting" },
   bid_submitted: { days: 5, note: "Check on proposal" },
+  // "Terminal" relationship outcomes still schedule a long-term nurture check-in
+  // rather than nothing — a lost deal or a "not interested" today is a warm lead
+  // in a quarter. Only an explicit dismiss-with-reason ends the chain.
   not_interested: { days: 90, note: "Long-term nurture check-in" },
+  won: { days: 90, note: "Nurture — repeat business / referrals" },
+  lost: { days: 90, note: "Re-engage — circumstances change" },
   email_sent: { days: 4, note: "Follow up if no reply" },
   follow_up_sent: { days: 4, note: "Follow up if no reply" }, // legacy alias
   email_replied: { days: 2, note: "Respond" },
 };
 
-// Terminal / no-follow-up outcomes — explicitly no cadence (deal is closed or the
-// channel is dead, so scheduling a touch would be noise).
+// Truly terminal outcomes — no cadence. These are DEAD-CHANNEL / bad-data states
+// (bounced email, wrong number), not relationship states: a timed follow-up would
+// just fail again. They need data correction, not a nudge.
 export const NO_CADENCE_OUTCOMES = new Set<string>([
-  "won",
-  "lost",
   "email_bounced",
   "not_available",
 ]);

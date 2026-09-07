@@ -23,7 +23,7 @@ import { startOfTodayUtc, startOfWeekUtc, rollingDaysAgoUtc } from "@/lib/time";
 type Tab = "grow" | "advance";
 
 type Account = { id: string; name: string | null; created_by?: string | null };
-type Contact = { id: string; full_name: string | null; account_id: string };
+type Contact = { id: string; full_name: string | null; account_id: string; phone?: string | null };
 type Property = { id: string; name: string | null; address_line1: string; city: string | null; state: string | null };
 type TouchpointType = {
   id: string;
@@ -282,7 +282,7 @@ export default function TodayClient({
         supabase.from("accounts").select("id,name,created_by").is("deleted_at", null),
         supabase
           .from("contacts")
-          .select("id,full_name,account_id")
+          .select("id,full_name,account_id,phone")
           .is("deleted_at", null),
         supabase
           .from("properties")
@@ -537,8 +537,8 @@ export default function TodayClient({
 
   // ── Advance: full reload after complete/snooze ─────────────────────────
 
-  function handleActionCompleted() {
-    showToast("success", "Done!");
+  function handleActionCompleted(message?: string) {
+    showToast("success", message || "Done!");
     void load();
   }
 
@@ -711,9 +711,10 @@ export default function TodayClient({
           contact + type=email, so the rep picks an outcome and cadence applies. */}
       <EmailSignals onLogFollowUp={handleEmailSignalLog} />
 
-      {tab === "advance" && (
+      {tab === "advance" && orgId && (
         <AdvanceList
           userId={userId}
+          orgId={orgId}
           nextActions={nextActions}
           contactsById={contactsById}
           accountsById={accountsById}

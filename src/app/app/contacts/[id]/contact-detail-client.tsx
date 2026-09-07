@@ -6,6 +6,7 @@ import EntityPicker, { type PickerRow } from "@/app/app/_components/entity-picke
 import { formatPhone } from "@/lib/utils/format";
 import { BUILDING_TYPE_LABELS } from "@/app/app/properties/properties-client";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
+import { NextTouchBanner } from "@/app/app/_components/next-touch-banner";
 import { useCadenceFollowUp, CadenceFollowUpFields } from "@/app/app/_components/cadence-follow-up";
 import type { CompletenessResult } from "@/lib/completeness";
 
@@ -510,6 +511,9 @@ export default function ContactDetailClient({
       {!editing && (
         <CompletenessChip score={completeness.score} missing={completeness.missing} onFix={() => setEditing(true)} />
       )}
+
+      {/* Next scheduled follow-up — the schedule is visible wherever the rep is */}
+      {!editing && <NextTouchBanner dueAt={nextActions[0]?.due_at} notes={nextActions[0]?.notes} />}
 
       {/* Header card */}
       {editing ? (

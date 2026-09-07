@@ -6,6 +6,7 @@ import { createBrowserSupabase } from "@/lib/supabase/browser";
 import { formatPhone } from "@/lib/utils/format";
 import { PRIORITY_COLORS, type IcpScoreResult } from "@/lib/scoring/icp-score";
 import CompletenessChip from "@/app/app/_components/completeness-chip";
+import { NextTouchBanner } from "@/app/app/_components/next-touch-banner";
 import AccountAssignments from "@/app/app/accounts/[id]/account-assignments";
 import EntityPicker, { type PickerRow } from "@/app/app/_components/entity-picker";
 import { useCadenceFollowUp, CadenceFollowUpFields } from "@/app/app/_components/cadence-follow-up";
@@ -68,7 +69,11 @@ type Touchpoint = {
   touchpoint_type_id: string;
   outcome_id: string | null;
   contact_id: string | null;
+  property_id?: string | null;
+  account_id?: string | null;
   direction: string;
+  // Set for indirect rows pulled in via the account's contacts/properties.
+  sourceLabel?: string | null;
 };
 
 const INBOUND_TYPE_KEYS = ["call", "email", "text"];
@@ -117,6 +122,7 @@ type Props = {
   availableProperties: AvailableProperty[];
   availableContacts: AvailableContact[];
   icpScore: IcpScoreResult;
+  nextTouch: { due_at: string; notes: string | null } | null;
 };
 
 type Tab = "contacts" | "properties" | "opportunities" | "timeline";
@@ -222,6 +228,7 @@ export default function AccountDetailClient({
   availableProperties,
   availableContacts,
   icpScore,
+  nextTouch,
 }: Props) {
   const supabase = useMemo(() => createBrowserSupabase(), []);
 
@@ -784,6 +791,9 @@ export default function AccountDetailClient({
       {!editing && (
         <CompletenessChip score={completeness.score} missing={completeness.missing} onFix={() => setEditing(true)} />
       )}
+
+      {/* Next scheduled follow-up for this account */}
+      {!editing && <NextTouchBanner dueAt={nextTouch?.due_at} notes={nextTouch?.notes} />}
 
       {/* Assigned reps — operational dispatch label (managers/admins edit, reps read-only) */}
       {!editing && (
@@ -1663,6 +1673,11 @@ export default function AccountDetailClient({
                         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${PHASE_COLORS[phase] ?? "bg-slate-100 text-slate-600"}`}>
                           {PHASE_LABELS[phase] ?? phase}
                         </span>
+                        {tp.sourceLabel && (
+                          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                            {tp.sourceLabel}
+                          </span>
+                        )}
                       </div>
                       {tp.notes && (
                         <p className="text-sm text-slate-700">&ldquo;{tp.notes}&rdquo;</p>

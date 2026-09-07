@@ -43,7 +43,10 @@ type Touchpoint = {
   touchpoint_type_id: string;
   outcome_id: string | null;
   contact_id: string | null;
+  property_id?: string | null;
   direction: string;
+  // Set for indirect rows pulled in via the property's linked contacts.
+  sourceLabel?: string | null;
 };
 type TouchpointType = { id: string; name: string; key?: string | null; is_outreach: boolean };
 
@@ -1753,6 +1756,11 @@ export default function PropertyDetailClient({
                         }`}
                       >
                         {PHASE_LABELS[tp.engagement_phase] ?? tp.engagement_phase}
+                      </span>
+                    )}
+                    {tp.sourceLabel && (
+                      <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                        {tp.sourceLabel}
                       </span>
                     )}
                     {contactName && (

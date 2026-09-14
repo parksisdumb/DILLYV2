@@ -128,10 +128,17 @@ export async function getColdAccounts(
   supabase: MinimalClient,
   opts: { ownerUserId?: string; now?: number } = {},
 ): Promise<ColdAccount[]> {
-  // Four batch reads. Touchpoints are ordered newest-first so the first row seen
+  // Five batch reads. Touchpoints are ordered newest-first so the first row seen
   // per account IS its last touch (and the first with a contact is the most
   // recently touched contact) — a single pass, no sorting per account.
-  const [acctRes, propRes, contactRes, tpRes, assignRes] = await Promise.all([
+  //
+  // allSettled, not all: this is the heaviest read path in the app and it powers
+  // the home screen (/app/today) + manager dashboard. A single transient fetch
+  // REJECTION (network/DNS/connection blip) under Promise.all would reject the
+  // whole call and hard-500 those pages. With allSettled a blipped read degrades
+  // to an empty dataset instead of taking the page down. (A returned {error} was
+  // already tolerated via `?? []`; this also covers a thrown/rejected fetch.)
+  const settled = (await Promise.allSettled([
     supabase
       .from("accounts")
       .select("id,name,account_type,created_by,created_at")
@@ -158,15 +165,20 @@ export async function getColdAccounts(
     // not existing yet (deploy-before-migration) — errors collapse to no rows,
     // and ownership falls back to created_by.
     supabase.from("account_assignments").select("account_id,user_id").limit(10000),
-  ]);
+  ])) as PromiseSettledResult<{ data: unknown[] | null }>[];
+
+  const rows = (i: number): unknown[] => {
+    const r = settled[i];
+    return r && r.status === "fulfilled" ? (r.value.data ?? []) : [];
+  };
 
   return computeColdAccounts(
     {
-      accounts: (acctRes.data ?? []) as AccountRow[],
-      properties: (propRes.data ?? []) as { primary_account_id: string }[],
-      contacts: (contactRes.data ?? []) as ColdAccountInputs["contacts"],
-      touchpoints: (tpRes.data ?? []) as ColdAccountInputs["touchpoints"],
-      assignments: (assignRes.data ?? []) as ColdAccountInputs["assignments"],
+      accounts: rows(0) as AccountRow[],
+      properties: rows(1) as { primary_account_id: string }[],
+      contacts: rows(2) as ColdAccountInputs["contacts"],
+      touchpoints: rows(3) as ColdAccountInputs["touchpoints"],
+      assignments: rows(4) as ColdAccountInputs["assignments"],
     },
     opts,
   );

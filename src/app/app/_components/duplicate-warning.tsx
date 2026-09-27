@@ -50,6 +50,9 @@ export default function DuplicateWarning({
   onUseExisting,
   onCreateAnyway,
   createLabel = "Create anyway",
+  useLabel = "Use existing",
+  heading,
+  body,
 }: {
   tone: AddressMatchTone;
   matches: DuplicateWarningMatch[];
@@ -59,6 +62,10 @@ export default function DuplicateWarning({
   /** MUST create. No re-check, no gate. */
   onCreateAnyway: () => void;
   createLabel?: string;
+  useLabel?: string;
+  /** Override the address-flavoured copy (contacts, accounts). */
+  heading?: string;
+  body?: string;
 }) {
   // Pull the panel into view when it appears. On a phone the submit button sits at
   // the bottom of a long form, so an advisory that renders above it would otherwise
@@ -76,8 +83,8 @@ export default function DuplicateWarning({
 
   return (
     <div ref={ref} role="status" aria-live="polite" className={`rounded-2xl border p-4 ${c.shell}`}>
-      <p className={`text-sm font-semibold ${c.heading_c}`}>{c.heading}</p>
-      <p className={`mt-1 text-xs ${c.body_c}`}>{c.body}</p>
+      <p className={`text-sm font-semibold ${c.heading_c}`}>{heading ?? c.heading}</p>
+      <p className={`mt-1 text-xs ${c.body_c}`}>{body ?? c.body}</p>
 
       <div className="mt-3 space-y-1.5">
         {matches.map((m) => (
@@ -104,7 +111,7 @@ export default function DuplicateWarning({
           onClick={() => onUseExisting(matches[0])}
           className={`${action} bg-slate-900 hover:bg-slate-800`}
         >
-          Use existing
+          {useLabel}
         </button>
         <button
           type="button"

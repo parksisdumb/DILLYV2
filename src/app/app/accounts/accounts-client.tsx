@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 import CompletenessFilter from "@/app/app/_components/completeness-filter";
 import EntityPicker from "@/app/app/_components/entity-picker";
@@ -13,6 +13,13 @@ import {
 } from "@/lib/constants/onboarding-status";
 import Link from "next/link";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import DuplicateWarning from "@/app/app/_components/duplicate-warning";
+import {
+  EMPTY_ENTITY_DUP,
+  findAccountDuplicates,
+  normalizeCompanyName,
+  type EntityDupResult,
+} from "@/lib/entity-dupes";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -158,6 +165,14 @@ export default function AccountsClient({ accounts: initialAccounts, reps, assign
   const [formPropertyId, setFormPropertyId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
+  // Advisory same-name matches. Cleared only when the typed name normalizes to
+  // something genuinely different, so adding ", Inc." doesn't re-arm the check.
+  const [dup, setDup] = useState<EntityDupResult>(EMPTY_ENTITY_DUP);
+  const [dupChecking, setDupChecking] = useState(false);
+  useEffect(() => {
+    if (!dup.key) return;
+    if (normalizeCompanyName(formName) !== dup.key) setDup(EMPTY_ENTITY_DUP);
+  }, [formName, dup.key]);
 
   // ── Delete state ──
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -239,10 +254,22 @@ export default function AccountsClient({ accounts: initialAccounts, reps, assign
   }
 
   // ── Create account ──
-  async function onCreateSubmit() {
+  async function onCreateSubmit(opts?: { force?: boolean }) {
     if (!formName.trim()) { setFormError("Account name is required."); return; }
     if (!formType) { setFormError("Account type is required."); return; }
     setFormError(null);
+    // Advisory name check — "Tarantino Properties" vs "Tarantino Properties, Inc."
+    // Warns only; `force` is the rep's explicit "Create anyway" and always creates.
+    if (!opts?.force) {
+      setDupChecking(true);
+      try {
+        const found = await findAccountDuplicates(supabase, formName);
+        if (found.matches.length > 0) { setDup(found); return; }
+        setDup(EMPTY_ENTITY_DUP);
+      } finally {
+        setDupChecking(false);
+      }
+    }
     setCreateBusy(true);
 
     const { data, error } = await supabase
@@ -305,7 +332,7 @@ export default function AccountsClient({ accounts: initialAccounts, reps, assign
 
     setAccounts((prev) => [newRow, ...prev]);
     setShowCreate(false);
-    setFormName(""); setFormType(""); setFormWebsite(""); setFormPhone(""); setFormNotes(""); setFormPropertyId("");
+    setFormName(""); setFormType(""); setFormWebsite(""); setFormPhone(""); setFormNotes(""); setFormPropertyId(""); setDup(EMPTY_ENTITY_DUP);
     showToast("success", `${newRow.name ?? "Account"} created.`);
   }
 
@@ -425,19 +452,39 @@ export default function AccountsClient({ accounts: initialAccounts, reps, assign
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={createBusy}
-            onClick={() => void onCreateSubmit()}
-            className={[
-              "rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
-              formName.trim() && formType
-                ? "bg-blue-600 text-white hover:bg-blue-700"
-                : "bg-slate-100 text-slate-400",
-            ].join(" ")}
-          >
-            {createBusy ? "Saving..." : "Create Account"}
-          </button>
+          <DuplicateWarning
+            tone="duplicate"
+            heading={`An account named like this is already in Dilly.`}
+            body="Open the existing account, or create this one anyway if it really is a separate company. Nothing is blocked either way."
+            matches={dup.matches.map((m) => ({
+              id: m.id,
+              label: m.label,
+              sub: m.sub,
+              href: `/app/accounts/${m.id}`,
+              tone: "duplicate" as const,
+            }))}
+            busy={createBusy}
+            onUseExisting={(m) => {
+              window.location.href = `/app/accounts/${m.id}`;
+            }}
+            onCreateAnyway={() => void onCreateSubmit({ force: true })}
+          />
+
+          {dup.matches.length === 0 && (
+            <button
+              type="button"
+              disabled={createBusy || dupChecking}
+              onClick={() => void onCreateSubmit()}
+              className={[
+                "rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50",
+                formName.trim() && formType
+                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                  : "bg-slate-100 text-slate-400",
+              ].join(" ")}
+            >
+              {createBusy ? "Saving..." : dupChecking ? "Checking…" : "Create Account"}
+            </button>
+          )}
         </div>
       )}
 

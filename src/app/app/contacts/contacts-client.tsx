@@ -1,12 +1,19 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
 import type { AccountOption } from "./page";
 import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 import CompletenessFilter from "@/app/app/_components/completeness-filter";
 import EntityPicker from "@/app/app/_components/entity-picker";
 import { contactCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
+import DuplicateWarning from "@/app/app/_components/duplicate-warning";
+import {
+  EMPTY_ENTITY_DUP,
+  findContactDuplicates,
+  normalizePersonName,
+  type EntityDupResult,
+} from "@/lib/entity-dupes";
 
 type ContactRow = {
   id: string;
@@ -106,6 +113,14 @@ export default function ContactsClient({
   const [isPrimaryPropertyContact, setIsPrimaryPropertyContact] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Advisory same-person matches. Cleared only when the typed name normalizes to
+  // something genuinely different, so fixing a typo doesn't re-arm the check.
+  const [dup, setDup] = useState<EntityDupResult>(EMPTY_ENTITY_DUP);
+  const [dupChecking, setDupChecking] = useState(false);
+  useEffect(() => {
+    if (!dup.key) return;
+    if (normalizePersonName(`${firstName} ${lastName}`) !== dup.key) setDup(EMPTY_ENTITY_DUP);
+  }, [firstName, lastName, dup.key]);
   const [toast, setToast] = useState<{ tone: "success" | "error"; text: string } | null>(null);
 
   function showToast(tone: "success" | "error", text: string) {
@@ -150,13 +165,30 @@ export default function ContactsClient({
     setIsPrimaryAccountContact(false);
     setIsPrimaryPropertyContact(false);
     setError(null);
+    setDup(EMPTY_ENTITY_DUP);
   }
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleCreate(e?: React.FormEvent, opts?: { force?: boolean }) {
+    e?.preventDefault();
     if (!firstName.trim() || !lastName.trim() || !newAccountId) {
       setError("First name, last name, and account are required.");
       return;
+    }
+    // Advisory person check — same name in the org, or the same email. Two real
+    // people can share a switchboard number and even a name, so this never blocks;
+    // `force` is the rep's explicit "Create anyway".
+    if (!opts?.force) {
+      setDupChecking(true);
+      try {
+        const found = await findContactDuplicates(supabase, {
+          fullName: `${firstName.trim()} ${lastName.trim()}`,
+          email: email.trim() || null,
+        });
+        if (found.matches.length > 0) { setDup(found); return; }
+        setDup(EMPTY_ENTITY_DUP);
+      } finally {
+        setDupChecking(false);
+      }
     }
     setBusy(true);
     setError(null);
@@ -390,15 +422,40 @@ export default function ContactsClient({
                 </label>
               )}
             </div>
+            <DuplicateWarning
+              tone="duplicate"
+              heading={
+                dup.matches[0]?.reason === "email"
+                  ? "Someone in Dilly already has this email."
+                  : "Someone with this name is already in Dilly."
+              }
+              body="Open the existing contact, or create this one anyway if it really is a different person. Nothing is blocked either way."
+              matches={dup.matches.map((m) => ({
+                id: m.id,
+                label: m.label,
+                sub: m.sub,
+                href: `/app/contacts/${m.id}`,
+                tone: "duplicate" as const,
+              }))}
+              busy={busy}
+              onUseExisting={(m) => {
+                window.location.href = `/app/contacts/${m.id}`;
+              }}
+              onCreateAnyway={() => {
+                void handleCreate(undefined, { force: true });
+              }}
+            />
             {error && <p className="text-xs text-red-600">{error}</p>}
             <div className="flex gap-2">
+              {dup.matches.length === 0 && (
               <button
                 type="submit"
-                disabled={busy}
+                disabled={busy || dupChecking}
                 className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {busy ? "Creating…" : "Create Contact"}
+                {busy ? "Creating…" : dupChecking ? "Checking…" : "Create Contact"}
               </button>
+              )}
               <button
                 type="button"
                 onClick={() => {

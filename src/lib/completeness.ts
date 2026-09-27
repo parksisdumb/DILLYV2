@@ -105,7 +105,7 @@ export const PROPERTY_FIELDS: FieldSpec<PropertyCompletenessInput>[] = [
   { key: "roof_type", label: "roof type", present: (r) => str(r.roof_type) },
   { key: "sq_footage", label: "square footage", present: (r) => posNum(r.sq_footage) },
   { key: "roof_age_years", label: "roof age", present: (r) => nonNegNum(r.roof_age_years) },
-  { key: "primary_account_id", label: "owner account", present: (r) => id(r.primary_account_id) },
+  { key: "primary_account_id", label: "manager account", present: (r) => id(r.primary_account_id) },
   { key: "contact", label: "a linked contact", present: (r) => r.hasContact },
 ];
 

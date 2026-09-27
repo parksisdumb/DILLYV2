@@ -112,7 +112,11 @@ function baseTokens(input: string): string[] {
  */
 export function normalizeAddressLine1(raw: string | null | undefined): string {
   if (!raw) return "";
-  const tokens = baseTokens(raw);
+  // Drop a bare "#400" BEFORE tokenizing. baseTokens strips punctuation, so by the
+  // time we see tokens the "#" is gone and "400" looks like part of the street —
+  // which made "300 Main St #400" and "300 Main St Suite 400" produce DIFFERENT
+  // keys and silently skip the duplicate check between them.
+  const tokens = baseTokens(raw.replace(/#\s*[\w-]+/g, " "));
   const out: string[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];

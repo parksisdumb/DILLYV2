@@ -877,13 +877,18 @@ export default function PropertyDetailClient({
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setShowLinkAccount(!showLinkAccount)}
-              className="mt-1 inline-block text-sm text-blue-600 hover:underline"
-            >
-              + Link Account
-            </button>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                No manager yet
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowLinkAccount(!showLinkAccount)}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                + Link Account
+              </button>
+            </div>
           )}
           {localProperty.website && (
             <p className="mt-1 truncate text-sm text-blue-600 hover:underline">
@@ -1450,22 +1455,11 @@ export default function PropertyDetailClient({
             {localPropContacts.length} {localPropContacts.length === 1 ? "contact" : "contacts"} linked to this property
           </p>
 
-          {/* Action buttons — or an account-required prompt when no account is linked */}
-          {!localAccount ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-sm text-amber-800">
-                Link this property to an account first to add contacts.
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowLinkAccount(true)}
-                className="mt-3 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                Link Account
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-2">
+          {/* Action buttons. A brand-new contact needs an account (contacts are never
+              orphaned), but LINKING someone already in Dilly does not — so a property
+              with no manager yet is never a dead end for the person she just met. */}
+          <div className="flex flex-wrap gap-2">
+            {localAccount && (
               <button
                 type="button"
                 onClick={() => {
@@ -1477,19 +1471,38 @@ export default function PropertyDetailClient({
               >
                 {showAddContact ? "Cancel" : "+ Add Contact"}
               </button>
-              {localAvailable.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowLinkContact((v) => !v);
-                    setShowAddContact(false);
-                    setLinkError(null);
-                  }}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  {showLinkContact ? "Cancel" : "+ Link Contact"}
-                </button>
-              )}
+            )}
+            {localAvailable.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLinkContact((v) => !v);
+                  setShowAddContact(false);
+                  setLinkError(null);
+                }}
+                className={
+                  localAccount
+                    ? "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    : "rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                }
+              >
+                {showLinkContact ? "Cancel" : "+ Link Contact"}
+              </button>
+            )}
+          </div>
+          {!localAccount && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm text-amber-800">
+                No manager yet. Link an account to add a brand-new contact here — you can
+                already link anyone who is in Dilly.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowLinkAccount(true)}
+                className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-50"
+              >
+                Link Account
+              </button>
             </div>
           )}
 

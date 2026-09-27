@@ -292,6 +292,20 @@ export default function PropertiesClient({
     setDup(EMPTY_DUP_RESULT);
   }
 
+  // Required-field feedback is DERIVED, not a stored message: the moment the rep
+  // fills a field the complaint about it disappears on its own. A stale "these
+  // fields are required" sitting under a filled-in form is its own dead end.
+  const missingFields = useMemo(() => {
+    const missing: string[] = [];
+    if (!propName.trim()) missing.push("property name");
+    if (!addr1.trim()) missing.push("address");
+    if (!city.trim()) missing.push("city");
+    if (!state.trim()) missing.push("state");
+    if (!postal.trim()) missing.push("postal code");
+    return missing;
+  }, [propName, addr1, city, state, postal]);
+  const [showMissing, setShowMissing] = useState(false);
+
   // Grade the outstanding matches against what is in the boxes right now, so
   // typing a suite downgrades "duplicate" to "similar" live.
   const dupGraded = useMemo(
@@ -311,10 +325,13 @@ export default function PropertiesClient({
 
   async function handleCreate(e?: React.FormEvent, opts?: { force?: boolean }) {
     e?.preventDefault();
-    if (!propName.trim() || !addr1.trim() || !city.trim() || !state.trim() || !postal.trim() || !accountId) {
-      setError("Property name, address, city, state, postal code, and account are required.");
+    // Account is deliberately NOT required — a rep standing at a building often
+    // doesn't know who manages it yet. It shows as "No manager yet" until she does.
+    if (missingFields.length > 0) {
+      setShowMissing(true);
       return;
     }
+    setShowMissing(false);
     // Advisory duplicate check. `force` comes from the panel's "Create anyway"
     // button and skips it outright — that button is the rep's decision and must
     // always create.
@@ -362,8 +379,9 @@ export default function PropertiesClient({
         return;
       }
 
-      const resolvedAccountName =
-        accountName ?? accounts.find((a) => a.id === accountId)?.name ?? null;
+      const resolvedAccountName = accountId
+        ? (accountName ?? accounts.find((a) => a.id === accountId)?.name ?? null)
+        : null;
       const resolvedContactName = contactId
         ? (contactName ?? contacts.find((c) => c.id === contactId)?.full_name ?? null)
         : null;
@@ -514,7 +532,7 @@ export default function PropertiesClient({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-600">Account *</label>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Account</label>
                 <EntityPicker
                   kind="account"
                   value={accountId}
@@ -524,6 +542,10 @@ export default function PropertiesClient({
                   }}
                   placeholder="Search accounts by name…"
                 />
+                <p className="mt-1 text-xs text-slate-500">
+                  Leave blank if you don&apos;t know the manager yet — it shows as &ldquo;No manager
+                  yet&rdquo; until you add one.
+                </p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">
@@ -633,6 +655,11 @@ export default function PropertiesClient({
                 void handleCreate(undefined, { force: true });
               }}
             />
+            {showMissing && missingFields.length > 0 && (
+              <p className="text-xs text-red-600">
+                Still needed: {missingFields.join(", ")}.
+              </p>
+            )}
             {error && <p className="text-xs text-red-600">{error}</p>}
             {/* While the advisory is up, its two buttons are the only forward paths,
                 so the primary submit stands down rather than shape-shifting under
@@ -860,7 +887,13 @@ export default function PropertiesClient({
                         </p>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{p.primary_account_name ?? "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {p.primary_account_name ?? (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                          No manager yet
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {p.building_type && (
@@ -956,8 +989,14 @@ export default function PropertiesClient({
                     </span>
                   )}
                 </div>
-                {p.primary_account_name && (
+                {p.primary_account_name ? (
                   <p className="mt-1 text-xs text-slate-500">{p.primary_account_name}</p>
+                ) : (
+                  <p className="mt-1">
+                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                      No manager yet
+                    </span>
+                  </p>
                 )}
                 {p.assignments.length > 0 && (
                   <p className="mt-1 text-xs text-slate-500">Assigned: {p.assignments.map((a) => a.name).join(", ")}</p>

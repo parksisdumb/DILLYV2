@@ -16,6 +16,15 @@ import {
   ONBOARDING_STATUS_OPTIONS,
 } from "@/lib/constants/onboarding-status";
 import type { CompletenessResult } from "@/lib/completeness";
+import DuplicateWarning from "@/app/app/_components/duplicate-warning";
+import { propertyDuplicateKey } from "@/lib/address";
+import {
+  EMPTY_DUP_RESULT,
+  findPropertyDuplicates,
+  overallTone,
+  tonedMatches,
+  type PropertyDupResult,
+} from "@/lib/property-dupes";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -315,6 +324,20 @@ export default function AccountDetailClient({
   const [pPostal, setPPostal] = useState("");
   const [pBusy, setPBusy] = useState(false);
   const [pError, setPError] = useState<string | null>(null);
+  // Advisory duplicate matches for the address being typed. Never a gate.
+  const [pDup, setPDup] = useState<PropertyDupResult>(EMPTY_DUP_RESULT);
+  const [pDupChecking, setPDupChecking] = useState(false);
+  const pDupGraded = useMemo(
+    () => tonedMatches(pDup.matches, { addressLine1: pAddr }),
+    [pDup.matches, pAddr],
+  );
+  const pDupTone = overallTone(pDupGraded);
+  // Only a genuinely different street/city clears the advisory; editing the suite
+  // re-grades it in place so "Create anyway" never slips out from under the rep.
+  useEffect(() => {
+    if (!pDup.key) return;
+    if (propertyDuplicateKey(pAddr, pCity) !== pDup.key) setPDup(EMPTY_DUP_RESULT);
+  }, [pAddr, pCity, pDup.key]);
 
   // ── Link Existing Property form ──
   const [showLinkProperty, setShowLinkProperty] = useState(false);
@@ -562,10 +585,22 @@ export default function AccountDetailClient({
   }
 
   // ── Add Property submit ──
-  async function onAddProperty() {
+  async function onAddProperty(opts?: { force?: boolean }) {
     if (!pName.trim()) { setPError("Property name is required."); return; }
     if (!pAddr.trim()) { setPError("Address is required."); return; }
     setPError(null);
+    // Advisory duplicate check. `force` is the rep's explicit "Create anyway" and
+    // always creates — dedupe warns, it never blocks.
+    if (!opts?.force) {
+      setPDupChecking(true);
+      try {
+        const found = await findPropertyDuplicates(supabase, { addressLine1: pAddr, city: pCity });
+        if (found.matches.length > 0) { setPDup(found); return; }
+        setPDup(EMPTY_DUP_RESULT);
+      } finally {
+        setPDupChecking(false);
+      }
+    }
     setPBusy(true);
 
     const { data, error } = await supabase.rpc("rpc_quick_add_property", {
@@ -601,6 +636,7 @@ export default function AccountDetailClient({
     setProperties((prev) => [...prev, newProp].sort((a, b) => a.address_line1.localeCompare(b.address_line1)));
     setShowAddProperty(false);
     setPName(""); setPAddr(""); setPCity(""); setPState(""); setPPostal("");
+    setPDup(EMPTY_DUP_RESULT);
     setTab("properties");
     showToast("success", "Property added.");
   }
@@ -1336,19 +1372,37 @@ export default function AccountDetailClient({
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={pBusy}
-            onClick={() => void onAddProperty()}
-            className={[
-              "rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
-              pName.trim() && pAddr.trim()
-                ? "bg-blue-600 text-white hover:bg-blue-700"
-                : "bg-slate-100 text-slate-400",
-            ].join(" ")}
-          >
-            {pBusy ? "Saving..." : "Add Property"}
-          </button>
+          <DuplicateWarning
+            tone={pDupTone}
+            matches={pDupGraded.map((m) => ({
+              id: m.id,
+              label: m.label,
+              sub: m.sub,
+              href: `/app/properties/${m.id}`,
+              tone: m.tone,
+            }))}
+            busy={pBusy}
+            onUseExisting={(m) => {
+              window.location.href = `/app/properties/${m.id}`;
+            }}
+            onCreateAnyway={() => void onAddProperty({ force: true })}
+          />
+
+          {pDupGraded.length === 0 && (
+            <button
+              type="button"
+              disabled={pBusy || pDupChecking}
+              onClick={() => void onAddProperty()}
+              className={[
+                "rounded-xl px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50",
+                pName.trim() && pAddr.trim()
+                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                  : "bg-slate-100 text-slate-400",
+              ].join(" ")}
+            >
+              {pBusy ? "Saving..." : pDupChecking ? "Checking…" : "Add Property"}
+            </button>
+          )}
         </div>
       )}
 

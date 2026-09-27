@@ -7,6 +7,14 @@ import RepFilter, { type RepOption } from "@/app/app/_components/rep-filter";
 import CompletenessFilter from "@/app/app/_components/completeness-filter";
 import EntityPicker from "@/app/app/_components/entity-picker";
 import { propertyDuplicateKey } from "@/lib/address";
+import DuplicateWarning from "@/app/app/_components/duplicate-warning";
+import {
+  EMPTY_DUP_RESULT,
+  findPropertyDuplicates,
+  overallTone,
+  tonedMatches,
+  type PropertyDupResult,
+} from "@/lib/property-dupes";
 import { propertyCompleteness, matchesCompleteness, scoreTone, type CompletenessResult } from "@/lib/completeness";
 
 type PropertyRow = {
@@ -125,8 +133,12 @@ export default function PropertiesClient({
   const [contactId, setContactId] = useState("");
   const [contactName, setContactName] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
-  // Possible-duplicate gate: populated when a normalized address+city match is found.
-  const [dupMatches, setDupMatches] = useState<{ id: string; label: string; sub: string }[]>([]);
+  // Possible-duplicate ADVISORY (never a gate): the matches found on the last
+  // submit, plus the normalized key they were found for. Keeping the key lets us
+  // tell "she changed the address enough to be worth re-checking" apart from
+  // "she added a suite", which the normalizer strips — the second case used to
+  // silently re-arm the warning and trap the rep in a warn → edit → warn loop.
+  const [dup, setDup] = useState<PropertyDupResult>(EMPTY_DUP_RESULT);
   const [dupChecking, setDupChecking] = useState(false);
   const [website, setWebsite] = useState("");
   const [buildingType, setBuildingType] = useState("");
@@ -277,48 +289,44 @@ export default function PropertiesClient({
     setRoofAgeYears("");
     setSqFootage("");
     setError(null);
-    setDupMatches([]);
+    setDup(EMPTY_DUP_RESULT);
   }
 
-  // Look for an existing property in the org with a matching normalized
-  // address_line1 + city. Query is scoped to the same city (bounded), then
-  // compared with the shared normalizer so "Dr" == "Drive", punctuation/case
-  // are ignored. Returns matches; empty = clear to create.
-  async function findDuplicates() {
-    const targetKey = propertyDuplicateKey(addr1, city);
-    if (!targetKey) return [] as { id: string; label: string; sub: string }[];
-    const { data } = await supabase
-      .from("properties")
-      .select("id,name,address_line1,city,state")
-      .is("deleted_at", null)
-      .ilike("city", city.trim())
-      .limit(200);
-    return (data ?? [])
-      .filter((p) => propertyDuplicateKey(p.address_line1 as string, p.city as string) === targetKey)
-      .map((p) => ({
-        id: p.id as string,
-        label: (p.name as string | null) || (p.address_line1 as string),
-        sub: [p.address_line1, p.city, p.state].filter(Boolean).join(", "),
-      }));
-  }
+  // Grade the outstanding matches against what is in the boxes right now, so
+  // typing a suite downgrades "duplicate" to "similar" live.
+  const dupGraded = useMemo(
+    () => tonedMatches(dup.matches, { addressLine1: addr1, addressLine2: addr2 }),
+    [dup.matches, addr1, addr2],
+  );
+  const dupTone = overallTone(dupGraded);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
+  // Drop the advisory only when the rep changes the address enough to change the
+  // normalized key (i.e. a genuinely different street/city worth re-checking).
+  // Editing the suite does NOT clear it — the panel just re-grades itself and keeps
+  // "Create anyway" under her thumb.
+  useEffect(() => {
+    if (!dup.key) return;
+    if (propertyDuplicateKey(addr1, city) !== dup.key) setDup(EMPTY_DUP_RESULT);
+  }, [addr1, city, dup.key]);
+
+  async function handleCreate(e?: React.FormEvent, opts?: { force?: boolean }) {
+    e?.preventDefault();
     if (!propName.trim() || !addr1.trim() || !city.trim() || !state.trim() || !postal.trim() || !accountId) {
       setError("Property name, address, city, state, postal code, and account are required.");
       return;
     }
-    // Duplicate gate: on the first submit, check for a normalized-address match.
-    // If found, surface it and stop; the user then picks "Use existing" or
-    // "Create anyway" (which re-submits with dupMatches already shown).
-    if (dupMatches.length === 0) {
+    // Advisory duplicate check. `force` comes from the panel's "Create anyway"
+    // button and skips it outright — that button is the rep's decision and must
+    // always create.
+    if (!opts?.force) {
       setDupChecking(true);
       try {
-        const matches = await findDuplicates();
-        if (matches.length > 0) {
-          setDupMatches(matches);
+        const found = await findPropertyDuplicates(supabase, { addressLine1: addr1, city });
+        if (found.matches.length > 0) {
+          setDup(found);
           return;
         }
+        setDup(EMPTY_DUP_RESULT);
       } finally {
         setDupChecking(false);
       }
@@ -432,7 +440,13 @@ export default function PropertiesClient({
       {showCreate && (
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">New Property</h2>
-          <form onSubmit={handleCreate} className="space-y-3">
+          <form
+            onSubmit={(e) => {
+              // Enter, once the rep has already been warned, means "yes, create it".
+              void handleCreate(e, { force: dupGraded.length > 0 });
+            }}
+            className="space-y-3"
+          >
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
                 Property Name *
@@ -451,10 +465,7 @@ export default function PropertiesClient({
               <input
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
                 value={addr1}
-                onChange={(e) => {
-                  setAddr1(e.target.value);
-                  setDupMatches([]);
-                }}
+                onChange={(e) => setAddr1(e.target.value)}
                 placeholder="123 Main St"
               />
             </div>
@@ -475,10 +486,7 @@ export default function PropertiesClient({
                 <input
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
                   value={city}
-                  onChange={(e) => {
-                    setCity(e.target.value);
-                    setDupMatches([]);
-                  }}
+                  onChange={(e) => setCity(e.target.value)}
                   placeholder="Austin"
                 />
               </div>
@@ -607,49 +615,38 @@ export default function PropertiesClient({
                 placeholder="Any notes about the property…"
               />
             </div>
-            {/* Possible-duplicate warning */}
-            {dupMatches.length > 0 && (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
-                <p className="text-sm font-medium text-amber-800">
-                  Possible duplicate{dupMatches.length > 1 ? "s" : ""} — this address already exists.
-                </p>
-                <div className="mt-2 space-y-1.5">
-                  {dupMatches.map((m) => (
-                    <a
-                      key={m.id}
-                      href={`/app/properties/${m.id}`}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 hover:bg-amber-50"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-slate-900">{m.label}</span>
-                        <span className="block truncate text-xs text-slate-500">{m.sub}</span>
-                      </span>
-                      <span className="shrink-0 text-xs font-medium text-blue-600">Use existing →</span>
-                    </a>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-amber-700">
-                  If this is genuinely a different building, you can create it anyway.
-                </p>
-              </div>
-            )}
+            {/* Possible-duplicate advisory — carries both exits itself. */}
+            <DuplicateWarning
+              tone={dupTone}
+              matches={dupGraded.map((m) => ({
+                id: m.id,
+                label: m.label,
+                sub: m.sub,
+                href: `/app/properties/${m.id}`,
+                tone: m.tone,
+              }))}
+              busy={busy}
+              onUseExisting={(m) => {
+                window.location.href = `/app/properties/${m.id}`;
+              }}
+              onCreateAnyway={() => {
+                void handleCreate(undefined, { force: true });
+              }}
+            />
             {error && <p className="text-xs text-red-600">{error}</p>}
+            {/* While the advisory is up, its two buttons are the only forward paths,
+                so the primary submit stands down rather than shape-shifting under
+                the rep's thumb. */}
             <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={busy || dupChecking}
-                className={`rounded-xl px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
-                  dupMatches.length > 0 ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"
-                }`}
-              >
-                {busy
-                  ? "Creating…"
-                  : dupChecking
-                    ? "Checking…"
-                    : dupMatches.length > 0
-                      ? "Create anyway"
-                      : "Create Property"}
-              </button>
+              {dupGraded.length === 0 && (
+                <button
+                  type="submit"
+                  disabled={busy || dupChecking}
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {busy ? "Creating…" : dupChecking ? "Checking…" : "Create Property"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {

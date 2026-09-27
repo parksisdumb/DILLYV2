@@ -215,6 +215,8 @@ Primary routes under `/app/`:
 - Opportunities require a property. `property_id` on opportunities should not be null for roofing.
 - Next actions are contact-first. `contact_id` is the primary key for follow-up context.
 - RLS is the security layer. Do not attempt to enforce org isolation in application code.
+- **Dedupe WARNS, never BLOCKS.** No duplicate check may refuse a create. Every create surface that checks for duplicates renders `DuplicateWarning` (`src/app/app/_components/duplicate-warning.tsx`), which shows the matched record (name + address, linked) and two equally prominent buttons: "Use existing" and "Create anyway". "Create anyway" must call the create with an explicit `force` flag so it can never degrade into a re-check or a no-op. A duplicate is a cleanup task; a rep who cannot save the building she is standing in front of is lost data. Lookups live in `src/lib/property-dupes.ts`; a failed lookup falls through to "no matches" rather than blocking.
+- Address matching is graded, not binary. `normalizeAddressLine1` strips suite/unit/building tokens on purpose, so same-street-different-suite collides. Use `addressMatchTone` to downgrade those to "similar" — only same street + same suite (or neither has one) is a full duplicate warning.
 
 ---
 

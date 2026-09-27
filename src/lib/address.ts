@@ -155,3 +155,62 @@ export function propertyDuplicateKey(
   const c = normalizeCity(city);
   return `${addr}|${c}`;
 }
+
+// ---------------------------------------------------------------------------
+// Suite / unit awareness for duplicate *tone*.
+//
+// `normalizeAddressLine1` deliberately DROPS suite/unit/building tokens so that
+// "300 Bardin Greene Dr Ste 100" and "300 Bardin Greene Dr" collapse to one key
+// — that is what we want for grouping. But it also means a rep entering a second,
+// genuinely different building or space on the same street gets told "duplicate".
+// Telling her "this address already exists" when she typed a different suite is a
+// false positive, and the thing that makes her distrust (or fight) the warning.
+//
+// So we keep the key coarse and grade the WARNING instead: same street + same
+// suite (or neither has one) is a real duplicate; same street + different suite
+// is merely similar.
+// ---------------------------------------------------------------------------
+
+// Designators we trust to introduce a unit value. Intentionally excludes the
+// ambiguous short forms "fl" and "rm" — "…, Orlando FL 32801" crammed into
+// address_line1 would otherwise read as "floor 32801". Missing a unit only ever
+// costs us a stronger warning, which is the safe direction.
+const UNIT_DESIGNATOR_RE =
+  /\b(suite|ste|unit|apt|apartment|bldg|building|floor|room)\b\.?\s*#?\s*([a-z0-9-]+)/i;
+const BARE_UNIT_RE = /#\s*([a-z0-9-]+)/;
+
+/**
+ * Pull the suite/unit/building value out of one or more address lines.
+ * Reps put it in either line, so pass both; the first line that has one wins.
+ * Returns "" when there is no unit designator.
+ */
+export function extractUnitDesignator(
+  ...parts: (string | null | undefined)[]
+): string {
+  for (const raw of parts) {
+    if (!raw) continue;
+    const m = UNIT_DESIGNATOR_RE.exec(raw) ?? BARE_UNIT_RE.exec(raw);
+    if (!m) continue;
+    const value = (m[2] ?? m[1] ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (value) return value;
+  }
+  return "";
+}
+
+/** How loudly to warn about a normalized-address match. */
+export type AddressMatchTone = "duplicate" | "similar";
+
+export function addressMatchTone(
+  typed: { addressLine1?: string | null; addressLine2?: string | null },
+  existing: { addressLine1?: string | null; addressLine2?: string | null },
+): AddressMatchTone {
+  const a = extractUnitDesignator(typed.addressLine1, typed.addressLine2);
+  const b = extractUnitDesignator(existing.addressLine1, existing.addressLine2);
+  return a === b ? "duplicate" : "similar";
+}
+
+/** First purely-numeric token of a normalized address — used to narrow the dupe query. */
+export function streetNumber(addressLine1: string | null | undefined): string {
+  const tokens = normalizeAddressLine1(addressLine1).split(" ");
+  return tokens.find((t) => /^\d+$/.test(t)) ?? "";
+}
